@@ -1,0 +1,292 @@
+name: ci
+
+on:
+  push:
+    branches: ['main','ci-main']
+  workflow_dispatch:
+
+permissions:
+  contents: write          
+  packages: write
+  actions: read
+
+env:
+  CARGO_TERM_COLOR: always
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  rust_build_test:
+    name: Build/Test self-hosted
+    runs-on: self-hosted
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libssl-dev ca-certificates \
+            fakeroot debhelper devscripts jq curl file
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo build (release)
+        run: cargo build --release
+
+      - name: Cargo test
+        run: cargo test --all --all-features --verbose
+
+      - name: Verify binary exists
+        run: |
+          test -x target/release/hardn-xdr || { echo "hardn-xdr not built"; exit 1; }
+          file target/release/hardn-xdr
+          ./target/release/hardn-xdr --version || true
+          ./target/release/hardn-xdr --help | head -50 || true
+
+      - name: Install built binary system-wide and test sudo
+        run: |
+          sudo install -m 0755 target/release/hardn-xdr /usr/local/bin/hardn-xdr
+          which hardn-xdr
+          hardn-xdr --version
+          sudo -n true || echo "[INFO] sudo requires tty/pass; attempting with prompt"
+          sudo hardn-xdr --help | head -30 || true
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardn-xdr-release-bin
+          path: |
+            target/release/hardn-xdr
+
+  deb_pkg_build:
+    name: Build Debian Packages 
+    needs: [rust_build_test]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64]
+        include:
+          - arch: amd64
+            rust_target: x86_64-unknown-linux-gnu
+            deb_arch: amd64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install packaging prereqs (common)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config ca-certificates libssl-dev \
+            fakeroot debhelper devscripts jq curl file
+
+      - name: Set up Rust (stable) + targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --locked
+
+      - name: Build (release) for target
+        run: cargo build --release --target ${{ matrix.rust_target }}
+
+      - name: Build .deb with cargo-deb
+        run: |
+          cargo deb --target ${{ matrix.rust_target }} --no-strip
+          mkdir -p dist
+          DEB=$(ls target/${{ matrix.rust_target }}/debian/*.deb | head -n1)
+          test -f "$DEB" || { echo "No .deb produced"; exit 1; }
+          VER=$(dpkg-deb -f "$DEB" Version | sed 's/~/-/g')
+          OUT="dist/hardn-xdr_${VER}_${{ matrix.deb_arch }}.deb"
+          cp -f "$DEB" "$OUT"
+          echo "Built: $OUT"
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardn-xdr-debs-${{ matrix.arch }}
+          path: dist/*.deb
+
+  deb_pkg_verify:
+    name: Verify Debian Install
+    needs: [deb_pkg_build]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64]
+    steps:
+      - name: Download .deb
+        uses: actions/download-artifact@v4
+        with:
+          name: hardn-xdr-debs-${{ matrix.arch }}
+          path: debs
+
+      - name: Show files
+        run: ls -lah debs
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates
+
+      - name: Install package with dpkg + fix deps
+        run: |
+          DEB=$(ls debs/*.deb | head -n1)
+          echo "Installing $DEB"
+          sudo dpkg -i "$DEB" || true
+          sudo apt-get -f install -y
+          hardn-xdr --version || { echo "Binary not available"; exit 1; }
+          hardn-xdr --help | head -40 || true
+          sudo hardn-xdr --help | head -20 || true
+
+  tag_and_release:
+    name: Tag + Release 
+    needs: [deb_pkg_verify]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout 
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Download all deb artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release_assets
+
+      - name: Patch and Tag
+        id: bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest=$(git tag -l "v*.*.*" --sort=-v:refname | head -n1)
+          if [ -z "${latest}" ]; then
+            latest="v0.0.0"
+          fi
+          echo "Latest tag: $latest"
+          ver="${latest#v}"
+          IFS='.' read -r MAJ MIN PAT <<< "$ver"
+          : "${MAJ:=0}"; : "${MIN:=0}"; : "${PAT:=0}"
+          MIN=$((MIN+1))
+          new_tag="v${MAJ}.${MIN}.${PAT}"
+          echo "new_tag=$new_tag" >> $GITHUB_OUTPUT
+          echo "New tag: $new_tag"
+
+      - name: tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.bump.outputs.new_tag }}"
+          git push origin "${{ steps.bump.outputs.new_tag }}"
+
+      - name: Prepare Release
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.bump.outputs.new_tag }}"
+          repo="${{ github.repository }}"
+          AMD=$(ls release_assets/**/hardn-xdr_*_amd64.deb | head -n1 || true)
+          amd_name=$(basename "$AMD")
+          amd_url="https://github.com/${repo}/releases/download/${tag}/${amd_name}"
+
+          echo '![HARDN-XDR Logo](docs/assets/IMG_1233.jpeg)' > RELEASE_NOTES.md
+          echo '' >> RELEASE_NOTES.md
+          echo '# HARDN-XDR — Release ${{ steps.bump.outputs.new_tag }}' >> RELEASE_NOTES.md
+          echo '' >> RELEASE_NOTES.md
+          echo 'This release provides signed Debian packages for **amd64** and **arm64**.' >> RELEASE_NOTES.md
+          echo '' >> RELEASE_NOTES.md
+          echo '## Quick Install (Debian/Ubuntu)' >> RELEASE_NOTES.md
+          echo '' >> RELEASE_NOTES.md
+          
+          # List all available architectures
+          echo '**Available Downloads:**' >> RELEASE_NOTES.md
+          echo '' >> RELEASE_NOTES.md
+          
+          for deb_file in release_assets/**/hardn-xdr_*_*.deb; do
+            if [ -f "$deb_file" ]; then
+              deb_name=$(basename "$deb_file")
+              deb_url="https://github.com/${repo}/releases/download/${tag}/${deb_name}"
+              arch=$(echo "$deb_name" | sed -n 's/.*_\([a-z0-9]*\)\.deb/\1/p')
+              echo "**${arch}:** [${deb_name}](${deb_url})" >> RELEASE_NOTES.md
+            fi
+          done
+          
+          echo '' >> RELEASE_NOTES.md
+          echo '### Installation (amd64):' >> RELEASE_NOTES.md
+          echo '' >> RELEASE_NOTES.md
+          echo '```bash' >> RELEASE_NOTES.md
+          echo '# Download and verify' >> RELEASE_NOTES.md
+          echo 'wget -O hardn-xdr_amd64.deb "https://github.com/${repo}/releases/download/${tag}/hardn-xdr_${VER}_amd64.deb"' >> RELEASE_NOTES.md
+          echo 'wget -O SHA256SUMS "https://github.com/${repo}/releases/download/${tag}/SHA256SUMS"' >> RELEASE_NOTES.md
+          echo 'sha256sum -c SHA256SUMS --ignore-missing' >> RELEASE_NOTES.md
+          echo '' >> RELEASE_NOTES.md
+          echo '# Install' >> RELEASE_NOTES.md
+          echo 'sudo dpkg -i hardn-xdr_amd64.deb || sudo apt-get -f install -y' >> RELEASE_NOTES.md
+          echo 'hardn-xdr --version' >> RELEASE_NOTES.md
+          echo 'sudo hardn-xdr --help | head -30' >> RELEASE_NOTES.md
+          echo '```' >> RELEASE_NOTES.md
+          echo '' >> RELEASE_NOTES.md
+          echo '## Files' >> RELEASE_NOTES.md
+          for deb_file in release_assets/**/hardn-xdr_*_*.deb; do
+            if [ -f "$deb_file" ]; then
+              deb_name=$(basename "$deb_file")
+              echo "- **${deb_name}** - Debian package" >> RELEASE_NOTES.md
+            fi
+          done
+          echo "- **SHA256SUMS** - Checksum file for verification" >> RELEASE_NOTES.md
+          echo "- **install.sh** - Automated installation script" >> RELEASE_NOTES.md
+
+          # Upload release notes as an artifact
+          echo "RELEASE_NOTES.md prepared for tag $tag"
+          ls -lah RELEASE_NOTES.md
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.bump.outputs.new_tag }}
+          name: Release ${{ steps.bump.outputs.new_tag }}
+          body_path: RELEASE_NOTES.md
+          files: |
+            release_assets/**/hardn-xdr_*_*.deb
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Discord notify
+        if: always()
+        shell: bash
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          STATUS="${{ job.status }}"
+          MSG="Install Test: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
+          if command -v hardn-discord.sh >/dev/null 2>&1; then
+            if [[ "$STATUS" == "success" ]]; then
+              hardn-discord.sh "OK" "$MSG" || true
+            else
+              hardn-discord.sh "FAILED" "$MSG" || true
+            fi
+          elif [[ -n "${WEBHOOK:-}" ]]; then
+            COLOR=15105570
+            [[ "$STATUS" == "success" ]] && COLOR=3066993 || true
+            [[ "$STATUS" == "failure" ]] && COLOR=15158332 || true
+            curl -H "Content-Type: application/json" -X POST "$WEBHOOK" \
+              -d "{"embeds":[{"title":"Install Test • ${{ github.repository }}","description":"Status: **${{ job.status }}** on \\`${{ github.ref }}\\`","color":$COLOR,"url":"$MSG"}]}" || true
+          else
+            echo "[INFO] No Discord webhook configured; skipping notification."
+          fi

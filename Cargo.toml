@@ -1,0 +1,24 @@
+[package]
+name = "hardn"
+version = "1.0.0"
+edition = "2021"
+authors = ["Security International Group"]
+description = "HARDN - Linux Security Hardening Framework (Demo Version)"
+license = "MIT"
+homepage = "https://github.com/Security-International-Group/HARDN"
+repository = "https://github.com/Security-International-Group/HARDN"
+keywords = ["security", "hardening", "debian", "linux", "STIG"]
+categories = ["command-line-utilities", "os"]
+
+[dependencies]
+# Add any dependencies you need
+# colored = "2.0"  # Uncomment to use the colored crate
+
+[profile.release]
+opt-level = "z"    # Optimize for size
+strip = true       # Strip symbols
+lto = true         # Enable link-time optimization
+
+[[bin]]
+name = "hardn"
+path = "src/main.rs"
