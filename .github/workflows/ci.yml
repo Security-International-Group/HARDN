@@ -17,7 +17,7 @@ env:
 jobs:
   rust_build_test:
     name: Build/Test self-hosted
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - name: Checkout
