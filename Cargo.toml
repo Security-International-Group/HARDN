@@ -20,5 +20,5 @@ strip = true       # Strip symbols
 lto = true         # Enable link-time optimization
 
 [[bin]]
-name = "hardn"
+name = "hardn-xdr"
 path = "src/main.rs"
