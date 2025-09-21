@@ -1,5 +1,5 @@
 # Binary and paths
-BINARY_NAME=hardn-xdr
+BINARY_NAME=hardn
 BUILD_TARGET=target/release/$(BINARY_NAME)
 DEB_DIR=debian
 BIN_INSTALL_PATH=usr/bin
@@ -33,14 +33,14 @@ install:
 	# Binary
 	install -D -m 755 $(BUILD_TARGET) $(DESTDIR)$(PREFIX)/bin/$(BINARY_NAME)
 
-	# hardn-api CLI wrapper (if exists)
-	@if [ -f usr/bin/hardn-api ]; then \
-		install -D -m 755 usr/bin/hardn-api $(DESTDIR)$(PREFIX)/bin/hardn-api; \
+	# hardnapi CLI wrapper (if exists)
+	@if [ -f usr/bin/hardnapi ]; then \
+		install -D -m 755 usr/bin/hardnapi $(DESTDIR)$(PREFIX)/bin/hardnapi; \
 	fi
 
 	# Man page (if exists)
 	@if [ -f hardn.1 ]; then \
-		install -D -m 644 hardn.1 $(DESTDIR)$(PREFIX)/share/man/man1/hardn-xdr.1; \
+		install -D -m 644 hardn.1 $(DESTDIR)$(PREFIX)/share/man/man1/hardn.1; \
 	fi
 
 	# Modules (if exists)
@@ -56,8 +56,8 @@ install:
 	fi
 
 	# Backend API (if exists)
-	@if [ -f usr/share/hardn/hardn-api.py ]; then \
-		install -D -m 755 usr/share/hardn/hardn-api.py $(DESTDIR)$(PREFIX)/share/hardn/hardn-api.py; \
+	@if [ -f usr/share/hardn/hardnapi.py ]; then \
+		install -D -m 755 usr/share/hardn/hardnapi.py $(DESTDIR)$(PREFIX)/share/hardn/hardnapi.py; \
 	fi
 
 	# Tools (if exists)
@@ -68,12 +68,12 @@ install:
 
 	# Docs (if exists)
 	@if [ -f README.md ]; then \
-		install -d $(DESTDIR)$(PREFIX)/share/doc/hardn-xdr; \
-		install -m 644 README.md $(DESTDIR)$(PREFIX)/share/doc/hardn-xdr/; \
+		install -d $(DESTDIR)$(PREFIX)/share/doc/hardn; \
+		install -m 644 README.md $(DESTDIR)$(PREFIX)/share/doc/hardn/; \
 	fi
 	@if [ -d docs ]; then \
-		install -d $(DESTDIR)$(PREFIX)/share/doc/hardn-xdr; \
-		install -m 644 docs/*.md $(DESTDIR)$(PREFIX)/share/doc/hardn-xdr/ 2>/dev/null || true; \
+		install -d $(DESTDIR)$(PREFIX)/share/doc/hardn; \
+		install -m 644 docs/*.md $(DESTDIR)$(PREFIX)/share/doc/hardn/ 2>/dev/null || true; \
 	fi
 
 	# Systemd (if exists)
@@ -92,7 +92,7 @@ package: build
 	dpkg-buildpackage -us -uc -b
 	# Move .deb file to current directory for easier CI access
 	@echo "Moving .deb file to current directory..."
-	@DEB_FILE=$$(find .. -name "hardn-xdr_*.deb" | head -n1); \
+	@DEB_FILE=$$(find .. -name "hardn_*.deb" | head -n1); \
 	if [ -n "$$DEB_FILE" ]; then \
 		mv "$$DEB_FILE" . && echo "Moved $$DEB_FILE to current directory"; \
 	else \
@@ -100,9 +100,9 @@ package: build
 	fi
 
 install-deb:
-	@DEB_FILE=$$(find . -name "hardn-xdr_*.deb" | head -n1); \
+	@DEB_FILE=$$(find . -name "hardn_*.deb" | head -n1); \
 	if [ -z "$$DEB_FILE" ]; then \
-		DEB_FILE=$$(find .. -name "hardn-xdr_*_$(ARCH).deb" | head -n1); \
+		DEB_FILE=$$(find .. -name "hardn_*_$(ARCH).deb" | head -n1); \
 	fi; \
 	if [ -n "$$DEB_FILE" ]; then \
 		sudo dpkg -i "$$DEB_FILE"; \
@@ -111,9 +111,9 @@ install-deb:
 	fi
 
 lint:
-	@DEB_FILE=$$(find . -name "hardn-xdr_*.deb" | head -n1); \
+	@DEB_FILE=$$(find . -name "hardn_*.deb" | head -n1); \
 	if [ -z "$$DEB_FILE" ]; then \
-		DEB_FILE=$$(find .. -name "hardn-xdr_*_$(ARCH).deb" | head -n1); \
+		DEB_FILE=$$(find .. -name "hardn_*_$(ARCH).deb" | head -n1); \
 	fi; \
 	if [ -n "$$DEB_FILE" ]; then \
 		lintian "$$DEB_FILE" || true; \
@@ -123,8 +123,8 @@ lint:
 
 clean:
 	cargo clean
-	rm -f hardn-xdr_*_*.deb
-	rm -f ../hardn-xdr_*_*.deb
+	rm -f hardn_*_*.deb
+	rm -f ../hardn_*_*.deb
 
 # Test the build
 test-build:

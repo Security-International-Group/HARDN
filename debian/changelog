@@ -1,14 +1,11 @@
-hardn-xdr (2.0.0-1) bookworm; urgency=medium
+hardn (1.0.0-1) bookworm; urgency=medium
 
-  * Initial Debian package release
-  * Refactored monolithic script into modular architecture
-  * Added proper CLI interface with argument parsing
-  * Implemented FHS-compliant directory structure
-  * Added systemd service integration
-  * Enhanced logging and error handling
-  * Added backup/restore functionality
-  * Improved STIG compliance implementation
-  * Added comprehensive documentation
-  * Created automated packaging and testing workflows
+  * Initial public demo release
+  * Core security hardening framework
+  * Modular architecture with tools support
+  * Included tools: Lynis, AIDE, Legion, Fail2ban, Suricata
+  * Rust-based CLI interface
+  * Debian packaging support
+  * Basic system hardening capabilities
 
- -- Tim <office@cybersynapse.ro>  Tue, 10 Jun 2025 20:12:21 +0000
+ -- Security International Group <contact@sig.com>  Sat, 21 Sep 2024 22:30:00 +0000

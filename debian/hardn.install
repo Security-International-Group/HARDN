@@ -1,0 +1,2 @@
+target/release/hardn                              usr/bin/
+usr/share/hardn/tools/*.sh                        usr/share/hardn/tools/

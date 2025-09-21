@@ -1,5 +1,0 @@
-target/release/hardn                              usr/bin/
-src/setup/modules/*.sh                            usr/share/hardn/modules/
-src/setup/tools/*.sh                              usr/share/hardn/tools/
-install.sh                                        usr/lib/hardn-xdr/
-man/hardn.1                                       usr/share/man/man1/

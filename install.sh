@@ -20,14 +20,14 @@ detect_source_dir() {
         return 0
     fi
 
-    # Check for HARDN-XDR subdirectory
-    if [[ -d "./HARDN-XDR" ]]; then
-        echo "./HARDN-XDR"
+    # Check for HARDN subdirectory
+    if [[ -d "./HARDN" ]]; then
+        echo "./HARDN"
         return 0
     fi
 
     # Check for common CI paths
-    for path in "/work" "/src" "../HARDN-XDR" "."; do
+    for path in "/work" "/src" "../HARDN" "."; do
         if [[ -f "$path/Cargo.toml" && -d "$path/src" ]]; then
             echo "$path"
             return 0
@@ -38,14 +38,14 @@ detect_source_dir() {
 }
 
 # -------- Config (after functions) --------
-HARDN_VERSION="2.2.0"
-SOURCE_DIR="$(detect_source_dir)" || error_exit "Could not locate HARDN-XDR source directory. Expected Cargo.toml and src/ directory."
+HARDN_VERSION="1.0.0"
+SOURCE_DIR="$(detect_source_dir)" || error_exit "Could not locate HARDN source directory. Expected Cargo.toml and src/ directory."
 
 PKG_NAME="hardn"    # Debian package name
 BIN_NAME="hardn"    # Installed CLI binary name
 
-LEGACY_MODULE_DIR="/usr/lib/hardn-xdr/src/setup/modules"
-LEGACY_TOOL_DIR="/usr/lib/hardn-xdr/src/setup/tools"
+LEGACY_MODULE_DIR="/usr/lib/hardn/src/setup/modules"
+LEGACY_TOOL_DIR="/usr/lib/hardn/src/setup/tools"
 
 RUNTIME_ROOT="/usr/share/hardn"
 MODULE_DIR="${RUNTIME_ROOT}/modules"
@@ -135,8 +135,8 @@ install_dependencies() {
              clamav-freshclam yara aide aide-common fail2ban rsyslog logrotate \
              needrestart apt-listchanges apt-listbugs unattended-upgrades \
              ca-certificates software-properties-common lsb-release gnupg openssh-server \
-             ufw systemd-timesyncd apparmor firejail libpam-pwquality libpam-google-authenticator \
-             libpam-tmpdir curl wget lsof psmisc procps git pkg-config libssl-dev \
+             ufw systemd-timesyncd apparmor firejail \
+             curl wget lsof psmisc procps git pkg-config libssl-dev \
              python3-setuptools whiptail
 }
 
@@ -343,9 +343,9 @@ Next steps:
    sudo HARDN_MODULE_PATH="${MODULE_DIR}:${LEGACY_MODULE_DIR}" ${BIN_NAME}
 
 Docs:
-https://github.com/Security-International-Group/HARDN-XDR
+https://github.com/Security-International-Group/HARDN
 
-WARNING: HARDN-XDR makes significant system changes.
+WARNING: HARDN makes significant system changes.
          Always test in a non-production environment first.
 
 EOF
@@ -353,8 +353,8 @@ EOF
 
 main() {
         echo
-        echo "HARDN-XDR v${HARDN_VERSION} Local Installer"
-        echo "==========================================="
+        echo "HARDN v${HARDN_VERSION} Demo Version Installer"
+        echo "=========================================="
 
         check_root
         check_system
