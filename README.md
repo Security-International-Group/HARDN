@@ -1,4 +1,4 @@
-# HARDN - Demo Version
+# HARDN 
 
 **Linux Security Hardening Framework**
 
