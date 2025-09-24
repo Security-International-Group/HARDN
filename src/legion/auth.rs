@@ -5,7 +5,6 @@ use std::process::Command;
 pub mod auth {
     use super::*;
 
-    #[allow(dead_code)]
     pub fn check_auth_failures() -> Result<(), Box<dyn std::error::Error>> {
         println!("  Checking authentication failures...");
 
@@ -36,7 +35,6 @@ pub mod auth {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn check_sudoers_changes() -> Result<(), Box<dyn std::error::Error>> {
         println!("  Checking sudoers configuration...");
 
@@ -64,7 +62,6 @@ pub mod auth {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn check_ssh_config() -> Result<(), Box<dyn std::error::Error>> {
         println!("  Checking SSH configuration...");
 
