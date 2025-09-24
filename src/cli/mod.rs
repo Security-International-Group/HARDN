@@ -6,7 +6,7 @@ pub mod args;  // Declare submodule for argument parsing
 
 
 pub fn run() {
-    let matches = App::new("HARDN-XDR")
+    let matches = App::new("HARDN")
         .version("1.0")
         .author("Your Name")
         .about("Extended Detection and Response Tool")

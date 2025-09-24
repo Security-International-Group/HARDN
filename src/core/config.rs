@@ -2,7 +2,7 @@
 pub const VERSION: &str = "2.2.0";
 
 /// Application name
-pub const APP_NAME: &str = "HARDN-XDR";
+pub const APP_NAME: &str = "HARDN";
 
 /// Default environment variable values
 pub const DEFAULT_LOG_DIR: &str = "/var/log/hardn";
@@ -17,7 +17,7 @@ pub const EXIT_USAGE: i32 = 2;
 /// These are searched in order, with the first match being used
 pub const DEFAULT_MODULE_DIRS: &[&str] = &[
     "/usr/share/hardn/modules",              // Production: installed via package
-    "/usr/lib/hardn-xdr/src/setup/modules",  // Development/legacy
+    "/usr/lib/hardn/src/setup/modules",  // Development/legacy
     "/usr/local/share/hardn/modules",        // Local installation
 ];
 
@@ -25,6 +25,6 @@ pub const DEFAULT_MODULE_DIRS: &[&str] = &[
 /// Tools are standalone security utilities that can be run independently
 pub const DEFAULT_TOOL_DIRS: &[&str] = &[
     "/usr/share/hardn/tools",                // Production: installed via package
-    "/usr/lib/hardn-xdr/src/setup/tools",    // Development/legacy
+    "/usr/lib/hardn/src/setup/tools",    // Development/legacy
     "/usr/local/share/hardn/tools",          // Local installation
 ];

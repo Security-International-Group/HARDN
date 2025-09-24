@@ -37,5 +37,9 @@ impl fmt::Display for LogLevel {
 
 /// Improved logging function with direct enum usage
 pub fn log_message(level: LogLevel, message: &str) {
-    println!("{} {}", level, message);
+    use std::io::{self, Write};
+    let mut stdout = io::stdout();
+    // Ignore errors when writing to stdout (handles broken pipes gracefully)
+    let _ = writeln!(stdout, "{} {}", level, message);
+    let _ = stdout.flush();
 }

@@ -9,95 +9,54 @@ ARCH ?= $(shell dpkg --print-architecture)
 PREFIX ?= /usr
 DESTDIR ?=
 
+# Rust environment
+HOME_DIR := $(shell echo $$HOME)
+RUST_BIN_DIR := $(HOME_DIR)/.cargo/bin
+RUST_ENV_FILE := $(HOME_DIR)/.cargo/env
+
+# Export Rust environment
+export PATH := $(RUST_BIN_DIR):$(PATH)
+SHELL := /bin/bash
+
 # Default target
 all: build
 
-build:
+# target: build the Debian package
+build: package
+	@echo "Build process completed successfully."
+
+# HARDN target: build and install HARDN as a service
+hardn:
+	@echo "Displaying HARDN banner..."
+	@rustc banner.rs -o banner_temp && ./banner_temp && rm banner_temp
+	@echo "Installing required dependencies..."
+	@sudo apt update
+	@sudo apt install -y python3-fastapi python3-uvicorn python3-psutil || (sudo apt --fix-broken install -y && sudo apt install -y python3-fastapi python3-uvicorn python3-psutil)
+	@echo "Proceeding with installation..."
+	@$(MAKE) install-deb
+	@echo "Enabling and starting HARDN API server..."
+	@sudo systemctl enable hardn-api.service || true
+	@sudo systemctl start hardn-api.service || true
+	@echo "Running all security modules..."
+	@sudo hardn --run-all-modules
+
+package:
+	@echo "Setting up Rust environment..."
+	@HOME=/home/tim . /home/tim/.cargo/env && rustup default stable
 	@echo "Building Rust binary (CLI only)..."
-	@# Handle Cargo.lock version compatibility issues
-	@if [ -f Cargo.lock ] && ! cargo check --locked >/dev/null 2>&1; then \
-		echo "[*] Regenerating Cargo.lock for current Cargo version..."; \
-		rm -f Cargo.lock; \
-	fi
 	cargo build --release
-
-run:
-	sudo $(BUILD_TARGET)
-
-install-binary:
-	mkdir -p $(BIN_INSTALL_PATH)
-	cp $(BUILD_TARGET) $(BIN_INSTALL_PATH)/$(BINARY_NAME)
-	chmod +x $(BIN_INSTALL_PATH)/$(BINARY_NAME)
-
-install:
-	# Binary
-	install -D -m 755 $(BUILD_TARGET) $(DESTDIR)$(PREFIX)/bin/$(BINARY_NAME)
-
-	# hardnapi CLI wrapper (if exists)
-	@if [ -f usr/bin/hardnapi ]; then \
-		install -D -m 755 usr/bin/hardnapi $(DESTDIR)$(PREFIX)/bin/hardnapi; \
-	fi
-
-	# Man page (if exists)
-	@if [ -f hardn.1 ]; then \
-		install -D -m 644 hardn.1 $(DESTDIR)$(PREFIX)/share/man/man1/hardn.1; \
-	fi
-
-	# Modules (if exists)
-	@if [ -d usr/share/hardn/modules ]; then \
-		install -d $(DESTDIR)$(PREFIX)/share/hardn/modules; \
-		install -m 644 usr/share/hardn/modules/*.sh $(DESTDIR)$(PREFIX)/share/hardn/modules/; \
-	fi
-
-	# Templates (if exists)
-	@if [ -d usr/share/hardn/templates ]; then \
-		install -d $(DESTDIR)$(PREFIX)/share/hardn/templates; \
-		install -m 644 usr/share/hardn/templates/* $(DESTDIR)$(PREFIX)/share/hardn/templates/; \
-	fi
-
-	# Backend API (if exists)
-	@if [ -f usr/share/hardn/hardnapi.py ]; then \
-		install -D -m 755 usr/share/hardn/hardnapi.py $(DESTDIR)$(PREFIX)/share/hardn/hardnapi.py; \
-	fi
-
-	# Tools (if exists)
-	@if [ -d usr/share/hardn/tools ]; then \
-		cp -a usr/share/hardn/tools $(DESTDIR)$(PREFIX)/share/hardn/; \
-		find $(DESTDIR)$(PREFIX)/share/hardn/tools -name "*.sh" -exec chmod 755 {} \;; \
-	fi
-
-	# Docs (if exists)
-	@if [ -f README.md ]; then \
-		install -d $(DESTDIR)$(PREFIX)/share/doc/hardn; \
-		install -m 644 README.md $(DESTDIR)$(PREFIX)/share/doc/hardn/; \
-	fi
-	@if [ -d docs ]; then \
-		install -d $(DESTDIR)$(PREFIX)/share/doc/hardn; \
-		install -m 644 docs/*.md $(DESTDIR)$(PREFIX)/share/doc/hardn/ 2>/dev/null || true; \
-	fi
-
-	# Systemd (if exists)
-	@if [ -d systemd ]; then \
-		install -d $(DESTDIR)/lib/systemd/system; \
-		install -m 644 systemd/*.service $(DESTDIR)/lib/systemd/system/; \
-	fi
-
-	# Config and runtime directories
-	install -d $(DESTDIR)/etc/hardn
-	install -d $(DESTDIR)/var/log/hardn
-	install -d $(DESTDIR)/var/lib/hardn/backups
-
-package: build
 	@echo "Building .deb package..."
-	dpkg-buildpackage -us -uc -b
+	dpkg-buildpackage -us -uc -b --no-pre-clean
 	# Move .deb file to current directory for easier CI access
 	@echo "Moving .deb file to current directory..."
-	@DEB_FILE=$$(find .. -name "hardn_*.deb" | head -n1); \
+	@DEB_FILE=$$(find .. -name "hardn_*.deb" -newer target/release/hardn 2>/dev/null | head -n1); \
 	if [ -n "$$DEB_FILE" ]; then \
-		mv "$$DEB_FILE" . && echo "Moved $$DEB_FILE to current directory"; \
+		cp "$$DEB_FILE" . && echo "Copied $$DEB_FILE to current directory"; \
 	else \
-		echo "Warning: No .deb file found to move"; \
+		echo "No new .deb file found in parent directory"; \
 	fi
+	@echo "Cleaning up build artifacts..."
+	$(MAKE) clean
 
 install-deb:
 	@DEB_FILE=$$(find . -name "hardn_*.deb" | head -n1); \
@@ -110,26 +69,8 @@ install-deb:
 		echo "No .deb file found"; exit 1; \
 	fi
 
-lint:
-	@DEB_FILE=$$(find . -name "hardn_*.deb" | head -n1); \
-	if [ -z "$$DEB_FILE" ]; then \
-		DEB_FILE=$$(find .. -name "hardn_*_$(ARCH).deb" | head -n1); \
-	fi; \
-	if [ -n "$$DEB_FILE" ]; then \
-		lintian "$$DEB_FILE" || true; \
-	else \
-		echo "No .deb file found for linting"; \
-	fi
-
 clean:
+	@echo "Setting up Rust environment for cleaning..."
+	@HOME=/home/tim . /home/tim/.cargo/env && rustup default stable
+	@echo "Cleaning build artifacts..."
 	cargo clean
-	rm -f hardn_*_*.deb
-	rm -f ../hardn_*_*.deb
-
-# Test the build
-test-build:
-	@echo "Testing Cargo build..."
-	cargo check
-	cargo build --release
-
-.PHONY: all build run install-binary install package install-deb lint clean test-build

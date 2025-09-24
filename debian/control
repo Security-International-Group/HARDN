@@ -7,8 +7,6 @@ Build-Depends: debhelper-compat (= 13),
         debhelper,
         lintian,
         fakeroot,
-        cargo,
-        rustc,
         python3-all,
         python3-setuptools,
         curl,
@@ -23,7 +21,7 @@ Vcs-Browser: https://github.com/Security-International-Group/HARDN
 
 Package: hardn
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, python3:any, adduser, curl, wget, lsof, psmisc, procps, git
+Depends: ${shlibs:Depends}, ${misc:Depends}, python3:any, adduser, curl, wget, lsof, psmisc, procps, git, python3-fastapi, python3-uvicorn, python3-requests, python3-psutil
 Recommends: whiptail
 Description: Linux Security Hardening Framework (Demo Version)
  HARDN is a comprehensive Linux security hardening toolkit demonstration.

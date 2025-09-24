@@ -1,4 +1,4 @@
-/// Prints the HARDN-XDR ASCII art banner
+/// Prints the HARDN ASCII art banner
 /// Displayed at the start of every program execution
 pub fn print_banner() {
     println!(

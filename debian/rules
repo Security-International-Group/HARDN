@@ -1,4 +1,8 @@
 #!/usr/bin/make -f
 
+# Override binary target to not use makefile buildsystem
+binary:
+	dh binary --buildsystem=none
+
 %:
 	dh $@ --buildsystem=makefile

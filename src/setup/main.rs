@@ -1,12 +1,12 @@
-//! # HARDN-XDR Main Entry Point
+//! # HARDN Main Entry Point
 //!
 //! ## Overview
-//! This is the main entry point for the HARDN-XDR security hardening and threat detection system.
+//! This is the main entry point for the HARDN security hardening and threat detection system.
 //! It serves as a CLI orchestrator that discovers and executes modular shell scripts for system
 //! hardening, security configuration, and threat detection on Debian-based Linux systems.
 //!
 //! ## Architecture
-//! HARDN-XDR follows a hybrid architecture:
+//! HARDN follows a hybrid architecture:
 //! - **Rust CLI** (this file): Provides the command-line interface, argument parsing, and module discovery
 //! - **Shell Modules**: Individual bash scripts that perform specific security operations
 //! - **Shell Tools**: Standalone security tools that can be executed independently
@@ -30,19 +30,19 @@
 //! ## Usage Patterns
 //! ```bash
 //! # Run all modules (full security hardening)
-//! sudo hardn-xdr
+//! sudo hardn
 //!
 //! # Run a specific module
-//! sudo hardn-xdr run-module hardening
+//! sudo hardn run-module hardening
 //!
 //! # Run a specific security tool
-//! sudo hardn-xdr run-tool lynis
+//! sudo hardn run-tool lynis
 //!
 //! # List available modules
-//! sudo hardn-xdr --list-modules
+//! sudo hardn --list-modules
 //!
 //! # Show help
-//! sudo hardn-xdr --help
+//! sudo hardn --help
 //! ```
 //!
 //! ## Environment Variables
@@ -50,13 +50,13 @@
 //! - `HARDN_MODULES_DIR`: Primary module directory path
 //! - `HARDN_LOG_DIR`: Directory for log files (/var/log/hardn)
 //! - `HARDN_LIB_DIR`: Directory for data/backups (/var/lib/hardn)
-//! - `HARDN_VERSION`: Current version of HARDN-XDR
+//! - `HARDN_VERSION`: Current version of HARDN
 //!
 //! ## Path Resolution
 //! The system searches for modules/tools in the following order:
 //! 1. Custom paths from environment variables (HARDN_MODULE_PATH, HARDN_TOOL_PATH)
 //! 2. Production path: /usr/share/hardn/{modules,tools}
-//! 3. Development path: /usr/lib/hardn-xdr/src/setup/{modules,tools}
+//! 3. Development path: /usr/lib/hardn/src/setup/{modules,tools}
 //! 4. Local install: /usr/local/share/hardn/{modules,tools}
 //!
 //! ## Module Requirements
@@ -105,7 +105,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const VERSION: &str = "2.2.0";
 
 /// Application name
-const APP_NAME: &str = "HARDN-XDR";
+const APP_NAME: &str = "HARDN";
 
 /// Default environment variable values
 const DEFAULT_LOG_DIR: &str = "/var/log/hardn";
@@ -161,7 +161,7 @@ type HardnResult<T> = Result<T, HardnError>;
 /// Remove legacy paths once deployment strategy is finalized
 const DEFAULT_MODULE_DIRS: &[&str] = &[
     "/usr/share/hardn/modules",              // Production: installed via package
-    "/usr/lib/hardn-xdr/src/setup/modules",  // Development/legacy - TODO: remove
+    "/usr/lib/hardn/src/setup/modules",  // Development/legacy - TODO: remove
     "/usr/local/share/hardn/modules",        // Local installation
 ];
 
@@ -169,13 +169,13 @@ const DEFAULT_MODULE_DIRS: &[&str] = &[
 /// Tools are standalone security utilities that can be run independently
 const DEFAULT_TOOL_DIRS: &[&str] = &[
     "/usr/share/hardn/tools",                // Production: installed via package
-    "/usr/lib/hardn-xdr/src/setup/tools",    // Development/legacy - TODO: remove
+    "/usr/lib/hardn/src/setup/tools",    // Development/legacy - TODO: remove
     "/usr/local/share/hardn/tools",          // Local installation
 ];
 
 /* ---------- Banner and Help ---------- */
 
-/// Prints the HARDN-XDR ASCII art banner
+/// Prints the HARDN ASCII art banner
 /// Displayed at the start of every program execution
 fn print_banner() {
     println!(
@@ -263,7 +263,7 @@ fn print_tools() {
 /// Generate and display comprehensive security report
 fn generate_security_report() {
     println!("\n╔═══════════════════════════════════════════════════════════════════════════════╗");
-    println!("║                     HARDN-XDR COMPREHENSIVE SECURITY REPORT                    ║");
+    println!("║                     HARDN COMPREHENSIVE SECURITY REPORT                    ║");
     println!("╚═══════════════════════════════════════════════════════════════════════════════╝\n");
     
     // Track scoring components
@@ -326,7 +326,7 @@ fn generate_security_report() {
     }
     
     // Check HARDN services
-    let hardn_services = vec!["hardn", "hardn-xdr", "hardn-monitor"];
+    let hardn_services = vec!["hardn", "hardn", "hardn-monitor"];
     let mut active_services = 0;
     for service in &hardn_services {
         let status = check_service_status(service);
@@ -471,12 +471,12 @@ fn generate_security_report() {
     
     if tool_score < 30.0 {
         println!("  • Enable more security tools to improve protection");
-        println!("    Run: sudo hardn-xdr run-tool <tool-name>");
+        println!("    Run: sudo hardn run-tool <tool-name>");
     }
     
     if module_score < 15.0 {
         println!("  • Execute HARDN modules for system hardening");
-        println!("    Run: sudo hardn-xdr run-module hardening");
+        println!("    Run: sudo hardn run-module hardening");
     }
     
     if lynis_score < 30.0 {
@@ -765,7 +765,7 @@ fn sandbox_on() -> i32 {
         println!("   - All network interfaces are down (except loopback)");
         println!("   - All network ports are closed");
         println!("   - No internet connectivity");
-        println!("\nTo restore network access, run: sudo hardn-xdr --sandbox-off");
+        println!("\nTo restore network access, run: sudo hardn --sandbox-off");
         EXIT_SUCCESS
     } else {
         log_message(LogLevel::Error, "Sandbox mode activation had some failures");
@@ -1037,7 +1037,7 @@ Version: {}
 Developed by: Security International Group (SIG) Team
 License: MIT
 
-HARDN-XDR is a comprehensive security hardening and threat detection system
+HARDN is a comprehensive security hardening and threat detection system
 designed for Debian-based Linux distributions. It provides:
 
   • STIG-compliant security hardening
@@ -1049,7 +1049,7 @@ designed for Debian-based Linux distributions. It provides:
   • Vulnerability scanning and mitigation
   • Endpoint protection and monitoring
 
-For more information, visit: https://github.com/Security-International-Group/HARDN-XDR
+For more information, visit: https://github.com/Security-International-Group/HARDN
 "#,
         APP_NAME, VERSION
     );
@@ -1215,7 +1215,7 @@ fn check_hardn_processes() -> Vec<String> {
     let mut processes = Vec::new();
     
     for line in ps_output.lines() {
-        if line.contains("hardn") && !line.contains("grep") && !line.contains("hardn-xdr status") {
+        if line.contains("hardn") && !line.contains("grep") && !line.contains("hardn status") {
             // Extract relevant info from ps output
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 11 {
@@ -1240,7 +1240,7 @@ fn check_hardn_processes() -> Vec<String> {
 fn manage_service(action: &str) -> i32 {
     // List of manageable HARDN services (in dependency order)
     // Note: hardn-monitor is optional and may not be present
-    let services = vec!["hardn", "hardn-xdr"];
+    let services = vec!["hardn", "hardn"];
     let optional_services = vec!["hardn-monitor"];
     
     match action {
@@ -1297,7 +1297,7 @@ fn manage_service(action: &str) -> i32 {
         _ => {
             log_message(LogLevel::Error, &format!("Unknown service action: {}", action));
             println!("\nValid actions: enable, disable, start, stop, restart");
-            println!("Example: sudo hardn-xdr service enable");
+            println!("Example: sudo hardn service enable");
             EXIT_USAGE
         }
     }
@@ -1463,17 +1463,17 @@ fn restart_systemd_service(service_name: &str, optional: bool) {
     }
 }
 
-/// Display comprehensive status of HARDN-XDR
+/// Display comprehensive status of HARDN
 fn show_status() {
     println!("\n═══════════════════════════════════════════════════════════════════════════════");
-    println!("                          HARDN-XDR SYSTEM STATUS");
+    println!("                          HARDN SYSTEM STATUS");
     println!("═══════════════════════════════════════════════════════════════════════════════\n");
     
     // System Information
     let (version, codename) = detect_debian_version();
     println!("▶ SYSTEM INFORMATION:");
     println!("  OS: Debian {} ({})", version, codename);
-    println!("  HARDN-XDR Version: {}", VERSION);
+    println!("  HARDN Version: {}", VERSION);
     // Get current timestamp
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1486,7 +1486,7 @@ fn show_status() {
     
     // Check HARDN Services
     println!("▶ HARDN SERVICES:");
-    let hardn_services = vec!["hardn-monitor", "hardn-xdr", "hardn"];
+    let hardn_services = vec!["hardn-monitor", "hardn", "hardn"];
     let mut any_active = false;
     
     for service_name in &hardn_services {
@@ -1592,14 +1592,14 @@ fn print_help() {
 {} - Linux Security Hardening and Extended Detection & Response Toolkit
 A comprehensive STIG-compliant security hardening system for Debian-based systems.
 
-Usage: sudo hardn-xdr [OPTIONS] [COMMAND]
+Usage: sudo hardn [OPTIONS] [COMMAND]
 
 ═══════════════════════════════════════════════════════════════════════════════
 
 ▶ GENERAL OPTIONS:
-  -a, --about          Show information about hardn-xdr
+  -a, --about          Show information about hardn
   -h, --help           Show help information
-  -s, --status         Show current status of HARDN-XDR services and tools
+  -s, --status         Show current status of HARDN services and tools
   --version            Show version
   --list-modules       List all available modules
   --list-tools         List all available tools
@@ -1623,7 +1623,7 @@ Usage: sudo hardn-xdr [OPTIONS] [COMMAND]
   --enable-selinux     ⚠️  Enable SELinux (DISABLES AppArmor, REQUIRES REBOOT)
 
 ▶ STANDARD COMMANDS:
-  status               Show current status of HARDN-XDR services and tools
+  status               Show current status of HARDN services and tools
   service <action>     Manage HARDN services (enable/disable/start/stop/restart)
   run-module <name>    Run a specific module by name
   run-tool <name>      Run a specific tool by name
@@ -1673,11 +1673,11 @@ Usage: sudo hardn-xdr [OPTIONS] [COMMAND]
 
   Default Search Paths:
     Modules: /usr/share/hardn/modules,
-             /usr/lib/hardn-xdr/src/setup/modules,
+             /usr/lib/hardn/src/setup/modules,
              /usr/local/share/hardn/modules
     
     Tools:   /usr/share/hardn/tools,
-             /usr/lib/hardn-xdr/src/setup/tools,
+             /usr/lib/hardn/src/setup/tools,
              /usr/local/share/hardn/tools
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -2072,7 +2072,7 @@ fn handle_run_all_modules(module_dirs: &[PathBuf]) -> i32 {
 
 /* ---------- Main Entry Point ---------- */
 
-/// Main entry point for HARDN-XDR
+/// Main entry point for HARDN
 fn main() {
 
     let args: Vec<String> = env::args().collect();

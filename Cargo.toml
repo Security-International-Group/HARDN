@@ -11,8 +11,29 @@ keywords = ["security", "hardening", "debian", "linux", "STIG"]
 categories = ["command-line-utilities", "os"]
 
 [dependencies]
-# Add any dependencies you need
-# colored = "2.0"  # Uncomment to use the colored crate
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+log = "0.4"
+env_logger = "0.10"
+colored = "2.0"  
+libc = "0.2.175"
+glob = "0.3.3"
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1.0", features = ["full"] }
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+linfa = "0.6"
+linfa-clustering = "0.6"
+ndarray = "0.15"
+smartcore = "0.3"
+csv = "1.1"
+uuid = { version = "1.0", features = ["v4"] }
+regex = "1.5"
+futures = "0.3"
+async-trait = "0.1"
+parking_lot = "0.12"
+dashmap = "5.4"
+lru = "0.9"
 
 [profile.release]
 opt-level = "z"    # Optimize for size

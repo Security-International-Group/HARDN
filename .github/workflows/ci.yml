@@ -43,25 +43,25 @@ jobs:
 
       - name: Verify binary exists
         run: |
-          test -x target/release/hardn-xdr || { echo "hardn-xdr not built"; exit 1; }
-          file target/release/hardn-xdr
-          ./target/release/hardn-xdr --version || true
-          ./target/release/hardn-xdr --help | head -50 || true
+          test -x target/release/hardn || { echo "hardn not built"; exit 1; }
+          file target/release/hardn
+          ./target/release/hardn --version || true
+          ./target/release/hardn --help | head -50 || true
 
       - name: Install built binary system-wide and test sudo
         run: |
-          sudo install -m 0755 target/release/hardn-xdr /usr/local/bin/hardn-xdr
-          which hardn-xdr
-          hardn-xdr --version
+          sudo install -m 0755 target/release/hardn /usr/local/bin/hardn
+          which hardn
+          hardn --version
           sudo -n true || echo "[INFO] sudo requires tty/pass; attempting with prompt"
-          sudo hardn-xdr --help | head -30 || true
+          sudo hardn --help | head -30 || true
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: hardn-xdr-release-bin
+          name: hardn-release-bin
           path: |
-            target/release/hardn-xdr
+            target/release/hardn
 
   deb_pkg_build:
     name: Build Debian Packages 
@@ -107,14 +107,14 @@ jobs:
           DEB=$(ls target/${{ matrix.rust_target }}/debian/*.deb | head -n1)
           test -f "$DEB" || { echo "No .deb produced"; exit 1; }
           VER=$(dpkg-deb -f "$DEB" Version | sed 's/~/-/g')
-          OUT="dist/hardn-xdr_${VER}_${{ matrix.deb_arch }}.deb"
+          OUT="dist/hardn_${VER}_${{ matrix.deb_arch }}.deb"
           cp -f "$DEB" "$OUT"
           echo "Built: $OUT"
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hardn-xdr-debs-${{ matrix.arch }}
+          name: hardn-debs-${{ matrix.arch }}
           path: dist/*.deb
 
   deb_pkg_verify:
@@ -130,7 +130,7 @@ jobs:
       - name: Download .deb
         uses: actions/download-artifact@v4
         with:
-          name: hardn-xdr-debs-${{ matrix.arch }}
+          name: hardn-debs-${{ matrix.arch }}
           path: debs
 
       - name: Show files
@@ -147,9 +147,9 @@ jobs:
           echo "Installing $DEB"
           sudo dpkg -i "$DEB" || true
           sudo apt-get -f install -y
-          hardn-xdr --version || { echo "Binary not available"; exit 1; }
-          hardn-xdr --help | head -40 || true
-          sudo hardn-xdr --help | head -20 || true
+          hardn --version || { echo "Binary not available"; exit 1; }
+          hardn --help | head -40 || true
+          sudo hardn --help | head -20 || true
 
   tag_and_release:
     name: Tag + Release 
@@ -199,13 +199,13 @@ jobs:
           set -euo pipefail
           tag="${{ steps.bump.outputs.new_tag }}"
           repo="${{ github.repository }}"
-          AMD=$(ls release_assets/**/hardn-xdr_*_amd64.deb | head -n1 || true)
+          AMD=$(ls release_assets/**/hardn_*_amd64.deb | head -n1 || true)
           amd_name=$(basename "$AMD")
           amd_url="https://github.com/${repo}/releases/download/${tag}/${amd_name}"
 
-          echo '![HARDN-XDR Logo](docs/assets/IMG_1233.jpeg)' > RELEASE_NOTES.md
+          echo '![HARDN Logo](docs/assets/IMG_1233.jpeg)' > RELEASE_NOTES.md
           echo '' >> RELEASE_NOTES.md
-          echo '# HARDN-XDR — Release ${{ steps.bump.outputs.new_tag }}' >> RELEASE_NOTES.md
+          echo '# HARDN — Release ${{ steps.bump.outputs.new_tag }}' >> RELEASE_NOTES.md
           echo '' >> RELEASE_NOTES.md
           echo 'This release provides signed Debian packages for **amd64** and **arm64**.' >> RELEASE_NOTES.md
           echo '' >> RELEASE_NOTES.md
@@ -216,11 +216,11 @@ jobs:
           echo '**Available Downloads:**' >> RELEASE_NOTES.md
           echo '' >> RELEASE_NOTES.md
           
-          for deb_file in release_assets/**/hardn-xdr_*_*.deb; do
+          for deb_file in release_assets/**/hardn_*_*.deb; do
             if [ -f "$deb_file" ]; then
               deb_name=$(basename "$deb_file")
               deb_url="https://github.com/${repo}/releases/download/${tag}/${deb_name}"
-              arch=$(echo "$deb_name" | sed -n 's/.*_\([a-z0-9]*\)\.deb/\1/p')
+              arch=$(echo "$deb_name" | sed 's/hardn_\(.*\)\.deb/\1/')
               echo "**${arch}:** [${deb_name}](${deb_url})" >> RELEASE_NOTES.md
             fi
           done
@@ -229,30 +229,39 @@ jobs:
           echo '### Installation (amd64):' >> RELEASE_NOTES.md
           echo '' >> RELEASE_NOTES.md
           echo '```bash' >> RELEASE_NOTES.md
-          echo '# Download and verify' >> RELEASE_NOTES.md
-          echo 'wget -O hardn-xdr_amd64.deb "https://github.com/${repo}/releases/download/${tag}/hardn-xdr_${VER}_amd64.deb"' >> RELEASE_NOTES.md
-          echo 'wget -O SHA256SUMS "https://github.com/${repo}/releases/download/${tag}/SHA256SUMS"' >> RELEASE_NOTES.md
-          echo 'sha256sum -c SHA256SUMS --ignore-missing' >> RELEASE_NOTES.md
+          echo '# Download' >> RELEASE_NOTES.md
+          echo 'wget -O hardn_amd64.deb "https://github.com/${repo}/releases/download/${tag}/hardn_amd64.deb"' >> RELEASE_NOTES.md
           echo '' >> RELEASE_NOTES.md
           echo '# Install' >> RELEASE_NOTES.md
-          echo 'sudo dpkg -i hardn-xdr_amd64.deb || sudo apt-get -f install -y' >> RELEASE_NOTES.md
-          echo 'hardn-xdr --version' >> RELEASE_NOTES.md
-          echo 'sudo hardn-xdr --help | head -30' >> RELEASE_NOTES.md
+          echo 'sudo dpkg -i hardn_amd64.deb || sudo apt-get -f install -y' >> RELEASE_NOTES.md
+          echo 'hardn --version' >> RELEASE_NOTES.md
+          echo 'hardn --help' >> RELEASE_NOTES.md
           echo '```' >> RELEASE_NOTES.md
           echo '' >> RELEASE_NOTES.md
           echo '## Files' >> RELEASE_NOTES.md
-          for deb_file in release_assets/**/hardn-xdr_*_*.deb; do
+          for deb_file in release_assets/**/hardn_*_*.deb; do
             if [ -f "$deb_file" ]; then
               deb_name=$(basename "$deb_file")
               echo "- **${deb_name}** - Debian package" >> RELEASE_NOTES.md
             fi
           done
-          echo "- **SHA256SUMS** - Checksum file for verification" >> RELEASE_NOTES.md
           echo "- **install.sh** - Automated installation script" >> RELEASE_NOTES.md
 
           # Upload release notes as an artifact
           echo "RELEASE_NOTES.md prepared for tag $tag"
           ls -lah RELEASE_NOTES.md
+
+      - name: Rename .deb files for release (remove version numbers)
+        run: |
+          for deb_file in release_assets/**/hardn_*_*.deb; do
+            if [ -f "$deb_file" ]; then
+              dir=$(dirname "$deb_file")
+              arch=$(echo "$deb_file" | sed -n 's/.*_\([a-z0-9]*\)\.deb/\1/p')
+              new_name="${dir}/hardn_${arch}.deb"
+              mv "$deb_file" "$new_name"
+              echo "Renamed $deb_file to $new_name"
+            fi
+          done
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -260,7 +269,7 @@ jobs:
           name: Release ${{ steps.bump.outputs.new_tag }}
           body_path: RELEASE_NOTES.md
           files: |
-            release_assets/**/hardn-xdr_*_*.deb
+            release_assets/**/hardn_*_*.deb
           draft: false
           prerelease: false
         env:

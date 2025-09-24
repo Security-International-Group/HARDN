@@ -7,7 +7,7 @@ mod execution;
 mod services;
 mod security;
 mod utils;
-mod tools;
+mod legion;
 
 use std::env;
 use std::fs;
@@ -97,7 +97,7 @@ fn print_tools() {
 /// Generate and display comprehensive security report
 fn generate_security_report() {
     println!("\n╔═══════════════════════════════════════════════════════════════════════════════╗");
-    println!("║                     HARDN-XDR COMPREHENSIVE SECURITY REPORT                     ║");
+    println!("║                     HARDN COMPREHENSIVE SECURITY REPORT                     ║");
     println!("╚═════════════════════════════════════════════════════════════════════════════════╝\n");
     
     // Track scoring components
@@ -160,7 +160,7 @@ fn generate_security_report() {
     }
     
     // Check HARDN services
-    let hardn_services = vec!["hardn", "hardn-xdr", "hardn-monitor"];
+    let hardn_services = vec!["hardn", "hardn", "hardn-monitor"];
     let mut active_services = 0;
     for service in &hardn_services {
         let status = check_service_status(service);
@@ -311,12 +311,12 @@ fn generate_security_report() {
     
     if tool_score < 30.0 {
         println!("  • Enable more security tools to improve protection");
-        println!("    Run: sudo hardn-xdr run-tool <tool-name>");
+        println!("    Run: sudo hardn run-tool <tool-name>");
     }
     
     if module_score < 15.0 {
         println!("  • Execute HARDN modules for system hardening");
-        println!("    Run: sudo hardn-xdr run-module hardening");
+        println!("    Run: sudo hardn run-module hardening");
     }
     
     if lynis_score < 30.0 {
@@ -453,7 +453,6 @@ fn run_all_tools() -> i32 {
 /// Run all modules and tools
 /// IMPORTANT: This function runs ONLY the .sh scripts in modules and tools directories
 /// Sandbox commands (--sandbox-on/--sandbox-off) are NEVER included in this batch operation
-/// They must be run independently for safety reasons
 fn run_everything() -> i32 {
     println!("\n╔═══════════════════════════════════════╗");
     println!("║     RUNNING ALL MODULES AND TOOLS       ║");
@@ -605,7 +604,7 @@ fn sandbox_on() -> i32 {
         println!("   - All network interfaces are down (except loopback)");
         println!("   - All network ports are closed");
         println!("   - No internet connectivity");
-        println!("\nTo restore network access, run: sudo hardn-xdr --sandbox-off");
+        println!("\nTo restore network access, run: sudo hardn --sandbox-off");
         EXIT_SUCCESS
     } else {
         log_message(LogLevel::Error, "Sandbox mode activation had some failures");
@@ -619,7 +618,7 @@ fn sandbox_on() -> i32 {
 /// WARNING: This will DISABLE AppArmor and REQUIRE a system reboot
 fn enable_selinux() -> i32 {
     println!("\n╔══════════════════════════════════════╗");
-    println!("║           ⚠️  DANGER ZONE ⚠️            ║");
+    println!("║           ⚠️  DANGER ZONE ⚠️           ║");
     println!("║         SELINUX ACTIVATION             ║");
     println!("╚════════════════════════════════════════╝\n");
     
@@ -863,7 +862,7 @@ Version: {}
 Developed by: Security International Group (SIG) Team
 License: MIT
 
-HARDN-XDR is a comprehensive security hardening and threat detection system
+HARDN is a comprehensive security hardening and threat detection system
 designed for Debian-based Linux distributions. It provides:
 
   • STIG-compliant security hardening
@@ -875,7 +874,7 @@ designed for Debian-based Linux distributions. It provides:
   • Vulnerability scanning and mitigation
   • Endpoint protection and monitoring
 
-For more information, visit: https://github.com/Security-International-Group/HARDN-XDR
+For more information, visit: https://github.com/Security-International-Group/HARDN
 "#,
         APP_NAME, VERSION
     );
@@ -1025,7 +1024,7 @@ fn check_hardn_processes() -> Vec<String> {
     let mut processes = Vec::new();
     
     for line in ps_output.lines() {
-        if line.contains("hardn") && !line.contains("grep") && !line.contains("hardn-xdr status") {
+        if line.contains("hardn") && !line.contains("grep") && !line.contains("hardn status") {
             // Extract relevant info from ps output
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 11 {
@@ -1050,7 +1049,7 @@ fn check_hardn_processes() -> Vec<String> {
 fn manage_service(action: &str) -> i32 {
     // List of manageable HARDN services (in dependency order)
     // Note: hardn-monitor is optional and may not be present
-    let services = vec!["hardn", "hardn-xdr"];
+    let services = vec!["hardn", "hardn"];
     let optional_services = vec!["hardn-monitor"];
     
     match action {
@@ -1107,7 +1106,7 @@ fn manage_service(action: &str) -> i32 {
         _ => {
             log_message(LogLevel::Error, &format!("Unknown service action: {}", action));
             println!("\nValid actions: enable, disable, start, stop, restart");
-            println!("Example: sudo hardn-xdr service enable");
+            println!("Example: sudo hardn service enable");
             EXIT_USAGE
         }
     }
@@ -1273,17 +1272,17 @@ fn restart_systemd_service(service_name: &str, optional: bool) {
     }
 }
 
-/// Display comprehensive status of HARDN-XDR
+/// Display comprehensive status of HARDN
 fn show_status() {
     println!("\n═══════════════════════════════════════════════════════════════════════════════");
-    println!("                          HARDN-XDR SYSTEM STATUS");
+    println!("                          HARDN SYSTEM STATUS");
     println!("═════════════════════════════════════════════════════════════════════════════════\n");
     
     // System Information
     let (version, codename) = detect_debian_version();
-    println!("▶ SYSTEM INFORMATION:");
+    println!("SYSTEM INFORMATION:");
     println!("  OS: Debian {} ({})", version, codename);
-    println!("  HARDN-XDR Version: {}", VERSION);
+    println!("  HARDN Version: {}", VERSION);
     // Get current timestamp
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1295,13 +1294,13 @@ fn show_status() {
     println!();
     
     // Check HARDN Services
-    println!("▶ HARDN SERVICES:");
-    let hardn_services = vec!["hardn-monitor", "hardn-xdr", "hardn"];
+    println!("HARDN SERVICES:");
+    let hardn_services = vec!["hardn", "legion-daemon"];
     let mut any_active = false;
     
     for service_name in &hardn_services {
         let status = check_service_status(service_name);
-        let status_icon = if status.active { "✓" } else { "✗" };
+        let status_icon = if status.active { "[OK]" } else { "[DOWN]" };
         let status_color = if status.active { "\x1b[32m" } else { "\x1b[31m" };
         let enabled_text = if status.enabled { "enabled" } else { "disabled" };
         
@@ -1320,12 +1319,12 @@ fn show_status() {
     }
     
     if !any_active {
-        println!("  ⚠ No HARDN services are currently active");
+        println!("  [WARNING] No HARDN services are currently active");
     }
     println!();
     
     // Check Security Tools
-    println!("▶ SECURITY TOOLS STATUS:");
+    println!("SECURITY TOOLS STATUS:");
     let tools = get_security_tools();
     let mut active_tools = 0;
     
@@ -1333,7 +1332,7 @@ fn show_status() {
         let status = check_service_status(tool.service_name);
         if status.active {
             active_tools += 1;
-            print!("  \x1b[32m✓ {:<12}\x1b[0m", tool.name);
+            print!("  \x1b[32m[OK] {:<12}\x1b[0m", tool.name);
             if let Some(pid) = status.pid {
                 print!(" [PID: {}]", pid);
             }
@@ -1342,14 +1341,14 @@ fn show_status() {
     }
     
     if active_tools == 0 {
-        println!("  ⚠ No security tools are currently active");
+        println!("  [WARNING] No security tools are currently active");
     } else {
         println!("\n  Total active security tools: {}/{}", active_tools, tools.len());
     }
     println!();
     
     // Check Running HARDN Processes
-    println!("▶ RUNNING HARDN PROCESSES:");
+    println!("RUNNING HARDN PROCESSES:");
     let processes = check_hardn_processes();
     
     if processes.is_empty() {
@@ -1362,7 +1361,7 @@ fn show_status() {
     println!();
     
     // Check Recent HARDN Logs
-    println!("▶ RECENT ACTIVITY:");
+    println!("RECENT ACTIVITY:");
     if Path::new(DEFAULT_LOG_DIR).exists() {
         let log_output = Command::new("tail")
             .args(&["-n", "5", &format!("{}/hardn.log", DEFAULT_LOG_DIR)])
@@ -1402,42 +1401,43 @@ fn print_help() {
 {} - Linux Security Hardening and Extended Detection & Response Toolkit
 A comprehensive STIG-compliant security hardening system for Debian-based systems.
 
-Usage: sudo hardn-xdr [OPTIONS] [COMMAND]
+Usage: sudo hardn [OPTIONS] [COMMAND]
 
 ═══════════════════════════════════════════════════════════════════════════════
 
-▶ GENERAL OPTIONS:
-  -a, --about          Show information about hardn-xdr
+GENERAL OPTIONS:
+  -a, --about          Show information about hardn
   -h, --help           Show help information
-  -s, --status         Show current status of HARDN-XDR services and tools
+  -s, --status         Show current status of HARDN services and tools
   --version            Show version
   --list-modules       List all available modules
   --list-tools         List all available tools
   --security-report    Generate comprehensive security score report
 
-▶ QUICK SERVICE COMMANDS:
+QUICK SERVICE COMMANDS:
   --service-enable     Enable HARDN services (shortcut for: service enable)
   --service-start      Start HARDN services (shortcut for: service start)
   --service-status     Show service status (shortcut for: --status)
 
-▶ EXECUTION COMMANDS:
+EXECUTION COMMANDS:
   --run-all-modules    Run all available modules
   --run-all-tools      Run all available tools  
   --run-everything     Run all modules and tools
 
-▶ SANDBOX MODE:
+SANDBOX MODE:
   --sandbox-on         Enable sandbox mode (disconnect internet, close all ports)
   --sandbox-off        Disable sandbox mode (restore network configuration)
 
-▶ DANGEROUS OPERATIONS (Manual Only - Never in batch operations):
+DANGEROUS OPERATIONS (Manual Only - Never in batch operations):
   --enable-selinux     Enable SELinux (DISABLES AppArmor, REQUIRES REBOOT)
 
-▶ STANDARD COMMANDS:
-  status               Show current status of HARDN-XDR services and tools
+STANDARD COMMANDS:
+  status               Show current status of HARDN services and tools
   service <action>     Manage HARDN services (enable/disable/start/stop/restart)
   run-module <name>    Run a specific module by name
   run-tool <name>      Run a specific tool by name
-  (no command)         Run full module suite (auto-discovers *.sh)
+  legion <options>     Run LEGION security monitoring and anomaly detection
+  (no command)         Show this help menu
 
 ═══════════════════════════════════════════════════════════════════════════════
 "#,
@@ -1445,19 +1445,19 @@ Usage: sudo hardn-xdr [OPTIONS] [COMMAND]
     );
     
     // Print available modules
-    println!("▶ AVAILABLE MODULES ({} found):", modules.len());
+    println!("AVAILABLE MODULES ({} found):", modules.len());
     if modules.is_empty() {
         println!("    (no modules found)");
     } else {
         for module in &modules {
-            println!("    • {}", module);
+            println!("    - {}", module);
         }
     }
     
     println!();
     
     // Print available tools with categorization
-    println!("▶ AVAILABLE TOOLS ({} found):", tools.len());
+    println!("AVAILABLE TOOLS ({} found):", tools.len());
     if tools.is_empty() {
         println!("    (no tools found)");
     } else {
@@ -1467,7 +1467,7 @@ Usage: sudo hardn-xdr [OPTIONS] [COMMAND]
         for (category, cat_tools) in categorized {
             println!("\n  {}:", category);
             for tool in cat_tools {
-                println!("    • {}", tool);
+                println!("    - {}", tool);
             }
         }
     }
@@ -1476,18 +1476,18 @@ Usage: sudo hardn-xdr [OPTIONS] [COMMAND]
         r#"
 ═══════════════════════════════════════════════════════════════════════════════
 
-▶ PATH CONFIGURATION:
+PATH CONFIGURATION:
   Environment Variables (colon-separated):
     HARDN_MODULE_PATH=/path1:/path2   # Custom module search paths
     HARDN_TOOL_PATH=/pathA:/pathB     # Custom tool search paths
 
   Default Search Paths:
     Modules: /usr/share/hardn/modules,
-             /usr/lib/hardn-xdr/src/setup/modules,
+             /usr/lib/hardn/src/setup/modules,
              /usr/local/share/hardn/modules
     
     Tools:   /usr/share/hardn/tools,
-             /usr/lib/hardn-xdr/src/setup/tools,
+             /usr/lib/hardn/src/setup/tools,
              /usr/local/share/hardn/tools
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -1575,61 +1575,37 @@ fn handle_run_tool(tool_dirs: &[PathBuf], tool_name: &str, module_dirs: &[PathBu
     }
 }
 
-/// Handles the default behavior when no command is specified
-/// Returns exit code based on overall success
-fn handle_run_all_modules(module_dirs: &[PathBuf]) -> i32 {
-    let (version, codename) = detect_debian_version();
-    log_message(LogLevel::Pass, &format!("Detected: Debian {} ({})", version, codename));
-    log_message(LogLevel::Info, "No arguments provided. Discovering and running all modules...");
-
-    let modules = match list_modules(module_dirs) {
-        Ok(mods) => mods,
-        Err(e) => {
-            log_message(LogLevel::Error, &format!("Failed to list modules: {}", e));
-            return EXIT_FAILURE;
-        }
+/// Run the LEGION monitoring tool
+fn run_legion(args: &[String]) -> i32 {
+    // Pass the remaining arguments to the legion module
+    // Skip "hardn" and "legion" from the args
+    let legion_args = if args.len() > 2 {
+        args[2..].to_vec()
+    } else {
+        vec![]
     };
 
-    if modules.is_empty() {
-        log_message(
-            LogLevel::Warning,
-            &format!("No modules found. Checked: {}", join_paths(module_dirs)),
-        );
-        return EXIT_SUCCESS; // Not an error if no modules exist
-    }
+    // Set up environment for legion
+    std::env::set_var("RUST_BACKTRACE", "1");
 
-    let mut failed = 0;
-    let mut succeeded = 0;
-    
-    for module_name in &modules {
-        if let Some(path) = find_script(module_dirs, module_name) {
-            match run_script(&path, "module", module_dirs) {
-                Ok(status) if status.success() => succeeded += 1,
-                Ok(_) => failed += 1,
-                Err(e) => {
-                    log_message(LogLevel::Error, &format!("Failed to run {}: {}", module_name, e));
-                    failed += 1;
-                }
+    // Create a tokio runtime for async legion execution
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    // Call the legion module
+    rt.block_on(async {
+        match crate::legion::legion::run_with_args(&legion_args).await {
+            Ok(()) => EXIT_SUCCESS,
+            Err(e) => {
+                log_message(LogLevel::Error, &format!("LEGION failed: {}", e));
+                EXIT_FAILURE
             }
         }
-    }
-
-    log_message(
-        LogLevel::Info, 
-        &format!("Completed: {} succeeded, {} failed out of {} modules", 
-                 succeeded, failed, modules.len())
-    );
-    
-    if failed > 0 {
-        EXIT_FAILURE
-    } else {
-        EXIT_SUCCESS
-    }
+    })
 }
 
 /* ---------- Main Entry Point ---------- */
 
-/// Main entry point for HARDN-XDR
+/// Main entry point for HARDN
 fn main() {
     let args: Vec<String> = env::args().collect();
     let module_dirs = env_or_defaults("HARDN_MODULE_PATH", DEFAULT_MODULE_DIRS);
@@ -1637,7 +1613,7 @@ fn main() {
 
     // Only show banner for commands that benefit from it
     let show_banner = match args.len() {
-        1 => true, // No args - show banner before running modules
+        1 => false, // No args - show help menu instead
         2 => matches!(args[1].as_str(), "-h" | "--help" | "help" | "-a" | "--about" | "about"),
         _ => false,
     };
@@ -1646,91 +1622,96 @@ fn main() {
         print_banner();
     }
 
-    let exit_code = match args.len() {
-        1 => handle_run_all_modules(&module_dirs),
-        2 => {
-            match args[1].as_str() {
-                "-v" | "--version" | "version" => {
-                    println!("{} version {}", APP_NAME, VERSION);
-                    EXIT_SUCCESS
-                }
-                "-h" | "--help" | "help" => {
-                    print_help();
-                    EXIT_SUCCESS
-                }
-                "-a" | "--about" | "about" => {
-                    print_about();
-                    EXIT_SUCCESS
-                }
-                "-s" | "--status" | "status" => {
-                    show_status();
-                    EXIT_SUCCESS
-                }
-                "--list-modules" | "list-modules" => {
-                    print_modules();
-                    EXIT_SUCCESS
-                }
-                "--list-tools" | "list-tools" => {
-                    print_tools();
-                    EXIT_SUCCESS
-                }
-                "--security-report" | "security-report" => {
-                    generate_security_report();
-                    EXIT_SUCCESS
-                }
-                "--run-all-modules" | "run-all-modules" => {
-                    run_all_modules()
-                }
-                "--run-all-tools" | "run-all-tools" => {
-                    run_all_tools()
-                }
-                "--run-everything" | "run-everything" => {
-                    run_everything()
-                }
-                "--sandbox-on" | "sandbox-on" => {
-                    sandbox_on()
-                }
-                "--sandbox-off" | "sandbox-off" => {
-                    sandbox_off()
-                }
-                "--service-enable" | "service-enable" => {
-                    manage_service("enable")
-                }
-                "--service-start" | "service-start" => {
-                    manage_service("start")
-                }
-                "--service-status" | "service-status" => {
-                    show_status();
-                    EXIT_SUCCESS
-                }
-                "--enable-selinux" | "enable-selinux" => {
-                    enable_selinux()
-                }
-                _ => {
-                    log_message(LogLevel::Error, &format!("Unknown option: {}", args[1]));
-                    print_help();
-                    EXIT_USAGE
+    let exit_code = if args.len() >= 2 && (args[1] == "legion" || args[1] == "--legion") {
+        run_legion(&args)
+    } else {
+        match args.len() {
+            1 => {
+                print_help();
+                EXIT_SUCCESS
+            }
+            2 => {
+                match args[1].as_str() {
+                    "-v" | "--version" | "version" => {
+                        println!("{} version {}", APP_NAME, VERSION);
+                        EXIT_SUCCESS
+                    }
+                    "-h" | "--help" | "help" => {
+                        print_help();
+                        EXIT_SUCCESS
+                    }
+                    "-a" | "--about" | "about" => {
+                        print_about();
+                        EXIT_SUCCESS
+                    }
+                    "-s" | "--status" | "status" => {
+                        show_status();
+                        EXIT_SUCCESS
+                    }
+                    "--list-modules" | "list-modules" => {
+                        print_modules();
+                        EXIT_SUCCESS
+                    }
+                    "--list-tools" | "list-tools" => {
+                        print_tools();
+                        EXIT_SUCCESS
+                    }
+                    "--security-report" | "security-report" => {
+                        generate_security_report();
+                        EXIT_SUCCESS
+                    }
+                    "--run-all-modules" | "run-all-modules" => {
+                        run_all_modules()
+                    }
+                    "--run-all-tools" | "run-all-tools" => {
+                        run_all_tools()
+                    }
+                    "--run-everything" | "run-everything" => {
+                        run_everything()
+                    }
+                    "--sandbox-on" | "sandbox-on" => {
+                        sandbox_on()
+                    }
+                    "--sandbox-off" | "sandbox-off" => {
+                        sandbox_off()
+                    }
+                    "--service-enable" | "service-enable" => {
+                        manage_service("enable")
+                    }
+                    "--service-start" | "service-start" => {
+                        manage_service("start")
+                    }
+                    "--service-status" | "service-status" => {
+                        show_status();
+                        EXIT_SUCCESS
+                    }
+                    "--enable-selinux" | "enable-selinux" => {
+                        enable_selinux()
+                    }
+                    _ => {
+                        log_message(LogLevel::Error, &format!("Unknown option: {}", args[1]));
+                        print_help();
+                        EXIT_USAGE
+                    }
                 }
             }
-        }
-        3 => {
-            match args[1].as_str() {
-                "service" => manage_service(&args[2]),
-                "run-module" => handle_run_module(&module_dirs, &args[2]),
-                "run-tool" => handle_run_tool(&tool_dirs, &args[2], &module_dirs),
-                _ => {
-                    log_message(LogLevel::Error, &format!("Unknown command: {}", args[1]));
-                    print_help();
-                    EXIT_USAGE
+            3 => {
+                match args[1].as_str() {
+                    "service" => manage_service(&args[2]),
+                    "run-module" => handle_run_module(&module_dirs, &args[2]),
+                    "run-tool" => handle_run_tool(&tool_dirs, &args[2], &module_dirs),
+                    _ => {
+                        log_message(LogLevel::Error, &format!("Unknown command: {}", args[1]));
+                        print_help();
+                        EXIT_USAGE
+                    }
                 }
             }
+            _ => {
+                log_message(LogLevel::Error, "Invalid number of arguments");
+                print_help();
+                EXIT_USAGE
+            }
         }
-        _ => {
-            log_message(LogLevel::Error, "Invalid number of arguments");
-            print_help();
-            EXIT_USAGE
-        }
-    };
-    
-    process::exit(exit_code);
+    };    process::exit(exit_code);
 }
