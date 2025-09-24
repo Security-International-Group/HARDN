@@ -19,7 +19,7 @@ app = FastAPI(
     description="HARDN API for overwatch and health monitoring of endpoints",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
 )
 
 # Add CORS middleware
@@ -34,6 +34,7 @@ app.add_middleware(
 # Security
 security = HTTPBearer()
 
+
 # SSH Public Key validation
 def is_valid_ssh_public_key(key: str) -> bool:
     """Validate SSH public key format"""
@@ -41,15 +42,27 @@ def is_valid_ssh_public_key(key: str) -> bool:
         return False
 
     # SSH public keys start with specific prefixes
-    valid_prefixes = ['ssh-rsa', 'ssh-ed25519', 'ssh-dss', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521']
+    valid_prefixes = [
+        "ssh-rsa",
+        "ssh-ed25519",
+        "ssh-dss",
+        "ecdsa-sha2-nistp256",
+        "ecdsa-sha2-nistp384",
+        "ecdsa-sha2-nistp521",
+    ]
 
-    return any(key.startswith(prefix) for prefix in valid_prefixes) and len(key.split()) >= 2
+    return (
+        any(key.startswith(prefix) for prefix in valid_prefixes)
+        and len(key.split()) >= 2
+    )
+
 
 def verify_ssh_key(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Verify SSH public key authentication"""
     if not is_valid_ssh_public_key(credentials.credentials):
         raise HTTPException(status_code=401, detail="Invalid SSH public key format")
     return credentials.credentials
+
 
 # System monitoring functions
 def get_system_health() -> Dict:
@@ -60,47 +73,57 @@ def get_system_health() -> Dict:
             "memory": {
                 "total": psutil.virtual_memory().total,
                 "available": psutil.virtual_memory().available,
-                "percent": psutil.virtual_memory().percent
+                "percent": psutil.virtual_memory().percent,
             },
             "disk": {
-                "total": psutil.disk_usage('/').total,
-                "free": psutil.disk_usage('/').free,
-                "percent": psutil.disk_usage('/').percent
+                "total": psutil.disk_usage("/").total,
+                "free": psutil.disk_usage("/").free,
+                "percent": psutil.disk_usage("/").percent,
             },
             "network": {
                 "connections": len(psutil.net_connections()),
                 "bytes_sent": psutil.net_io_counters().bytes_sent,
-                "bytes_recv": psutil.net_io_counters().bytes_recv
+                "bytes_recv": psutil.net_io_counters().bytes_recv,
             },
-            "load_average": os.getloadavg() if hasattr(os, 'getloadavg') else None,
+            "load_average": os.getloadavg() if hasattr(os, "getloadavg") else None,
             "uptime": time.time() - psutil.boot_time(),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
         logger.error(f"Error getting system health: {e}")
         return {"error": str(e)}
+
 
 def get_service_status(service_name: str) -> Dict:
     """Get status of a systemd service"""
     try:
         result = subprocess.run(
             ["systemctl", "is-active", service_name],
-            capture_output=True, text=True, timeout=5
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         is_active = result.returncode == 0
         status = result.stdout.strip()
 
         # Get more details
         result_detail = subprocess.run(
-            ["systemctl", "show", service_name, "--property=ActiveState,SubState,Description"],
-            capture_output=True, text=True, timeout=5
+            [
+                "systemctl",
+                "show",
+                service_name,
+                "--property=ActiveState,SubState,Description",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
 
         details = {}
         if result_detail.returncode == 0:
-            for line in result_detail.stdout.strip().split('\n'):
-                if '=' in line:
-                    key, value = line.split('=', 1)
+            for line in result_detail.stdout.strip().split("\n"):
+                if "=" in line:
+                    key, value = line.split("=", 1)
                     details[key.lower()] = value
 
         return {
@@ -108,22 +131,22 @@ def get_service_status(service_name: str) -> Dict:
             "active": is_active,
             "status": status,
             "details": details,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
         return {
             "service": service_name,
             "error": str(e),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
+
 
 def run_hardn_command(command: str) -> Dict:
     """Execute HARDN CLI commands"""
     try:
         # Run the hardn command
         result = subprocess.run(
-            ["hardn", command],
-            capture_output=True, text=True, timeout=30
+            ["hardn", command], capture_output=True, text=True, timeout=30
         )
 
         return {
@@ -132,22 +155,24 @@ def run_hardn_command(command: str) -> Dict:
             "stdout": result.stdout,
             "stderr": result.stderr,
             "success": result.returncode == 0,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
     except subprocess.TimeoutExpired:
         return {
             "command": f"hardn {command}",
             "error": "Command timed out",
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
         return {
             "command": f"hardn {command}",
             "error": str(e),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
+
 # API Endpoints
+
 
 @app.get("/health")
 def health_check():
@@ -156,8 +181,9 @@ def health_check():
         "status": "healthy",
         "service": "hardn-api",
         "version": "1.0.0",
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
     }
+
 
 @app.get("/overwatch/system")
 def get_system_overwatch(api_key: str = Depends(verify_ssh_key)):
@@ -168,16 +194,25 @@ def get_system_overwatch(api_key: str = Depends(verify_ssh_key)):
         "services": {
             "hardn": get_service_status("hardn.service"),
             "legion": get_service_status("legion-daemon.service"),
-            "hardn_api": get_service_status("hardn-api.service")
+            "hardn_api": get_service_status("hardn-api.service"),
         },
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
     }
+
 
 @app.get("/overwatch/services")
 def get_services_overwatch(api_key: str = Depends(verify_ssh_key)):
     """Get status of all HARDN-related services"""
-    services = ["hardn.service", "legion-daemon.service", "hardn-api.service",
-                "aide", "rkhunter", "clamav-daemon", "fail2ban", "auditd"]
+    services = [
+        "hardn.service",
+        "legion-daemon.service",
+        "hardn-api.service",
+        "aide",
+        "rkhunter",
+        "clamav-daemon",
+        "fail2ban",
+        "auditd",
+    ]
 
     results = {}
     for service in services:
@@ -186,8 +221,9 @@ def get_services_overwatch(api_key: str = Depends(verify_ssh_key)):
     return {
         "endpoint_id": os.uname().nodename,
         "services": results,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
     }
+
 
 @app.get("/endpoints/{endpoint_id}/health")
 def get_endpoint_health(endpoint_id: str, api_key: str = Depends(verify_ssh_key)):
@@ -203,10 +239,11 @@ def get_endpoint_health(endpoint_id: str, api_key: str = Depends(verify_ssh_key)
         "services_status": {
             "hardn": get_service_status("hardn.service")["active"],
             "legion": get_service_status("legion-daemon.service")["active"],
-            "api": get_service_status("hardn-api.service")["active"]
+            "api": get_service_status("hardn-api.service")["active"],
         },
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
     }
+
 
 @app.post("/hardn/execute")
 def execute_hardn_command(command: str, api_key: str = Depends(verify_ssh_key)):
@@ -218,19 +255,24 @@ def execute_hardn_command(command: str, api_key: str = Depends(verify_ssh_key)):
 
     result = run_hardn_command(command)
     if not result.get("success", False):
-        raise HTTPException(status_code=500, detail=result.get("stderr", "Command failed"))
+        raise HTTPException(
+            status_code=500, detail=result.get("stderr", "Command failed")
+        )
 
     return result
+
 
 @app.get("/hardn/status")
 def get_hardn_status(api_key: str = Depends(verify_ssh_key)):
     """Get HARDN service status"""
     return get_service_status("hardn.service")
 
+
 @app.get("/legion/status")
 def get_legion_status(api_key: str = Depends(verify_ssh_key)):
     """Get Legion daemon status"""
     return get_service_status("legion-daemon.service")
+
 
 @app.get("/diagnostics/full")
 def get_full_diagnostics(api_key: str = Depends(verify_ssh_key)):
@@ -241,34 +283,39 @@ def get_full_diagnostics(api_key: str = Depends(verify_ssh_key)):
             "hostname": os.uname().nodename,
             "kernel": os.uname().release,
             "architecture": os.uname().machine,
-            "uptime": time.time() - psutil.boot_time()
+            "uptime": time.time() - psutil.boot_time(),
         },
         "health_metrics": get_system_health(),
         "services": {
             "hardn": get_service_status("hardn.service"),
             "legion": get_service_status("legion-daemon.service"),
-            "hardn_api": get_service_status("hardn-api.service")
+            "hardn_api": get_service_status("hardn-api.service"),
         },
         "hardn_status": run_hardn_command("status"),
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
     }
+
 
 @app.get("/endpoints")
 def list_endpoints(api_key: str = Depends(verify_ssh_key)):
     """List available endpoints (currently just localhost)"""
     return {
-        "endpoints": [{
-            "id": os.uname().nodename,
-            "hostname": os.uname().nodename,
-            "type": "localhost",
-            "status": "active",
-            "last_seen": datetime.now().isoformat()
-        }],
-        "total": 1
+        "endpoints": [
+            {
+                "id": os.uname().nodename,
+                "hostname": os.uname().nodename,
+                "type": "localhost",
+                "status": "active",
+                "last_seen": datetime.now().isoformat(),
+            }
+        ],
+        "total": 1,
     }
+
 
 if __name__ == "__main__":
     import uvicorn
+
     print("Starting HARDN API server on http://localhost:8000")
     print("API endpoints:")
     print("  GET /health - Health check")
