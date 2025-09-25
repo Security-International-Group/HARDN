@@ -16,21 +16,15 @@ HARDN is a comprehensive security hardening system for Debian-based Linux system
 
 ## Installation
 
-### 1. Clone and dpkg the binary 
+### 1. Clone and build the binary 
 ```
 git clone https://github.com/Security-International-Group/HARDN.git
-sudo dpkg -i hardn_amd64.deb
-sudo apt-get install -f
-```
-### 2. Build HARDN services 
-
-```bash
 cd HARDN
 make build
 make hardn
 hardn -h 
 ```
-# 4. Verify installation
+### 2. Verify installation
 ```
 hardn --version
 ```
@@ -42,35 +36,35 @@ After installation, HARDN provides two main services:
 LEGION provides advanced, continuous security monitoring. You can manage and interact with the LEGION daemon using the following commands:
 
 
-# Check status of the LEGION daemon
+### Check status of the LEGION daemon
 ```
 sudo systemctl status legion-daemon.service
 ```
-# Start the LEGION daemon
+### Start the LEGION daemon
 ```
 sudo systemctl start legion-daemon.service
 ```
-# Stop the LEGION daemon
+### Stop the LEGION daemon
 ```
 sudo systemctl stop legion-daemon.service
 ```
-# Restart the LEGION daemon
+### Restart the LEGION daemon
 ```
 sudo systemctl restart legion-daemon.service
 ```
-# View logs for the LEGION daemon
+### View logs for the LEGION daemon
 ```
 sudo journalctl -u legion-daemon.service
 ```
-# Run LEGION once for a security assessment
+### Run LEGION once for a security assessment
 ```
 sudo hardn legion
 ```
-# Run LEGION as a daemon with verbose output
+### Run LEGION as a daemon with verbose output
 ```
 sudo hardn legion --daemon --verbose
 ```
-# Show LEGION command options
+### Show LEGION command options
 ```
 sudo hardn legion --help
 ```
@@ -79,7 +73,7 @@ sudo hardn legion --help
 ```
 sudo hardn --run-all-modules
 ```
-# Or use the service
+### Or use the service
 ```
 sudo systemctl start hardn.service
 ```
