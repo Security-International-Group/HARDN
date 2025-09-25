@@ -20,9 +20,39 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 # Configuration
-readonly HARDN_BIN="/usr/local/bin/hardn"
 readonly LOG_DIR="/var/log/hardn"
 readonly HARDN_SERVICES="hardn.service hardn-api.service legion-daemon.service"
+
+# Function to find HARDN binary
+find_hardn_binary() {
+    # Check environment variable first
+    if [[ -n "${HARDN_BINARY:-}" && -x "${HARDN_BINARY}" ]]; then
+        echo "${HARDN_BINARY}"
+        return 0
+    fi
+    
+    local possible_locations=(
+        "./target/release/hardn"  # Development build
+        "./hardn"                 # Current directory
+        "/usr/local/bin/hardn"    # Local installation
+        "/usr/bin/hardn"          # System installation
+        "/opt/hardn/bin/hardn"    # Optional installation
+        "$(command -v hardn 2>/dev/null || true)"  # In PATH (avoiding aliases)
+    )
+    
+    for location in "${possible_locations[@]}"; do
+        if [[ -n "$location" && -x "$location" ]]; then
+            echo "$location"
+            return 0
+        fi
+    done
+    
+    return 1
+}
+
+# Find HARDN binary
+HARDN_BIN=$(find_hardn_binary || echo "")
+readonly HARDN_BIN
 
 # Function to print colored output
 print_colored() {
@@ -55,10 +85,24 @@ check_dependencies() {
         exit 1
     fi
     
-    if [[ ! -x "$HARDN_BIN" ]]; then
-        print_colored "$RED" "Error: HARDN binary not found or not executable at $HARDN_BIN"
+    if [[ -z "$HARDN_BIN" || ! -x "$HARDN_BIN" ]]; then
+        print_colored "$RED" "Error: HARDN binary not found!"
+        echo "Please ensure HARDN is installed or built."
+        echo "Searched locations:"
+        echo "  - ./target/release/hardn (development build)"
+        echo "  - ./hardn (current directory)"
+        echo "  - /usr/local/bin/hardn (local installation)"
+        echo "  - /usr/bin/hardn (system installation)"
+        echo "  - /opt/hardn/bin/hardn (optional installation)"
+        echo "  - PATH environment variable"
+        echo ""
+        echo "If running from source, try: cargo build --release"
+        echo "You can also set HARDN_BINARY environment variable:"
+        echo "  export HARDN_BINARY=/path/to/hardn"
         exit 1
     fi
+    
+    echo "Using HARDN binary: $HARDN_BIN"
 }
 
 # Function to display the header
