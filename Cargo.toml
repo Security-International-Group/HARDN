@@ -35,6 +35,7 @@ parking_lot = "0.12"
 dashmap = "5.4"
 lru = "0.9"
 sha2 = "0.10"
+atty = "0.2"
 
 [profile.release]
 opt-level = "z"    # Optimize for size

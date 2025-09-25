@@ -1611,12 +1611,12 @@ fn main() {
     let module_dirs = env_or_defaults("HARDN_MODULE_PATH", DEFAULT_MODULE_DIRS);
     let tool_dirs = env_or_defaults("HARDN_TOOL_PATH", DEFAULT_TOOL_DIRS);
 
-    // Only show banner for commands that benefit from it
+    // Only show banner for commands that benefit from it and when stdout is a TTY
     let show_banner = match args.len() {
         1 => false, // No args - show help menu instead
         2 => matches!(args[1].as_str(), "-h" | "--help" | "help" | "-a" | "--about" | "about"),
         _ => false,
-    };
+    } && atty::is(atty::Stream::Stdout);
 
     if show_banner {
         print_banner();
