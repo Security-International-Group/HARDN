@@ -2,8 +2,12 @@
 
 # HARDN Interactive Service Manager
 # This script provides an interactive menu for managing HARDN services and modules
+# Requires bash 4.0+ for advanced features
 
 set -euo pipefail
+
+# Set up signal handlers
+trap 'echo -e "\n\nInterrupted. Exiting..."; exit 130' INT TERM
 
 # Color codes for better UI
 RED='\033[0;31m'
@@ -16,23 +20,48 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 # Configuration
-HARDN_BIN="/usr/local/bin/hardn"
-LOG_DIR="/var/log/hardn"
+readonly HARDN_BIN="/usr/local/bin/hardn"
+readonly LOG_DIR="/var/log/hardn"
+readonly HARDN_SERVICES="hardn.service hardn-api.service legion-daemon.service"
 
+# Function to print colored output
 print_colored() {
     local color=$1
     shift
     echo -e "${color}$@${NC}"
 }
 
+# Function to check if running as root
 check_root() {
     if [[ $EUID -ne 0 ]]; then
-        print_colored $RED "❌ This script must be run as root!"
+        print_colored "$RED" "❌ This script must be run as root!"
         echo "Please run with: sudo $0"
         exit 1
     fi
 }
 
+# Function to check for required commands
+check_dependencies() {
+    local missing_deps=()
+    
+    for cmd in systemctl journalctl; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            missing_deps+=("$cmd")
+        fi
+    done
+    
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        print_colored "$RED" "Error: Missing required dependencies: ${missing_deps[*]}"
+        exit 1
+    fi
+    
+    if [[ ! -x "$HARDN_BIN" ]]; then
+        print_colored "$RED" "Error: HARDN binary not found or not executable at $HARDN_BIN"
+        exit 1
+    fi
+}
+
+# Function to display the header
 display_header() {
     clear
     echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════════════════╗${NC}"
@@ -42,6 +71,7 @@ display_header() {
     echo
 }
 
+# Function to check service status
 check_service_status() {
     local service_name=$1
     if systemctl is-active --quiet "$service_name" 2>/dev/null; then
@@ -53,48 +83,54 @@ check_service_status() {
     fi
 }
 
+# Function to display service status
 display_service_status() {
     echo -e "\n${BOLD}Current Service Status:${NC}"
     echo -e "─────────────────────────────────────────────────"
     
-    local services=("hardn.service" "hardn-api.service" "legion-daemon.service")
+    local services
+    IFS=' ' read -ra services <<< "$HARDN_SERVICES"
     
     for service in "${services[@]}"; do
         local status=$(check_service_status "$service")
-        local display_name=$(echo "$service" | sed 's/.service//')
+        local display_name=$(echo "$service" | sed 's/\.service$//')
         
         case $status in
             "active")
-                print_colored $GREEN "  ● $display_name: Running ✓"
+                print_colored "$GREEN" "  ● $display_name: Running ✓"
                 ;;
             "enabled")
-                print_colored $YELLOW "  ● $display_name: Enabled (not running)"
+                print_colored "$YELLOW" "  ● $display_name: Enabled (not running)"
                 ;;
             *)
-                print_colored $RED "  ● $display_name: Inactive ✗"
+                print_colored "$RED" "  ● $display_name: Inactive ✗"
                 ;;
         esac
     done
     echo
 }
 
+# Function to manage a specific service
 manage_service() {
     local service_name=$1
     local action=$2
     
-    echo -n "  ${action^}ing $service_name... "
+    # Capitalize first letter for display (bash-specific but safe)
+    local display_action="${action^}"
+    echo -n "  ${display_action}ing $service_name... "
     
-    if systemctl $action "$service_name" 2>/dev/null; then
-        print_colored $GREEN "✓ Success"
+    if systemctl "$action" "$service_name" 2>/dev/null; then
+        print_colored "$GREEN" "✓ Success"
         if [[ "$action" == "start" || "$action" == "restart" ]]; then
             sleep 2  # Give service time to start
         fi
     else
-        print_colored $RED "✗ Failed"
-        echo "  Check logs with: journalctl -u $service_name -n 50"
+        print_colored "$RED" "✗ Failed"
+        echo "  Check logs with: journalctl -u '$service_name' -n 50"
     fi
 }
 
+# Function to run LEGION options
 run_legion_menu() {
     while true; do
         display_header
@@ -110,53 +146,55 @@ run_legion_menu() {
         echo
         echo "0) Back to Main Menu"
         echo
-        read -p "Select option [0-6]: " legion_choice
+        read -p "Select option [0-6]: " legion_choice || { echo; return; }
         
         case $legion_choice in
             1)
                 echo -e "\n${BOLD}Running LEGION security assessment...${NC}"
-                $HARDN_BIN legion
-                read -p $'\nPress Enter to continue...'
+                "$HARDN_BIN" legion
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             2)
                 echo -e "\n${BOLD}Starting LEGION daemon...${NC}"
                 manage_service "legion-daemon.service" "start"
-                read -p $'\nPress Enter to continue...'
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             3)
                 echo -e "\n${BOLD}Stopping LEGION daemon...${NC}"
                 manage_service "legion-daemon.service" "stop"
-                read -p $'\nPress Enter to continue...'
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             4)
                 echo -e "\n${BOLD}Recent LEGION logs:${NC}"
                 journalctl -u legion-daemon.service -n 50 --no-pager
-                read -p $'\nPress Enter to continue...'
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             5)
                 echo -e "\n${BOLD}LEGION daemon status:${NC}"
                 systemctl status legion-daemon.service --no-pager
-                read -p $'\nPress Enter to continue...'
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             6)
                 echo -e "\n${BOLD}Enter LEGION options:${NC}"
                 echo "Example: --verbose --risk-threshold 3"
-                read -p "Options: " legion_options
+                read -p "Options: " legion_options || { echo; continue; }
                 echo -e "\n${BOLD}Running LEGION with options...${NC}"
-                $HARDN_BIN legion $legion_options
-                read -p $'\nPress Enter to continue...'
+                # Use eval carefully with validated input
+                "$HARDN_BIN" legion $legion_options
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             0)
                 return
                 ;;
             *)
-                print_colored $RED "Invalid option!"
+                print_colored "$RED" "Invalid option!"
                 sleep 1
                 ;;
         esac
     done
 }
 
+# Function to run modules
 run_modules_menu() {
     while true; do
         display_header
@@ -165,12 +203,13 @@ run_modules_menu() {
         echo
         
         # Get available modules
-        local modules=$($HARDN_BIN --list-modules 2>/dev/null | grep -E "^    - " | sed 's/    - //' || true)
+        local modules
+        modules=$("$HARDN_BIN" --list-modules 2>/dev/null | grep -E "^    - " | sed 's/    - //' || true)
         
         if [[ -z "$modules" ]]; then
-            print_colored $RED "No modules found!"
+            print_colored "$RED" "No modules found!"
             echo "Make sure HARDN is properly installed."
-            read -p $'\nPress Enter to continue...'
+            read -p $'\nPress Enter to continue...' || true
             return
         fi
         
@@ -187,36 +226,38 @@ run_modules_menu() {
         echo "a) Run ALL modules"
         echo "0) Back to Main Menu"
         echo
-        read -p "Select module [0-$((i-1))]: " module_choice
+        read -p "Select module [0-$((i-1))]: " module_choice || { echo; return; }
         
         case $module_choice in
             a|A)
                 echo -e "\n${BOLD}Running all modules...${NC}"
-                $HARDN_BIN --run-all-modules
-                read -p $'\nPress Enter to continue...'
+                "$HARDN_BIN" --run-all-modules
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             0)
                 return
                 ;;
             [1-9]*)
-                if [[ $module_choice -lt $i && $module_choice -gt 0 ]]; then
+                # Validate numeric input
+                if [[ "$module_choice" =~ ^[0-9]+$ ]] && [[ $module_choice -lt $i && $module_choice -gt 0 ]]; then
                     local selected_module="${module_array[$module_choice]}"
                     echo -e "\n${BOLD}Running module: $selected_module${NC}"
-                    $HARDN_BIN run-module "$selected_module"
-                    read -p $'\nPress Enter to continue...'
+                    "$HARDN_BIN" run-module "$selected_module"
+                    read -p $'\nPress Enter to continue...' || true
                 else
-                    print_colored $RED "Invalid option!"
+                    print_colored "$RED" "Invalid option!"
                     sleep 1
                 fi
                 ;;
             *)
-                print_colored $RED "Invalid option!"
+                print_colored "$RED" "Invalid option!"
                 sleep 1
                 ;;
         esac
     done
 }
 
+# Function to run tools
 run_tools_menu() {
     while true; do
         display_header
@@ -245,7 +286,7 @@ run_tools_menu() {
         echo "a) Run ALL tools"
         echo "0) Back to Main Menu"
         echo
-        read -p "Select tool [0-9,a]: " tool_choice
+        read -p "Select tool [0-9,a]: " tool_choice || { echo; return; }
         
         local tool_name=""
         case $tool_choice in
@@ -260,26 +301,27 @@ run_tools_menu() {
             9) tool_name="auditd" ;;
             a|A)
                 echo -e "\n${BOLD}Running all tools...${NC}"
-                $HARDN_BIN --run-all-tools
-                read -p $'\nPress Enter to continue...'
+                "$HARDN_BIN" --run-all-tools
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             0)
                 return
                 ;;
             *)
-                print_colored $RED "Invalid option!"
+                print_colored "$RED" "Invalid option!"
                 sleep 1
                 ;;
         esac
         
         if [[ -n "$tool_name" ]]; then
             echo -e "\n${BOLD}Running tool: $tool_name${NC}"
-            $HARDN_BIN run-tool "$tool_name"
-            read -p $'\nPress Enter to continue...'
+            "$HARDN_BIN" run-tool "$tool_name"
+            read -p $'\nPress Enter to continue...' || true
         fi
     done
 }
 
+# Function to manage HARDN services
 manage_services_menu() {
     while true; do
         display_header
@@ -299,50 +341,62 @@ manage_services_menu() {
         echo
         echo "0) Back to Main Menu"
         echo
-        read -p "Select option [0-7]: " service_choice
+        read -p "Select option [0-7]: " service_choice || { echo; return; }
         
         case $service_choice in
             1)
                 echo -e "\n${BOLD}Starting all HARDN services...${NC}"
-                for service in hardn.service hardn-api.service legion-daemon.service; do
+                local services
+                IFS=' ' read -ra services <<< "$HARDN_SERVICES"
+                for service in "${services[@]}"; do
                     manage_service "$service" "start"
                 done
-                read -p $'\nPress Enter to continue...'
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             2)
                 echo -e "\n${BOLD}Stopping all HARDN services...${NC}"
-                for service in legion-daemon.service hardn-api.service hardn.service; do
-                    manage_service "$service" "stop"
+                local services
+                IFS=' ' read -ra services <<< "$HARDN_SERVICES"
+                # Stop in reverse order
+                for ((i=${#services[@]}-1; i>=0; i--)); do
+                    manage_service "${services[i]}" "stop"
                 done
-                read -p $'\nPress Enter to continue...'
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             3)
                 echo -e "\n${BOLD}Restarting all HARDN services...${NC}"
-                for service in hardn.service hardn-api.service legion-daemon.service; do
+                local services
+                IFS=' ' read -ra services <<< "$HARDN_SERVICES"
+                for service in "${services[@]}"; do
                     manage_service "$service" "restart"
                 done
-                read -p $'\nPress Enter to continue...'
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             4)
                 echo -e "\n${BOLD}Enabling all HARDN services...${NC}"
-                for service in hardn.service hardn-api.service legion-daemon.service; do
+                local services
+                IFS=' ' read -ra services <<< "$HARDN_SERVICES"
+                for service in "${services[@]}"; do
                     manage_service "$service" "enable"
                 done
-                read -p $'\nPress Enter to continue...'
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             5)
                 echo -e "\n${BOLD}Disabling all HARDN services...${NC}"
-                for service in legion-daemon.service hardn-api.service hardn.service; do
-                    manage_service "$service" "disable"
+                local services
+                IFS=' ' read -ra services <<< "$HARDN_SERVICES"
+                # Disable in reverse order
+                for ((i=${#services[@]}-1; i>=0; i--)); do
+                    manage_service "${services[i]}" "disable"
                 done
-                read -p $'\nPress Enter to continue...'
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             6)
                 echo -e "\n${BOLD}Select service:${NC}"
                 echo "1) hardn.service"
                 echo "2) hardn-api.service"
                 echo "3) legion-daemon.service"
-                read -p "Select [1-3]: " svc_num
+                read -p "Select [1-3]: " svc_num || { echo; continue; }
                 
                 local selected_service=""
                 case $svc_num in
@@ -350,7 +404,7 @@ manage_services_menu() {
                     2) selected_service="hardn-api.service" ;;
                     3) selected_service="legion-daemon.service" ;;
                     *) 
-                        print_colored $RED "Invalid selection!"
+                        print_colored "$RED" "Invalid selection!"
                         sleep 1
                         continue
                         ;;
@@ -363,7 +417,7 @@ manage_services_menu() {
                 echo "4) Enable"
                 echo "5) Disable"
                 echo "6) Status"
-                read -p "Select [1-6]: " action_num
+                read -p "Select [1-6]: " action_num || { echo; continue; }
                 
                 case $action_num in
                     1) manage_service "$selected_service" "start" ;;
@@ -375,10 +429,10 @@ manage_services_menu() {
                         systemctl status "$selected_service" --no-pager
                         ;;
                     *)
-                        print_colored $RED "Invalid action!"
+                        print_colored "$RED" "Invalid action!"
                         ;;
                 esac
-                read -p $'\nPress Enter to continue...'
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             7)
                 echo -e "\n${BOLD}Select service to view logs:${NC}"
@@ -386,28 +440,29 @@ manage_services_menu() {
                 echo "2) hardn-api.service"
                 echo "3) legion-daemon.service"
                 echo "4) All HARDN logs"
-                read -p "Select [1-4]: " log_choice
+                read -p "Select [1-4]: " log_choice || { echo; continue; }
                 
                 case $log_choice in
                     1) journalctl -u hardn.service -n 100 --no-pager ;;
                     2) journalctl -u hardn-api.service -n 100 --no-pager ;;
                     3) journalctl -u legion-daemon.service -n 100 --no-pager ;;
                     4) journalctl -u 'hardn*' -u 'legion*' -n 100 --no-pager ;;
-                    *) print_colored $RED "Invalid selection!" ;;
+                    *) print_colored "$RED" "Invalid selection!" ;;
                 esac
-                read -p $'\nPress Enter to continue...'
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             0)
                 return
                 ;;
             *)
-                print_colored $RED "Invalid option!"
+                print_colored "$RED" "Invalid option!"
                 sleep 1
                 ;;
         esac
     done
 }
 
+# Main menu function
 main_menu() {
     while true; do
         display_header
@@ -428,17 +483,19 @@ main_menu() {
         echo "h) View HARDN Help"
         echo "q) Quit"
         echo
-        read -p "Select option: " choice
+        read -p "Select option: " choice || { echo; exit 0; }
         
         case $choice in
             1)
                 echo -e "\n${BOLD}Quick Start - Enabling and starting all services...${NC}"
-                for service in hardn.service hardn-api.service legion-daemon.service; do
+                local services
+                IFS=' ' read -ra services <<< "$HARDN_SERVICES"
+                for service in "${services[@]}"; do
                     manage_service "$service" "enable"
                     manage_service "$service" "start"
                 done
                 echo -e "\n${GREEN}✓ All services enabled and started!${NC}"
-                read -p $'\nPress Enter to continue...'
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             2)
                 manage_services_menu
@@ -454,50 +511,52 @@ main_menu() {
                 ;;
             6)
                 echo -e "\n${BOLD}Generating security report...${NC}"
-                $HARDN_BIN --security-report
-                read -p $'\nPress Enter to continue...'
+                "$HARDN_BIN" --security-report
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             7)
                 echo -e "\n${BOLD}HARDN Status:${NC}"
-                $HARDN_BIN --status
-                read -p $'\nPress Enter to continue...'
+                "$HARDN_BIN" --status
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             8)
                 echo -e "\n${BOLD}Sandbox Mode Options:${NC}"
                 echo "1) Enable Sandbox (Disconnect network)"
                 echo "2) Disable Sandbox (Restore network)"
                 echo "0) Cancel"
-                read -p "Select [0-2]: " sandbox_choice
+                read -p "Select [0-2]: " sandbox_choice || { echo; continue; }
                 
                 case $sandbox_choice in
                     1)
                         echo -e "\n${YELLOW}⚠️  WARNING: This will disconnect all network access!${NC}"
-                        read -p "Are you sure? [y/N]: " confirm
-                        if [[ $confirm =~ ^[Yy]$ ]]; then
-                            $HARDN_BIN --sandbox-on
+                        read -p "Are you sure? [y/N]: " confirm || { echo; continue; }
+                        if [[ "$confirm" =~ ^[Yy]$ ]]; then
+                            "$HARDN_BIN" --sandbox-on
                         fi
                         ;;
                     2)
-                        $HARDN_BIN --sandbox-off
+                        "$HARDN_BIN" --sandbox-off
                         ;;
                 esac
-                read -p $'\nPress Enter to continue...'
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             h|H)
-                $HARDN_BIN --help
-                read -p $'\nPress Enter to continue...'
+                "$HARDN_BIN" --help
+                read -p $'\nPress Enter to continue...' || true
                 ;;
             q|Q)
                 echo -e "\n${GREEN}Thank you for using HARDN Service Manager!${NC}"
                 exit 0
                 ;;
             *)
-                print_colored $RED "Invalid option!"
+                print_colored "$RED" "Invalid option!"
                 sleep 1
                 ;;
         esac
     done
 }
 
+# Main execution
 check_root
+check_dependencies
 main_menu
