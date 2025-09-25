@@ -1,4 +1,8 @@
+![hard](docs/IMG_1233.jpeg)
+
 # HARDN
+
+[![ci](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml/badge.svg)](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml)
 
 Linux Security Hardening and Extended Detection & Response Toolkit
 
