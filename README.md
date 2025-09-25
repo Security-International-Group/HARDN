@@ -1,9 +1,6 @@
 ![hard](docs/IMG_1233.jpeg)
 
 # HARDN
-
-[![ci](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml/badge.svg)](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml)
-
 Linux Security Hardening and Extended Detection & Response Toolkit
 
 HARDN is a comprehensive security hardening system for Debian-based Linux systems, providing both automated hardening capabilities and continuous security monitoring.
