@@ -151,8 +151,8 @@ jobs:
           sudo dpkg -i "$DEB" || true
           sudo apt-get -f install -y
           hardn --version || { echo "Binary not available"; exit 1; }
-          hardn --help | head -40 || true
-          sudo hardn --help | head -20 || true
+          hardn --help 2>/dev/null | head -40 || true
+          sudo hardn --help 2>/dev/null | head -20 || true
 
   tag_and_release:
     name: Tag + Release 
@@ -183,8 +183,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "${{ steps.bump.outputs.new_tag }}"
-          git push origin "${{ steps.bump.outputs.new_tag }}"
+          git tag -f "latest"
+          git push -f origin "latest"
 
       - name: Rename .deb files for release (remove version numbers)
         run: |
@@ -203,7 +203,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="${{ steps.bump.outputs.new_tag }}"
+          tag="latest"
           repo="${{ github.repository }}"
           
           echo '![HARDN Logo](docs/IMG_1233.jpeg)' > RELEASE_NOTES.md
@@ -256,11 +256,11 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191
         with:
-          tag_name: ${{ steps.bump.outputs.new_tag }}
+          tag_name: latest
           name: HARDN Latest Release
           body_path: RELEASE_NOTES.md
           files: |
-            release_assets/**/hardn_*_*.deb
+            release_assets/**/hardn_*.deb
           draft: false
           prerelease: false
         env:
