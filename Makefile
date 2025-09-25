@@ -21,8 +21,20 @@ SHELL := /bin/bash
 # Default target
 all: build
 
+# Ensure Rust toolchain is installed and updated
+rust-setup:
+	@echo "Checking Rust installation..."
+	@if ! command -v rustup >/dev/null 2>&1; then \
+		echo "Rustup not found. Installing Rust..."; \
+		curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; \
+		echo "Rust installation completed."; \
+	else \
+		echo "Rustup found, updating toolchain..."; \
+	fi
+	@. $(RUST_ENV_FILE) && rustup update stable && rustup default stable
+
 # target: build the Debian package
-build: package
+build: rust-setup package
 	@echo "Build process completed successfully."
 
 # HARDN target: build and install HARDN as a service
@@ -42,7 +54,7 @@ hardn:
 
 package:
 	@echo "Setting up Rust environment..."
-	@HOME=$(HOME_DIR) . $(HOME_DIR)/.cargo/env && rustup default stable
+	@HOME=$(HOME_DIR) . $(RUST_ENV_FILE) && rustup default stable
 	@echo "Building Rust binary (CLI only)..."
 	cargo build --release
 	@echo "Building .deb package..."
@@ -71,6 +83,6 @@ install-deb:
 
 clean:
 	@echo "Setting up Rust environment for cleaning..."
-	@HOME=$(HOME_DIR) . $(HOME_DIR)/.cargo/env && rustup default stable
+	@HOME=$(HOME_DIR) . $(RUST_ENV_FILE) && rustup default stable
 	@echo "Cleaning build artifacts..."
 	cargo clean
