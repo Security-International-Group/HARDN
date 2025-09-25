@@ -16,26 +16,24 @@ HARDN is a comprehensive security hardening system for Debian-based Linux system
 
 ## Installation
 
-### Release
-- Download the latest release Debian package
-- [hardn_amd64.deb](https://github.com/Security-International-Group/HARDN/releases/tag/v0.4.3)
-
+### 1. Clone and dpkg the binary 
 ```
+git clone https://github.com/Security-International-Group/HARDN.git
+ls (verify version and binary are present)
 sudo dpkg -i hardn_amd64.deb
 sudo apt-get install -f
-sudo hardn --version
 ```
-### Build using the lock file
+### 2. Build HARDN services 
 
 ```bash
-git clone https://github.com/Security-International-Group/HARDN.git
 cd HARDN
 make build
 make hardn
+hardn -h 
 ```
 # 4. Verify installation
 ```
-hardn --help
+hardn --version
 ```
 ## Quick Start
 After installation, HARDN provides two main services:
