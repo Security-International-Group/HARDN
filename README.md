@@ -1,3 +1,4 @@
+![hardn](docs/IMG_1233.jpeg)
 # HARDN
 
 Linux Security Hardening and Extended Detection & Response Toolkit
