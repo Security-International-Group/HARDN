@@ -42,7 +42,7 @@ hardn:
 
 package:
 	@echo "Setting up Rust environment..."
-	@HOME=/home/tim . /home/tim/.cargo/env && rustup default stable
+	@HOME=$(HOME_DIR) . $(HOME_DIR)/.cargo/env && rustup default stable
 	@echo "Building Rust binary (CLI only)..."
 	cargo build --release
 	@echo "Building .deb package..."
@@ -71,6 +71,6 @@ install-deb:
 
 clean:
 	@echo "Setting up Rust environment for cleaning..."
-	@HOME=/home/tim . /home/tim/.cargo/env && rustup default stable
+	@HOME=$(HOME_DIR) . $(HOME_DIR)/.cargo/env && rustup default stable
 	@echo "Cleaning build artifacts..."
 	cargo clean
