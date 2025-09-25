@@ -130,6 +130,23 @@ jobs:
 
           Latest release of HARDN security toolkit with Debian package.
 
+          ## Installation
+
+          ### Debian/Ubuntu
+          ```bash
+          # Download the latest release
+          wget https://github.com/${REPO}/releases/download/${TAG}/hardn_amd64.deb
+          
+          # Install the package
+          sudo dpkg -i hardn_amd64.deb
+          
+          # Fix any missing dependencies
+          sudo apt-get install -f
+          
+          # Verify installation
+          hardn --version
+          ```
+
           ## What's Included
 
           - **hardn_amd64.deb** - Debian package for x86_64 systems
@@ -151,8 +168,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191
         with:
-          tag_name: ${{ steps.tag.outputs.new_tag }}
-          name: HARDN ${{ steps.tag.outputs.new_tag }}
+          name: HARDN 
           body_path: RELEASE_NOTES.md
           files: release_assets/*.deb
           draft: false
