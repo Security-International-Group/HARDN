@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
 
@@ -33,7 +33,9 @@ jobs:
             fakeroot debhelper devscripts jq curl file
 
       - name: Set up Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921
+        with:
+          toolchain: stable
 
       - name: Cargo build (release)
         run: cargo build --release
@@ -57,7 +59,7 @@ jobs:
           sudo hardn --help | head -30 || true
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
         with:
           name: hardn-release-bin
           path: |
@@ -78,7 +80,7 @@ jobs:
             deb_arch: amd64
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
 
@@ -90,8 +92,9 @@ jobs:
             fakeroot debhelper devscripts jq curl file
 
       - name: Set up Rust (stable) + targets
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921
         with:
+          toolchain: stable
           targets: ${{ matrix.rust_target }}
 
       - name: Install cargo-deb
@@ -112,7 +115,7 @@ jobs:
           echo "Built: $OUT"
 
       - name: Upload .deb artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
         with:
           name: hardn-debs-${{ matrix.arch }}
           path: dist/*.deb
@@ -128,7 +131,7 @@ jobs:
         arch: [amd64]
     steps:
       - name: Download .deb
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
         with:
           name: hardn-debs-${{ matrix.arch }}
           path: debs
@@ -158,12 +161,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout 
-        uses: actions/checkout@v5
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
 
       - name: Download all deb artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
         with:
           path: release_assets
 
@@ -172,16 +175,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          latest=$(git tag -l "v*.*.*" --sort=-v:refname | head -n1)
-          if [ -z "${latest}" ]; then
-            latest="v0.0.0"
-          fi
-          echo "Latest tag: $latest"
-          ver="${latest#v}"
-          IFS='.' read -r MAJ MIN PAT <<< "$ver"
-          : "${MAJ:=0}"; : "${MIN:=0}"; : "${PAT:=0}"
-          MIN=$((MIN+1))
-          new_tag="v${MAJ}.${MIN}.${PAT}"
+          new_tag="latest"
           echo "new_tag=$new_tag" >> $GITHUB_OUTPUT
           echo "New tag: $new_tag"
 
@@ -192,6 +186,18 @@ jobs:
           git tag "${{ steps.bump.outputs.new_tag }}"
           git push origin "${{ steps.bump.outputs.new_tag }}"
 
+      - name: Rename .deb files for release (remove version numbers)
+        run: |
+          for deb_file in release_assets/**/hardn_*_*.deb; do
+            if [ -f "$deb_file" ]; then
+              dir=$(dirname "$deb_file")
+              arch=$(echo "$deb_file" | sed -n 's/.*_\([a-z0-9]*\)\.deb/\1/p')
+              new_name="${dir}/hardn_${arch}.deb"
+              mv "$deb_file" "$new_name"
+              echo "Renamed $deb_file to $new_name"
+            fi
+          done
+
       - name: Prepare Release
         id: notes
         shell: bash
@@ -199,15 +205,12 @@ jobs:
           set -euo pipefail
           tag="${{ steps.bump.outputs.new_tag }}"
           repo="${{ github.repository }}"
-          AMD=$(ls release_assets/**/hardn_*_amd64.deb | head -n1 || true)
-          amd_name=$(basename "$AMD")
-          amd_url="https://github.com/${repo}/releases/download/${tag}/${amd_name}"
-
-          echo '![HARDN Logo](docs/assets/IMG_1233.jpeg)' > RELEASE_NOTES.md
+          
+          echo '![HARDN Logo](docs/IMG_1233.jpeg)' > RELEASE_NOTES.md
           echo '' >> RELEASE_NOTES.md
-          echo '# HARDN — Release ${{ steps.bump.outputs.new_tag }}' >> RELEASE_NOTES.md
+          echo '# HARDN — Latest Release' >> RELEASE_NOTES.md
           echo '' >> RELEASE_NOTES.md
-          echo 'This release provides signed Debian packages for **amd64** and **arm64**.' >> RELEASE_NOTES.md
+          echo 'This is the latest release of HARDN with signed Debian packages for **amd64** and **arm64**.' >> RELEASE_NOTES.md
           echo '' >> RELEASE_NOTES.md
           echo '## Quick Install (Debian/Ubuntu)' >> RELEASE_NOTES.md
           echo '' >> RELEASE_NOTES.md
@@ -216,7 +219,7 @@ jobs:
           echo '**Available Downloads:**' >> RELEASE_NOTES.md
           echo '' >> RELEASE_NOTES.md
           
-          for deb_file in release_assets/**/hardn_*_*.deb; do
+          for deb_file in release_assets/**/hardn_*.deb; do
             if [ -f "$deb_file" ]; then
               deb_name=$(basename "$deb_file")
               deb_url="https://github.com/${repo}/releases/download/${tag}/${deb_name}"
@@ -239,7 +242,7 @@ jobs:
           echo '```' >> RELEASE_NOTES.md
           echo '' >> RELEASE_NOTES.md
           echo '## Files' >> RELEASE_NOTES.md
-          for deb_file in release_assets/**/hardn_*_*.deb; do
+          for deb_file in release_assets/**/hardn_*.deb; do
             if [ -f "$deb_file" ]; then
               deb_name=$(basename "$deb_file")
               echo "- **${deb_name}** - Debian package" >> RELEASE_NOTES.md
@@ -250,23 +253,11 @@ jobs:
           # Upload release notes as an artifact
           echo "RELEASE_NOTES.md prepared for tag $tag"
           ls -lah RELEASE_NOTES.md
-
-      - name: Rename .deb files for release (remove version numbers)
-        run: |
-          for deb_file in release_assets/**/hardn_*_*.deb; do
-            if [ -f "$deb_file" ]; then
-              dir=$(dirname "$deb_file")
-              arch=$(echo "$deb_file" | sed -n 's/.*_\([a-z0-9]*\)\.deb/\1/p')
-              new_name="${dir}/hardn_${arch}.deb"
-              mv "$deb_file" "$new_name"
-              echo "Renamed $deb_file to $new_name"
-            fi
-          done
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191
         with:
           tag_name: ${{ steps.bump.outputs.new_tag }}
-          name: Release ${{ steps.bump.outputs.new_tag }}
+          name: HARDN Latest Release
           body_path: RELEASE_NOTES.md
           files: |
             release_assets/**/hardn_*_*.deb
