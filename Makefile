@@ -30,7 +30,9 @@ sudo-check:
 deps: sudo-check
 	@echo "Installing required system dependencies..."
 	@sudo apt update
-	@sudo apt install -y build-essential pkg-config libssl-dev
+	@sudo apt install -y build-essential pkg-config libssl-dev \
+		debhelper lintian python3-all python3-requests \
+		python3-setuptools curl wget whiptail
 
 # Ensure Rust toolchain is installed and updated
 rust-setup:
