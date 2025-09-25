@@ -83,8 +83,8 @@ sudo hardn legion --help
 sudo hardn --run-all-modules
 ```
 # Or use the service
-sudo systemctl start hardn.service
 ```
+sudo systemctl start hardn.service
 ```
 ## Command Reference and Education
 
