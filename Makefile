@@ -21,6 +21,17 @@ SHELL := /bin/bash
 # Default target
 all: build
 
+# Prompt for sudo password early
+sudo-check:
+	@echo "Requesting sudo credentials..."
+	@sudo -v
+
+# Ensure system build dependencies are installed
+deps: sudo-check
+	@echo "Installing required system dependencies..."
+	@sudo apt update
+	@sudo apt install -y build-essential pkg-config libssl-dev
+
 # Ensure Rust toolchain is installed and updated
 rust-setup:
 	@echo "Checking Rust installation..."
@@ -34,14 +45,14 @@ rust-setup:
 	@. $(RUST_ENV_FILE) && rustup update stable && rustup default stable
 
 # target: build the Debian package
-build: rust-setup package
+build: sudo-check deps rust-setup package
 	@echo "Build process completed successfully."
 
 # HARDN target: build and install HARDN as a service
-hardn:
+hardn: sudo-check
 	@echo "Displaying HARDN banner..."
 	@rustc banner.rs -o banner_temp && ./banner_temp && rm banner_temp
-	@echo "Installing required dependencies..."
+	@echo "Installing required Python dependencies..."
 	@sudo apt update
 	@sudo apt install -y python3-fastapi python3-uvicorn python3-psutil || (sudo apt --fix-broken install -y && sudo apt install -y python3-fastapi python3-uvicorn python3-psutil)
 	@echo "Proceeding with installation..."
@@ -70,7 +81,7 @@ package:
 	@echo "Cleaning up build artifacts..."
 	$(MAKE) clean
 
-install-deb:
+install-deb: sudo-check
 	@DEB_FILE=$$(find . -name "hardn_*.deb" | head -n1); \
 	if [ -z "$$DEB_FILE" ]; then \
 		DEB_FILE=$$(find .. -name "hardn_*_$(ARCH).deb" | head -n1); \
