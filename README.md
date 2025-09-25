@@ -1,9 +1,5 @@
-<<<<<<< HEAD
 ![hard](docs/IMG_1233.jpeg)
 
-=======
-![hardn](docs/IMG_1233.jpeg)
->>>>>>> a7cd0a1120686943bc7e501b8d6e878c4c4584ac
 # HARDN
 
 [![ci](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml/badge.svg)](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml)
