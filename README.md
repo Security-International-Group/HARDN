@@ -1,7 +1,7 @@
 ![hard](docs/IMG_1233.jpeg)
 
 # HARDN
-Linux Security Hardening and Extended Detection & Response Toolkit
+Linux Security Hardening and Extended Detection Response
 
 HARDN is a comprehensive security hardening system for Debian-based Linux systems, providing both automated hardening capabilities and continuous security monitoring.
 > [![ci](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml/badge.svg)](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml)
@@ -28,8 +28,7 @@ hardn -h
 ```
 hardn --version
 ```
-## Quick Start
-After installation, HARDN provides two main services.
+- After installation, HARDN provides two main services, see below. 
 
 ### Continuous Monitoring with LEGION and HARDN Services
 
@@ -54,11 +53,15 @@ HARDN installs two systemd services:
 - Status: Active, runs continuously
 - Monitors: SSH, packages, binaries, filesystem, processes, network
 
-### HARDN monitoring API
+## monitoring
+
+### HARDN REST-API
 - The backend REST api is there for remote monitoring by host protocol. 
 - Purpose: Remote endpoint monitoring
 - Status: Active and running upon launch
 - Manual Start, see documentation. 
+- The strict purpose would be to see the hardn-service, legion daemon alerting and localy hosts protocols. 
+- This does require a sha256 hash key, public an dpriate to enteract with the backend tool. See doecumentaion referenced above for more information. 
 
 
 ## Architecture
@@ -71,7 +74,7 @@ Security hardening scripts located in `/usr/share/hardn/modules/`
 
 ### Tools
 Security scanning and utility tools in `/usr/share/hardn/tools/`
-- Security scanners (Lynis, AIDE)
+- Security scanners (Lynis, AIDE, LEGION)
 - Network security tools (Fail2ban, Suricata)
 - Utility functions
 
