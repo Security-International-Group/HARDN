@@ -112,14 +112,14 @@ jobs:
       run: |
         cargo install cargo-audit
 
-    - name: Run cargo-audit generate SARIF
+    - name: Run cargo-audit and generate SARIF
       run: |
-       cargo audit --json > cargo-audit.sarif
-        
-    - name: Run cargo-audit and convert to SARIF
-      run: |
-        cargo audit --json > audit.json
-        npx @microsoft/sarif-multitool convert -t clippy audit.json --output cargo-audit.sarif --log ForceOverwrite
+        cargo audit --json > cargo-audit.sarif
+
+    - name: Upload SARIF report
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: cargo-audit.sarif
 
     - name: Upload SARIF report
       uses: github/codeql-action/upload-sarif@v3
