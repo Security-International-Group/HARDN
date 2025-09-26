@@ -108,7 +108,7 @@ jobs:
     - name: Setup Rust
       uses: actions-rust-lang/setup-rust-toolchain@v1  # TODO: Pin to commit SHA
 
-    - name: Run cargo audit
+    - name: Install cargo audit
       run: |
         cargo install cargo-audit
 
@@ -116,11 +116,15 @@ jobs:
       run: |
        cargo audit --json > cargo-audit.sarif
         
-    - name: Upload cargo audit results
-      uses: github/codeql-action/upload-sarif@v3  # TODO: Pin to commit SHA
+    - name: Run cargo-audit and convert to SARIF
+      run: |
+       cargo audit --json > audit.json
+       npx @microsoft/sarif-multitool convert audit.json --output cargo-audit.sarif
+
+    - name: Upload SARIF report
+      uses: github/codeql-action/upload-sarif@v3
       with:
-        sarif_file: cargo-audit.sarif
-      if: always()
+       sarif_file: cargo-audit.sarif
 
     - name: Check for Python dependencies
       id: python-deps
@@ -159,7 +163,7 @@ jobs:
     steps:
     - name: Generate Security Report
       run: |
-        echo "# 🔒 Security Scan Results" >> $GITHUB_STEP_SUMMARY
+        echo "# Security Scan Results" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "## Job Status Summary" >> $GITHUB_STEP_SUMMARY
         echo "- CodeQL Analysis: ${{ needs.codeql.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
@@ -173,7 +177,7 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "## Next Steps" >> $GITHUB_STEP_SUMMARY
         if [ "${{ needs.codeql.result }}" != "success" ] || [ "${{ needs.semgrep.result }}" != "success" ] || [ "${{ needs.dependency-check.result }}" != "success" ]; then
-          echo "❌ Some security scans failed. Please review the detailed results above and fix any critical issues." >> $GITHUB_STEP_SUMMARY
+          echo " + Some security scans failed. Please review the detailed results above and fix any critical issues." >> $GITHUB_STEP_SUMMARY
         else
-          echo "✅ All security scans passed! Your code looks secure." >> $GITHUB_STEP_SUMMARY
+          echo " X All security scans passed! Your code looks secure." >> $GITHUB_STEP_SUMMARY
         fi
