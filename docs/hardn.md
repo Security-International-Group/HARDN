@@ -32,4 +32,4 @@ HARDN empowers everyday developers and enthusiasts by:
 In short, HARDN is like a Sentinal of Truth that makes Debian Linux feel approachable and powerful, encouraging more people to join the open-source journey and contribute back.
 
 # Who are we?
-[S E C U R I T Y - I N T E R N A T I O N A L - G R O U P](securityinternationalgroup.org)
+[S E C U R I T Y - I N T E R N A T I O N A L - G R O U P](https://securityinternationalgroup.org)
