@@ -36,7 +36,7 @@ jobs:
         - language: python
           build-mode: none
         - language: rust
-          build-mode: autobuild
+          build-mode: none
 
     steps:
     - name: Checkout repository
@@ -111,6 +111,10 @@ jobs:
     - name: Run cargo audit
       run: |
         cargo install cargo-audit
+
+    - name: Run cargo-audit generate SARIF
+      run: |
+       cargo audit --json > cargo-audit.sarif
         
     - name: Upload cargo audit results
       uses: github/codeql-action/upload-sarif@v3  # TODO: Pin to commit SHA
