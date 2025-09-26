@@ -116,15 +116,23 @@ jobs:
       run: |
         cargo audit --json > cargo-audit.sarif
 
-    - name: Upload SARIF report
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: cargo-audit.sarif
+    - name: Filter SARIF output for valid top-level properties
+      run: |
+        python3 -c "
+        import json
+        with open('cargo-audit.sarif') as f:
+              data = json.load(f)
+        allowed = {'version', 'runs'}
+        filtered = {k: v for k, v in data.items() if k in allowed}
+        with open('cargo-audit.filtered.sarif', 'w') as f:
+            json.dump(filtered, f, indent=2)
+        "
 
-    - name: Upload SARIF report
-      uses: github/codeql-action/upload-sarif@v3
+    - name: Upload code scanning results
+      uses: github/codeql-action/upload-sarif@v2
       with:
-       sarif_file: cargo-audit.sarif
+        sarif_file: cargo-audit.filtered.sarif
+
 
     - name: Check for Python dependencies
       id: python-deps
