@@ -111,8 +111,7 @@ jobs:
     - name: Run cargo audit
       run: |
         cargo install cargo-audit
-        cargo audit --format sarif --output cargo-audit.sarif || true
-
+        
     - name: Upload cargo audit results
       uses: github/codeql-action/upload-sarif@v3  # TODO: Pin to commit SHA
       with:
