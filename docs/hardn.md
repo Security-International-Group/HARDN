@@ -9,6 +9,7 @@
 ## Other Resources
 
 - [HARDN Service](hardn-service.md)
+- [HARDN Service Manager](hardn-service-manager.md)
 - [Legion Daemon](legion-daemon.md)
 - [HARDN API](hardn-api.md)
 

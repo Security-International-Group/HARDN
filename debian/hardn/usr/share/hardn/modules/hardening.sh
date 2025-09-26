@@ -46,16 +46,13 @@ chmod 600 /etc/shadow 2>/dev/null || true
 chmod 644 /etc/group 2>/dev/null || true
 
 # 5. download pwquality
-log_action "Attempting to fix broken packages..."
-dpkg --configure -a 2>/dev/null || log_action "Warning: dpkg configure failed, continuing..."
-apt-get install -f -y 2>/dev/null || log_action "Warning: package fix failed, continuing..."
 log_action "Downloading and installing pwquality..."
-apt-get update --quiet 2>/dev/null || log_action "Warning: apt update failed, continuing..."
-apt-get install -y --no-install-recommends libpam-pwquality 2>/dev/null || log_action "Warning: pwquality installation failed, continuing..." 
+apt-get update
+apt-get install -y libpam-pwquality 
 
 # 6. install clamv and start service
 log_action "Installing ClamAV antivirus..."
-apt-get install -y --no-install-recommends clamav clamav-daemon 2>/dev/null || log_action "Warning: ClamAV installation failed, continuing..."
+apt-get install -y clamav clamav-daemon
 systemctl enable clamav-freshclam 2>/dev/null || true
 systemctl start clamav-freshclam 2>/dev/null || true
 systemctl enable clamav-daemon 2>/dev/null || true
@@ -77,15 +74,15 @@ else
 fi
 # 8. install lynis and start service
 log_action "Installing Lynis..."
-apt-get install -y --no-install-recommends lynis 2>/dev/null || log_action "Warning: Lynis installation failed, continuing..."
+apt-get install -y lynis
 # 9. install fail2ban and start service
 log_action "Installing Fail2Ban..."
-apt-get install -y --no-install-recommends fail2ban 2>/dev/null || log_action "Warning: Fail2Ban installation failed, continuing..."
+apt-get install -y fail2ban
 systemctl enable fail2ban 2>/dev/null || true
 systemctl start fail2ban 2>/dev/null || true   
 # 10. install auditd and start service
 log_action "Installing auditd..."
-apt-get install -y --no-install-recommends auditd audispd-plugins 2>/dev/null || log_action "Warning: auditd installation failed, continuing..."
+apt-get install -y auditd audispd-plugins
 systemctl enable auditd 2>/dev/null || true
 systemctl start auditd 2>/dev/null || true   
 # 11. configure fail2ban for ssh
@@ -103,20 +100,20 @@ bantime = 600
 fi      
 # 12. setup linux logging 
 log_action "Setting up system logging..."
-apt-get install -y --no-install-recommends rsyslog 2>/dev/null || log_action "Warning: rsyslog installation failed, continuing..."
+apt-get install -y rsyslog
 systemctl enable rsyslog 2>/dev/null || true
 systemctl start rsyslog 2>/dev/null || true   
 # 13. setup unattended upgrades
 log_action "Setting up unattended upgrades..."
-apt-get install -y --no-install-recommends unattended-upgrades 2>/dev/null || log_action "Warning: unattended-upgrades installation failed, continuing..."
-dpkg-reconfigure -plow unattended-upgrades 2>/dev/null || true
+apt-get install -y unattended-upgrades
+dpkg-reconfigure -plow unattended-upgrades
 # 14. setup ufw firewall
 log_action "Setting up UFW firewall..."
-apt-get install -y --no-install-recommends ufw 2>/dev/null || log_action "Warning: UFW installation failed, continuing..."
-ufw default deny incoming 2>/dev/null || true
-ufw default allow outgoing 2>/dev/null || true
-ufw allow ssh 2>/dev/null || true
-ufw enable 2>/dev/null || true
+apt-get install -y ufw
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow ssh
+ufw enable
 
 # 15 kernel security
 log_action "Configuring kernel security parameters..."

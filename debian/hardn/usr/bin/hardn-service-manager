@@ -163,6 +163,19 @@ manage_service() {
     local display_action="${action^}"
     echo -n "  ${display_action}ing $service_name... "
     
+    # Special handling for oneshot services during start
+    if [[ "$action" == "start" && "$service_name" == "hardn.service" ]]; then
+        # For oneshot hardn.service, run modules directly instead of starting service
+        echo "Running hardening modules..."
+        if "$HARDN_BIN" --run-all-modules; then
+            print_colored "$GREEN" "✓ Success"
+        else
+            print_colored "$RED" "✗ Failed"
+            echo "  Check logs with: journalctl -u '$service_name' -n 50"
+        fi
+        return
+    fi
+    
     if systemctl "$action" "$service_name" 2>/dev/null; then
         print_colored "$GREEN" "✓ Success"
         if [[ "$action" == "start" || "$action" == "restart" ]]; then
