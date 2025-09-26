@@ -2,7 +2,7 @@
 # Scans all branches for security vulnerabilities and code quality issues
 
 
-name: "Advanced Security Scan"
+name: "SAST"
 
 on:
   push:
@@ -117,5 +117,5 @@ jobs:
         if [ "${{ needs.codeql.result }}" != "success" ] || [ "${{ needs.semgrep.result }}" != "success" ] || [ "${{ needs.dependency-check.result }}" != "success" ]; then
           echo " + Some security scans failed. Please review the detailed results above and fix any critical issues." >> $GITHUB_STEP_SUMMARY
         else
-          echo " *All security scans passed* >> $GITHUB_STEP_SUMMARY
+          echo " *All security scans passed* " >> $GITHUB_STEP_SUMMARY
         fi
