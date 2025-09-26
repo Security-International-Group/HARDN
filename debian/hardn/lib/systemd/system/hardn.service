@@ -1,0 +1,29 @@
+[Unit]
+Description=HARDN Security Hardening Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/bin/hardn --run-all-modules
+RemainAfterExit=no
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hardn
+SuccessExitStatus=0 1  # Accept exit codes 0 (success) and 1 (module failures)
+
+# Security settings
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hardn /var/log/hardn
+PrivateTmp=yes
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=75%
+
+[Install]
+WantedBy=multi-user.target

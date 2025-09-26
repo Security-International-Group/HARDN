@@ -13,6 +13,7 @@ HARDN is a comprehensive security hardening system for Debian-based Linux system
 - Continuous Monitoring: LEGION security monitoring daemon
 - Modular Architecture: Extensible tool and module system
 - Service Integration: Systemd service management
+- Interactive Management: User-friendly service manager interface
 
 ## Installation
 
@@ -30,12 +31,20 @@ hardn --version
 ```
 - After installation, HARDN provides two main services, see below. 
 
+### 3. Interactive Service Management
+HARDN includes an interactive service manager for easy system management:
+```
+sudo hardn-service-manager
+```
+This provides a menu-driven interface for managing services, running modules/tools, and monitoring system security.
+
 ### Continuous Monitoring with LEGION and HARDN Services
 
 #### References
 - [LEGION](docs/legion-daemon.md)
 - [HARDN](docs/hardn.md)
 - [HARDN API](docs.hardn-api.md)
+- [HARDN Service Manager](docs/hardn-service-manager.md)
 
 ## Services
 
