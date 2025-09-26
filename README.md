@@ -5,6 +5,7 @@ Linux Security Hardening and Extended Detection & Response Toolkit
 
 HARDN is a comprehensive security hardening system for Debian-based Linux systems, providing both automated hardening capabilities and continuous security monitoring.
 > [![ci](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml/badge.svg)](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml)
+> [![SAST](https://github.com/Security-International-Group/HARDN/actions/workflows/codeql.yml/badge.svg)](https://github.com/Security-International-Group/HARDN/actions/workflows/codeql.yml)
 ## Features
 - HARDN builds a rust core and binary. 
 - Security Scanners: Lynis, AIDE, Legion integration
