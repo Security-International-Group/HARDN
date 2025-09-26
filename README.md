@@ -6,7 +6,7 @@ Linux Security Hardening and Extended Detection & Response Toolkit
 HARDN is a comprehensive security hardening system for Debian-based Linux systems, providing both automated hardening capabilities and continuous security monitoring.
 > [![ci](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml/badge.svg)](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml)
 ## Features
-
+- HARDN builds a rust core and binary. 
 - Security Scanners: Lynis, AIDE, Legion integration
 - Network Security: Fail2ban, Suricata support
 - System Hardening: Basic security configurations
@@ -29,58 +29,14 @@ hardn -h
 hardn --version
 ```
 ## Quick Start
-After installation, HARDN provides two main services:
+After installation, HARDN provides two main services.
 
-### Continuous Monitoring with LEGION
+### Continuous Monitoring with LEGION and HARDN Services
 
-LEGION provides advanced, continuous security monitoring. You can manage and interact with the LEGION daemon using the following commands:
-
-
-### Check status of the LEGION daemon
-```
-sudo systemctl status legion-daemon.service
-```
-### Start the LEGION daemon
-```
-sudo systemctl start legion-daemon.service
-```
-### Stop the LEGION daemon
-```
-sudo systemctl stop legion-daemon.service
-```
-### Restart the LEGION daemon
-```
-sudo systemctl restart legion-daemon.service
-```
-### View logs for the LEGION daemon
-```
-sudo journalctl -u legion-daemon.service
-```
-### Run LEGION once for a security assessment
-```
-sudo hardn legion
-```
-### Run LEGION as a daemon with verbose output
-```
-sudo hardn legion --daemon --verbose
-```
-### Show LEGION command options
-```
-sudo hardn legion --help
-```
-### On-Demand Hardening with HARDN - service
-#### Run all security modules
-```
-sudo hardn --run-all-modules
-```
-### Or use the service
-```
-sudo systemctl start hardn.service
-```
-## Command Reference and Education
-
-- See docs explaining both hardn.service and legion.daemon
-- [HARDN Docs](docs/hardn.md)
+#### References
+- [LEGION](docs/legion-daemon.md)
+- [HARDN](docs/hardn.md)
+- [HARDN API](docs.hardn-api.md)
 
 ## Services
 
@@ -98,6 +54,13 @@ HARDN installs two systemd services:
 - Status: Active, runs continuously
 - Monitors: SSH, packages, binaries, filesystem, processes, network
 
+### HARDN monitoring API
+- The backend REST api is there for remote monitoring by host protocol. 
+- Purpose: Remote endpoint monitoring
+- Status: Active and running upon launch
+- Manual Start, see documentation. 
+
+
 ## Architecture
 
 ### Modules
@@ -111,14 +74,6 @@ Security scanning and utility tools in `/usr/share/hardn/tools/`
 - Security scanners (Lynis, AIDE)
 - Network security tools (Fail2ban, Suricata)
 - Utility functions
-
-### LEGION
-Advanced security monitoring system:
-- Continuous anomaly detection
-- Filesystem integrity monitoring
-- Process analysis
-- Network security assessment
-- Configurable monitoring intervals
 
 ## Configuration
 
