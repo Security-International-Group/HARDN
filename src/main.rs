@@ -5,7 +5,6 @@ mod core;
 mod display;
 mod execution;
 mod services;
-mod security;
 mod utils;
 mod legion;
 
@@ -14,8 +13,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-// Import from our new modules
+use ctrlc;
 use crate::core::config::*;
 use crate::core::types::*;
 use crate::utils::{LogLevel, log_message, detect_debian_version};
@@ -1045,6 +1043,43 @@ fn check_hardn_processes() -> Vec<String> {
     processes
 }
 
+/// Get simple service status (active/inactive/failed)
+fn get_service_status_simple(service: &str) -> String {
+    let output = Command::new("systemctl")
+        .args(&["is-active", service])
+        .output();
+    
+    match output {
+        Ok(result) => {
+            let status = String::from_utf8_lossy(&result.stdout).trim().to_string();
+            if result.status.success() {
+                status
+            } else {
+                "inactive".to_string()
+            }
+        }
+        Err(_) => "unknown".to_string()
+    }
+}
+
+/// Get detailed service status information
+fn get_service_status_detailed(service: &str) -> String {
+    let output = Command::new("systemctl")
+        .args(&["status", service, "--no-pager", "-l"])
+        .output();
+    
+    match output {
+        Ok(result) => {
+            if result.status.success() {
+                String::from_utf8_lossy(&result.stdout).to_string()
+            } else {
+                format!("{}: Failed to get status - {}", service, String::from_utf8_lossy(&result.stderr))
+            }
+        }
+        Err(e) => format!("{}: Error - {}", service, e)
+    }
+}
+
 /// Manage HARDN services (enable, disable, start, stop, restart)
 fn manage_service(action: &str) -> i32 {
     // List of manageable HARDN services (in dependency order)
@@ -1272,6 +1307,197 @@ fn restart_systemd_service(service_name: &str, optional: bool) {
     }
 }
 
+/// Interactive service monitor with log viewing capabilities
+fn interactive_service_monitor() -> i32 {
+    use std::io::{self, Write};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::Duration;
+
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+
+    // Set up Ctrl+C handler
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+        print!("\n\rReturning to main menu... ");
+        io::stdout().flush().unwrap();
+        thread::sleep(Duration::from_millis(500));
+        println!("Done.");
+    }).expect("Error setting Ctrl+C handler");
+
+    let services = vec![
+        "hardn.service",
+        "hardn-api.service",
+        "legion-daemon.service",
+        "hardn-monitor.service"
+    ];
+
+    loop {
+        if !running.load(Ordering::SeqCst) {
+            break;
+        }
+
+        println!("\n╔══════════════════════════════════════════════════════════════╗");
+        println!("║                  HARDN SERVICE MONITOR                      ║");
+        println!("╚══════════════════════════════════════════════════════════════╝");
+        println!();
+        println!("Available services:");
+
+        for (i, service) in services.iter().enumerate() {
+            let status = get_service_status_simple(service);
+            let status_color = match status.as_str() {
+                "active" => "\x1b[32m",
+                "inactive" => "\x1b[31m",
+                "failed" => "\x1b[31m",
+                _ => "\x1b[33m"
+            };
+            println!("  {}. {} - {}{} \x1b[0m", i + 1, service, status_color, status);
+        }
+
+        println!();
+        println!("Options:");
+        println!("  1-{}: View logs for specific service", services.len());
+        println!("  a: View logs for ALL services");
+        println!("  s: Show service status");
+        println!("  r: Restart all services");
+        println!("  q: Quit to main menu");
+        println!();
+        print!("Choice: ");
+        io::stdout().flush().unwrap();
+
+        let mut input = String::new();
+        if io::stdin().read_line(&mut input).is_err() {
+            break;
+        }
+
+        let choice = input.trim();
+
+        match choice {
+            "q" | "Q" => break,
+            "s" | "S" => {
+                println!("\n═══ SERVICE STATUS ═══");
+                for service in &services {
+                    let status = get_service_status_detailed(service);
+                    println!("{}", status);
+                }
+                println!("\nPress Enter to continue...");
+                let mut dummy = String::new();
+                let _ = io::stdin().read_line(&mut dummy);
+            }
+            "r" | "R" => {
+                println!("\n═══ RESTARTING SERVICES ═══");
+                for service in &services {
+                    print!("Restarting {}... ", service);
+                    io::stdout().flush().unwrap();
+
+                    let output = Command::new("systemctl")
+                        .args(&["restart", service])
+                        .output();
+
+                    match output {
+                        Ok(result) if result.status.success() => {
+                            println!("\x1b[32m✓ Done\x1b[0m");
+                        }
+                        _ => {
+                            println!("\x1b[31m✗ Failed\x1b[0m");
+                        }
+                    }
+                }
+                println!("\nPress Enter to continue...");
+                let mut dummy = String::new();
+                let _ = io::stdin().read_line(&mut dummy);
+            }
+            "a" | "A" => {
+                println!("\n═══ ALL SERVICE LOGS ═══");
+                println!("Showing logs for all HARDN services (press Ctrl+C to return to menu)");
+                println!();
+
+                let running_clone = running.clone();
+                thread::spawn(move || {
+                    let mut child = Command::new("journalctl")
+                        .args(&["-f", "-u", "hardn", "-u", "hardn-api", "-u", "legion-daemon", "-u", "hardn-monitor", "--since", "today"])
+                        .stdout(Stdio::piped())
+                        .spawn()
+                        .expect("Failed to start journalctl");
+
+                    if let Some(stdout) = child.stdout.take() {
+                        use std::io::{BufRead, BufReader};
+                        let reader = BufReader::new(stdout);
+
+                        for line in reader.lines() {
+                            if !running_clone.load(Ordering::SeqCst) {
+                                let _ = child.kill();
+                                break;
+                            }
+
+                            if let Ok(line) = line {
+                                println!("{}", line);
+                            }
+                        }
+                    }
+                });
+
+                // Wait for Ctrl+C
+                while running.load(Ordering::SeqCst) {
+                    thread::sleep(Duration::from_millis(100));
+                }
+            }
+            choice => {
+                // Try to parse as service number
+                if let Ok(index) = choice.parse::<usize>() {
+                    if index >= 1 && index <= services.len() {
+                        let service = services[index - 1];
+                        println!("\n═══ LOGS FOR {} ═══", service);
+                        println!("Press Ctrl+C to return to menu");
+                        println!();
+
+                        let running_clone = running.clone();
+                        let service_name = service.to_string();
+
+                        thread::spawn(move || {
+                            let mut child = Command::new("journalctl")
+                                .args(&["-f", "-u", &service_name, "--since", "today"])
+                                .stdout(Stdio::piped())
+                                .spawn()
+                                .expect("Failed to start journalctl");
+
+                            if let Some(stdout) = child.stdout.take() {
+                                use std::io::{BufRead, BufReader};
+                                let reader = BufReader::new(stdout);
+
+                                for line in reader.lines() {
+                                    if !running_clone.load(Ordering::SeqCst) {
+                                        let _ = child.kill();
+                                        break;
+                                    }
+
+                                    if let Ok(line) = line {
+                                        println!("{}", line);
+                                    }
+                                }
+                            }
+                        });
+
+                        // Wait for Ctrl+C
+                        while running.load(Ordering::SeqCst) {
+                            thread::sleep(Duration::from_millis(100));
+                        }
+                    } else {
+                        println!("Invalid service number. Please try again.");
+                        thread::sleep(Duration::from_secs(2));
+                    }
+                } else {
+                    println!("Invalid choice. Please try again.");
+                    thread::sleep(Duration::from_secs(2));
+                }
+            }
+        }
+    }
+
+    EXIT_SUCCESS
+}
 /// Display comprehensive status of HARDN
 fn show_status() {
     println!("\n═══════════════════════════════════════════════════════════════════════════════");
@@ -1390,108 +1616,43 @@ fn show_status() {
 }
 
 fn print_help() {
-    // Get available modules and tools dynamically
-    let module_dirs = env_or_defaults("HARDN_MODULE_PATH", DEFAULT_MODULE_DIRS);
-    let tool_dirs = env_or_defaults("HARDN_TOOL_PATH", DEFAULT_TOOL_DIRS);
-    let modules = list_modules(&module_dirs).unwrap_or_default();
-    let tools = list_modules(&tool_dirs).unwrap_or_default();
-    
     println!(
         r#"
 {} - Linux Security Hardening and Extended Detection & Response Toolkit
-A comprehensive STIG-compliant security hardening system for Debian-based systems.
-
-Usage: sudo hardn [OPTIONS] [COMMAND]
 
 ═══════════════════════════════════════════════════════════════════════════════
 
-GENERAL OPTIONS:
-  -a, --about          Show information about hardn
-  -h, --help           Show help information
-  -s, --status         Show current status of HARDN services and tools
-  --version            Show version
-  --list-modules       List all available modules
-  --list-tools         List all available tools
-  --security-report    Generate comprehensive security score report
+QUICK START:
+  sudo make hardn          Launch the interactive service manager (main orchestrator)
+  sudo hardn services      Alternative: Launch service monitoring interface
 
-QUICK SERVICE COMMANDS:
-  --service-enable     Enable HARDN services (shortcut for: service enable)
-  --service-start      Start HARDN services (shortcut for: service start)
-  --service-status     Show service status (shortcut for: --status)
+NAVIGATION:
+  • Use arrow keys or numbers to navigate menus
+  • Press 'q' to quit from any menu
+  • Press Ctrl+C in log views to return to menus (doesn't exit app)
 
-EXECUTION COMMANDS:
-  --run-all-modules    Run all available modules
-  --run-all-tools      Run all available tools  
-  --run-everything     Run all modules and tools
+GETTING HELP:
+  sudo hardn --help        Show this help menu
+  sudo hardn --about       Show detailed information about HARDN
+  sudo hardn --status      Show current service status
 
-SANDBOX MODE:
-  --sandbox-on         Enable sandbox mode (disconnect internet, close all ports)
-  --sandbox-off        Disable sandbox mode (restore network configuration)
+TROUBLESHOOTING ERRORS:
+  • Check service status: sudo hardn --status
+  • View service logs: sudo journalctl -u hardn.service -f
+  • Reinstall if needed: sudo make build && sudo make hardn
+  • Check permissions: ensure running with sudo
 
-DANGEROUS OPERATIONS (Manual Only - Never in batch operations):
-  --enable-selinux     Enable SELinux (DISABLES AppArmor, REQUIRES REBOOT)
-
-STANDARD COMMANDS:
-  status               Show current status of HARDN services and tools
-  service <action>     Manage HARDN services (enable/disable/start/stop/restart)
-  run-module <name>    Run a specific module by name
-  run-tool <name>      Run a specific tool by name
-  legion <options>     Run LEGION security monitoring and anomaly detection
-  (no command)         Show this help menu
+AVAILABLE COMMANDS:
+  status                   Show service status
+  service <action>         Manage services (enable/disable/start/stop/restart)
+  run-module <name>        Run specific hardening module
+  run-tool <name>          Run specific security tool
+  legion <options>         LEGION security monitoring
+  --security-report        Generate comprehensive security assessment
 
 ═══════════════════════════════════════════════════════════════════════════════
 "#,
         APP_NAME
-    );
-    
-    // Print available modules
-    println!("AVAILABLE MODULES ({} found):", modules.len());
-    if modules.is_empty() {
-        println!("    (no modules found)");
-    } else {
-        for module in &modules {
-            println!("    - {}", module);
-        }
-    }
-    
-    println!();
-    
-    // Print available tools with categorization
-    println!("AVAILABLE TOOLS ({} found):", tools.len());
-    if tools.is_empty() {
-        println!("    (no tools found)");
-    } else {
-        // Categorize tools for better organization
-        let categorized = categorize_tools(&tools);
-        
-        for (category, cat_tools) in categorized {
-            println!("\n  {}:", category);
-            for tool in cat_tools {
-                println!("    - {}", tool);
-            }
-        }
-    }
-    
-    println!(
-        r#"
-═══════════════════════════════════════════════════════════════════════════════
-
-PATH CONFIGURATION:
-  Environment Variables (colon-separated):
-    HARDN_MODULE_PATH=/path1:/path2   # Custom module search paths
-    HARDN_TOOL_PATH=/pathA:/pathB     # Custom tool search paths
-
-  Default Search Paths:
-    Modules: /usr/share/hardn/modules,
-             /usr/lib/hardn/src/setup/modules,
-             /usr/local/share/hardn/modules
-    
-    Tools:   /usr/share/hardn/tools,
-             /usr/lib/hardn/src/setup/tools,
-             /usr/local/share/hardn/tools
-
-═══════════════════════════════════════════════════════════════════════════════
-"#
     );
 }
 
@@ -1659,6 +1820,9 @@ fn main() {
                     "--security-report" | "security-report" => {
                         generate_security_report();
                         EXIT_SUCCESS
+                    }
+                    "services" => {
+                        interactive_service_monitor()
                     }
                     "--run-all-modules" | "run-all-modules" => {
                         run_all_modules()

@@ -1,13 +1,13 @@
 [Unit]
 Description=HARDN LEGION Security Monitoring Daemon
-After=network.target
-Wants=network.target
+After=network.target hardn-monitor.service
+Wants=network.target hardn-monitor.service
 
 [Service]
 Type=simple
 User=root
 Group=root
-ExecStart=/usr/local/bin/hardn legion --daemon --verbose
+ExecStart=/bin/bash -c 'if [ ! -d /var/lib/hardn/legion ] || [ -z "$(ls -A /var/lib/hardn/legion/baseline_*.json 2>/dev/null)" ]; then echo "Creating LEGION baseline..."; /usr/bin/hardn legion --create-baseline --json; fi; exec /usr/bin/hardn legion --daemon --verbose'
 Restart=always
 RestartSec=10
 StandardOutput=journal

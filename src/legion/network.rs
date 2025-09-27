@@ -6,7 +6,7 @@ pub mod network {
 
     #[allow(dead_code)]
     pub fn check_listening_sockets() -> Result<(), Box<dyn std::error::Error>> {
-        println!("  Checking listening network sockets...");
+        eprintln!("  Checking listening network sockets...");
 
         // Check listening ports
         if let Ok(output) = Command::new("ss")
@@ -16,7 +16,7 @@ pub mod network {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let listening_count = output_str.lines().count();
 
-            println!("    {} listening sockets found", listening_count);
+            eprintln!("    {} listening sockets found", listening_count);
 
             // Check for suspicious ports
             let suspicious_ports = vec![23, 21, 25, 53, 139, 445]; // telnet, ftp, smtp, dns, samba
@@ -36,9 +36,9 @@ pub mod network {
             }
 
             if !found_suspicious.is_empty() {
-                println!("    Suspicious listening ports:");
+                eprintln!("    Suspicious listening ports:");
                 for port in found_suspicious {
-                    println!("       {}", port);
+                    eprintln!("       {}", port);
                 }
             }
         }
@@ -48,18 +48,18 @@ pub mod network {
 
     #[allow(dead_code)]
     pub fn check_firewall_rules() -> Result<(), Box<dyn std::error::Error>> {
-        println!("  Checking firewall configuration...");
+        eprintln!("  Checking firewall configuration...");
 
         // Check ufw status
         if let Ok(output) = Command::new("ufw").arg("status").output() {
             let output_str = String::from_utf8_lossy(&output.stdout);
             if output_str.contains("inactive") {
-                println!("    UFW firewall is inactive");
+                eprintln!("    UFW firewall is inactive");
             } else {
-                println!("    UFW firewall is active");
+                eprintln!("    UFW firewall is active");
             }
         } else {
-            println!("    UFW not available");
+            eprintln!("    UFW not available");
         }
 
         // Check iptables rules
@@ -69,7 +69,7 @@ pub mod network {
                 .filter(|line| line.contains("ACCEPT") || line.contains("DROP"))
                 .count();
 
-            println!("    {} iptables rules configured", rule_count);
+            eprintln!("    {} iptables rules configured", rule_count);
         }
 
         Ok(())

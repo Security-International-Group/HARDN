@@ -5,7 +5,6 @@
 pub mod legion;
 pub mod config;
 pub mod baseline;
-pub mod ml_baseline;
 pub mod behavioral;
 pub mod threat_intel;
 pub mod response;

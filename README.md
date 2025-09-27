@@ -17,15 +17,15 @@ HARDN is a comprehensive security hardening system for Debian-based Linux system
 
 ## Installation
 
-### 1. Clone and build the binary 
+### 1. Build
 ```
 git clone https://github.com/Security-International-Group/HARDN.git
 cd HARDN
-make build
-make hardn
+sudo make build
+sudo make hardn
 hardn -h 
 ```
-### 2. Verify installation
+### 2. Verify 
 ```
 hardn --version
 ```
@@ -57,10 +57,12 @@ HARDN installs two systemd services:
 - Manual start: `sudo systemctl start hardn.service`
 
 ### legion-daemon.service
+![legion](docs/legion.jpeg)
 - Type: Monitoring (daemon)
 - Purpose: Continuous security monitoring
 - Status: Active, runs continuously
 - Monitors: SSH, packages, binaries, filesystem, processes, network
+![enemy](docs/enemy.jpeg)
 
 ## monitoring
 

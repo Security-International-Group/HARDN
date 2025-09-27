@@ -6,7 +6,7 @@ pub mod packages {
 
     #[allow(dead_code)]
     pub fn check_package_drift() -> Result<(), Box<dyn std::error::Error>> {
-        println!("  Checking package integrity...");
+        eprintln!("  Checking package integrity...");
 
         // Check for modified packages using debsums
         if let Ok(output) = Command::new("debsums").arg("-c").output() {
@@ -14,16 +14,16 @@ pub mod packages {
             let modified_count = output_str.lines().count();
 
             if modified_count > 0 {
-                println!("    Found {} packages with modified files", modified_count);
+                eprintln!("    Found {} packages with modified files", modified_count);
                 // Show first few modified packages
                 for line in output_str.lines().take(3) {
-                    println!("       {}", line);
+                    eprintln!("       {}", line);
                 }
             } else {
-                println!("    Package integrity verified");
+                eprintln!("    Package integrity verified");
             }
         } else {
-            println!("    debsums not available for package integrity check");
+            eprintln!("    debsums not available for package integrity check");
         }
 
         Ok(())
@@ -31,7 +31,7 @@ pub mod packages {
 
     #[allow(dead_code)]
     pub fn check_binary_integrity() -> Result<(), Box<dyn std::error::Error>> {
-        println!("  Checking binary integrity...");
+        eprintln!("  Checking binary integrity...");
 
         // Check critical system binaries
         let critical_binaries = vec![
@@ -57,11 +57,11 @@ pub mod packages {
         }
 
         if suspicious.is_empty() {
-            println!("    Critical binaries appear normal");
+            eprintln!("    Critical binaries appear normal");
         } else {
-            println!("    Suspicious binary permissions:");
+            eprintln!("    Suspicious binary permissions:");
             for item in suspicious {
-                println!("       {}", item);
+                eprintln!("       {}", item);
             }
         }
 

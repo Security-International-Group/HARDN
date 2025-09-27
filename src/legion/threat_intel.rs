@@ -81,7 +81,7 @@ impl ThreatIntelligence {
     }
 
     pub async fn update_feeds(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Updating threat intelligence feeds...");
+        eprintln!("Updating threat intelligence feeds...");
 
         // Update AbuseIPDB feed
         self.update_abuseipdb_feed().await?;
@@ -96,13 +96,13 @@ impl ThreatIntelligence {
         self.update_cve_database().await?;
 
         self.last_update = Utc::now();
-        println!("Threat intelligence feeds updated successfully");
+        eprintln!("Threat intelligence feeds updated successfully");
         Ok(())
     }
 
     async fn update_abuseipdb_feed(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // Simulate AbuseIPDB API call (replace with actual implementation)
-        println!("Updating AbuseIPDB blacklist...");
+        eprintln!("Updating AbuseIPDB blacklist...");
 
         // In a real implementation, this would make HTTP requests to AbuseIPDB API
         // For demo purposes, we'll add some sample malicious IPs
@@ -132,7 +132,7 @@ impl ThreatIntelligence {
     }
 
     async fn update_alienvault_feed(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Updating AlienVault OTX indicators...");
+        eprintln!("Updating AlienVault OTX indicators...");
 
         // Sample domains from AlienVault OTX
         let malicious_domains = vec![
@@ -159,7 +159,7 @@ impl ThreatIntelligence {
     }
 
     async fn update_virustotal_feed(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Updating VirusTotal file hashes...");
+        eprintln!("Updating VirusTotal file hashes...");
 
         // Sample malicious file hashes
         let malicious_hashes = vec![
@@ -185,7 +185,7 @@ impl ThreatIntelligence {
     }
 
     async fn update_cve_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Updating CVE database...");
+        eprintln!("Updating CVE database...");
 
         // Sample CVEs
         let cves = vec![

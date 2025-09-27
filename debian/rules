@@ -7,6 +7,8 @@ binary:
 override_dh_auto_install:
 	# Install the main binary
 	install -D -m 755 target/release/hardn debian/hardn/usr/bin/hardn
+	# Install the monitor binary
+	install -D -m 755 target/release/hardn-monitor debian/hardn/usr/bin/hardn-monitor
 	# Install modules
 	install -d debian/hardn/usr/share/hardn/modules
 	install -m 755 usr/share/hardn/modules/*.sh debian/hardn/usr/share/hardn/modules/ 2>/dev/null || true

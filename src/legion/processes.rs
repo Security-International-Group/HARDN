@@ -6,7 +6,7 @@ pub mod processes {
 
     #[allow(dead_code)]
     pub fn check_orphan_processes() -> Result<(), Box<dyn std::error::Error>> {
-        println!("  Checking for orphan processes...");
+        eprintln!("  Checking for orphan processes...");
 
         // Check for processes with PPID 1 (init) that might be suspicious
         if let Ok(output) = Command::new("ps")
@@ -28,7 +28,7 @@ pub mod processes {
                 }
             }
 
-            println!("    Process tree analyzed");
+            eprintln!("    Process tree analyzed");
         }
 
         Ok(())
@@ -36,7 +36,7 @@ pub mod processes {
 
     #[allow(dead_code)]
     pub fn check_suspicious_executables() -> Result<(), Box<dyn std::error::Error>> {
-        println!("  Checking for suspicious executables...");
+        eprintln!("  Checking for suspicious executables...");
 
         // Check for executables running from /tmp or other suspicious locations
         if let Ok(output) = Command::new("lsof")
@@ -49,9 +49,9 @@ pub mod processes {
                 .collect();
 
             if !tmp_executables.is_empty() {
-                println!("    Found {} suspicious files in /tmp", tmp_executables.len());
+                eprintln!("    Found {} suspicious files in /tmp", tmp_executables.len());
             } else {
-                println!("    No suspicious executables in /tmp");
+                eprintln!("    No suspicious executables in /tmp");
             }
         }
 

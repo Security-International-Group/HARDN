@@ -21,7 +21,7 @@ BOLD='\033[1m'
 
 # Configuration
 readonly LOG_DIR="/var/log/hardn"
-readonly HARDN_SERVICES="hardn.service hardn-api.service legion-daemon.service"
+readonly HARDN_SERVICES="hardn.service hardn-api.service legion-daemon.service hardn-monitor.service"
 
 # Function to find HARDN binary
 find_hardn_binary() {
@@ -64,7 +64,7 @@ print_colored() {
 # Function to check if running as root
 check_root() {
     if [[ $EUID -ne 0 ]]; then
-        print_colored "$RED" "❌ This script must be run as root!"
+        print_colored "$RED" "This script must be run as root!"
         echo "Please run with: sudo $0"
         exit 1
     fi
@@ -109,8 +109,8 @@ check_dependencies() {
 display_header() {
     clear
     echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}                     ${BOLD}HARDN Service Manager${NC}                                    ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}         Linux Security Hardening & Extended Detection Toolkit               ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}                     ${BOLD}HARDN Service Manager${NC}                           ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}         Linux Security Hardening & Extended Detection Toolkit                ${CYAN}║${NC}"
     echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════════════════╝${NC}"
     echo
 }
@@ -154,19 +154,19 @@ display_service_status() {
     echo
 }
 
-# Function to manage a specific service
+
 manage_service() {
     local service_name=$1
     local action=$2
     
-    # Capitalize first letter for display (bash-specific but safe)
+   
     local display_action="${action^}"
     echo -n "  ${display_action}ing $service_name... "
     
     if systemctl "$action" "$service_name" 2>/dev/null; then
         print_colored "$GREEN" "✓ Success"
         if [[ "$action" == "start" || "$action" == "restart" ]]; then
-            sleep 2  # Give service time to start
+            sleep 2  
         fi
     else
         print_colored "$RED" "✗ Failed"
@@ -174,7 +174,7 @@ manage_service() {
     fi
 }
 
-# Function to run LEGION options
+
 run_legion_menu() {
     while true; do
         display_header
@@ -187,15 +187,14 @@ run_legion_menu() {
         echo "4) View LEGION Logs"
         echo "5) Check LEGION Status"
         echo "6) Create System Baseline"
-        echo "7) Run with ML Analysis"
-        echo "8) Run with Predictive Analysis"
-        echo "9) Run with Automated Response"
-        echo "10) Custom LEGION Options"
+        echo "7) Run with Predictive Analysis"
+        echo "8) Run with Automated Response"
+        echo "9) Custom LEGION Options"
         echo
         echo "0) Back to Main Menu"
         echo
-        read -p "Select option [0-10]: " legion_choice || { echo; return; }
-        
+        read -p "Select option [0-9]: " legion_choice || { echo; return; }
+
         case $legion_choice in
             1)
                 echo -e "\n${BOLD}Running LEGION security assessment...${NC}"
@@ -239,7 +238,7 @@ run_legion_menu() {
                 ;;
             9)
                 echo -e "\n${BOLD}Running LEGION with automated response...${NC}"
-                echo -e "${YELLOW}⚠️  WARNING: Automated response may take security actions automatically!${NC}"
+                echo -e "${YELLOW}WARNING: Automated response may take security actions automatically!${NC}"
                 read -p "Are you sure? [y/N]: " confirm || { echo; continue; }
                 if [[ "$confirm" =~ ^[Yy]$ ]]; then
                     "$HARDN_BIN" legion --response-enabled
@@ -254,7 +253,6 @@ run_legion_menu() {
                 echo "  --create-baseline --verbose"
                 read -p "Options: " legion_options || { echo; continue; }
                 echo -e "\n${BOLD}Running LEGION with options...${NC}"
-                # Use eval carefully with validated input
                 "$HARDN_BIN" legion $legion_options
                 read -p $'\nPress Enter to continue...' || true
                 ;;
@@ -269,15 +267,14 @@ run_legion_menu() {
     done
 }
 
-# Function to run modules
+
 run_modules_menu() {
     while true; do
         display_header
         echo -e "${BOLD}Available HARDN Modules:${NC}"
         echo -e "─────────────────────────────────────────────────"
         echo
-        
-        # Get available modules
+       
         local modules
         modules=$("$HARDN_BIN" --list-modules 2>/dev/null | grep -E "^    - " | sed 's/    - //' || true)
         
@@ -332,7 +329,7 @@ run_modules_menu() {
     done
 }
 
-# Function to run tools
+
 run_tools_menu() {
     while true; do
         display_header
@@ -340,7 +337,6 @@ run_tools_menu() {
         echo -e "─────────────────────────────────────────────────"
         echo
         
-        # Get available tools dynamically
         local tools_output
         tools_output=$("$HARDN_BIN" --list-tools 2>/dev/null || true)
         
@@ -351,7 +347,6 @@ run_tools_menu() {
             return
         fi
         
-        # Parse tools by category and display with numbers
         local i=1
         declare -a tool_array
         local current_category=""
@@ -405,7 +400,6 @@ run_tools_menu() {
     done
 }
 
-# Function to manage HARDN services
 manage_services_menu() {
     while true; do
         display_header
@@ -421,7 +415,7 @@ manage_services_menu() {
         echo "5) Disable ALL Services (Don't start on boot)"
         echo
         echo "6) Manage Individual Service"
-        echo "7) View Service Logs"
+        echo "7) View Service Logs (Live & Historical)"
         echo
         echo "0) Back to Main Menu"
         echo
@@ -519,24 +513,90 @@ manage_services_menu() {
                 read -p $'\nPress Enter to continue...' || true
                 ;;
             7)
-                echo -e "\n${BOLD}Select service to view logs:${NC}"
-                echo "1) hardn.service"
-                echo "2) hardn-api.service"
-                echo "3) legion-daemon.service"
-                echo "4) All HARDN logs"
-                echo "5) Custom journalctl command"
-                read -p "Select [1-5]: " log_choice || { echo; continue; }
+                echo -e "\n${BOLD}╔═══════════════════════════════════════════════════════════════════════════╗${NC}"
+                echo -e "${BOLD}║                        HARDN Service Logs Viewer                        ║${NC}"
+                echo -e "${BOLD}╚═══════════════════════════════════════════════════════════════════════════╝${NC}"
+                echo -e "\n${CYAN}Choose log viewing mode:${NC}"
+                echo "1) Live All Services (follow mode)"
+                echo "2) Recent All Services (last 50 entries)"
+                echo "3) Individual Service Logs"
+                echo "4) Critical Errors Only"
+                echo "5) Performance Metrics"
+                echo "6) Custom journalctl command"
+                echo -e "${YELLOW}Note: Use Ctrl+C to exit live/following modes${NC}"
+                read -p $'\nSelect [1-6]: ' log_choice || { echo; continue; }
                 
                 case $log_choice in
-                    1) journalctl -u hardn.service -n 100 --no-pager ;;
-                    2) journalctl -u hardn-api.service -n 100 --no-pager ;;
-                    3) journalctl -u legion-daemon.service -n 100 --no-pager ;;
-                    4) journalctl -u 'hardn*' -u 'legion*' -n 100 --no-pager ;;
-                    5) 
-                        read -p "Enter journalctl command: " custom_cmd
-                        eval "journalctl $custom_cmd"
+                    1)
+                        echo -e "\n${BOLD}${GREEN}LIVE MODE: Following all HARDN service logs...${NC}"
+                        echo -e "${CYAN}Showing real-time logs from: hardn.service, hardn-api.service, legion-daemon.service, hardn-monitor.service${NC}"
+                        echo -e "${YELLOW}Press Ctrl+C to stop following${NC}\n"
+                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -f --no-pager
                         ;;
-                    *) print_colored "$RED" "Invalid selection!" ;;
+                    2)
+                        echo -e "\n${BOLD}Recent Logs from All HARDN Services${NC}"
+                        echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
+                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -n 50 --no-pager -o short-iso
+                        ;;
+                    3)
+                        echo -e "\n${BOLD}Select individual service:${NC}"
+                        echo "1) hardn.service (Security Monitoring & Response)"
+                        echo "2) hardn-api.service (REST API Server)"
+                        echo "3) legion-daemon.service (LEGION Monitoring Daemon)"
+                        echo "4) hardn-monitor.service (Centralized Monitoring)"
+                        read -p "Select [1-4]: " service_choice || { echo; continue; }
+                        
+                        case $service_choice in
+                            1) 
+                                echo -e "\n${BOLD}HARDN Security Monitoring Service Logs${NC}"
+                                journalctl -u hardn.service -n 100 --no-pager -o short-iso
+                                ;;
+                            2)
+                                echo -e "\n${BOLD}HARDN API Service Logs${NC}"
+                                journalctl -u hardn-api.service -n 100 --no-pager -o short-iso
+                                ;;
+                            3)
+                                echo -e "\n${BOLD}LEGION Monitoring Daemon Logs${NC}"
+                                journalctl -u legion-daemon.service -n 100 --no-pager -o short-iso
+                                ;;
+                            4)
+                                echo -e "\n${BOLD}HARDN Monitor Service Logs${NC}"
+                                journalctl -u hardn-monitor.service -n 100 --no-pager -o short-iso
+                                ;;
+                            *) print_colored "$RED" "Invalid service selection!" ;;
+                        esac
+                        ;;
+                    4)
+                        echo -e "\n${BOLD}Critical Errors from All HARDN Services${NC}"
+                        echo -e "${RED}Showing only ERROR, CRITICAL, and ALERT priority logs${NC}\n"
+                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -p err -n 50 --no-pager -o short-iso
+                        ;;
+                    5)
+                        echo -e "\n${BOLD}HARDN Service Performance Metrics${NC}"
+                        echo -e "${CYAN}Service Status Summary:${NC}"
+                        for service in hardn.service hardn-api.service legion-daemon.service hardn-monitor.service; do
+                            status=$(systemctl is-active "$service" 2>/dev/null || echo "unknown")
+                            if [ "$status" = "active" ]; then
+                                echo -e "  [ACTIVE] $service: ${GREEN}RUNNING${NC}"
+                            else
+                                echo -e "  [INACTIVE] $service: ${RED}$status${NC}"
+                            fi
+                        done
+                        echo -e "\n${CYAN}Recent Performance Logs:${NC}"
+                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -g "CPU|Memory|load" -n 20 --no-pager -o short-iso
+                        ;;
+                    6)
+                        echo -e "\n${BOLD}Custom journalctl command${NC}"
+                        echo -e "${YELLOW}Example: -u hardn.service -n 50 -f${NC}"
+                        read -p "Enter journalctl arguments: " custom_args
+                        if [ -n "$custom_args" ]; then
+                            echo -e "\n${CYAN}Executing: journalctl $custom_args${NC}\n"
+                            journalctl $custom_args
+                        else
+                            print_colored "$YELLOW" "No arguments provided, skipping..."
+                        fi
+                        ;;
+                    *) print_colored "$RED" "Invalid log viewing option!" ;;
                 esac
                 read -p $'\nPress Enter to continue...' || true
                 ;;
@@ -555,7 +615,7 @@ manage_services_menu() {
 dangerous_operations_menu() {
     while true; do
         display_header
-        echo -e "${BOLD}${RED}⚠️  DANGEROUS OPERATIONS - USE WITH EXTREME CAUTION${NC}"
+        echo -e "${BOLD}${RED}DANGEROUS OPERATIONS - USE WITH EXTREME CAUTION${NC}"
         echo -e "${RED}These operations can break your system and require manual intervention!${NC}"
         echo -e "─────────────────────────────────────────────────"
         echo
@@ -567,7 +627,7 @@ dangerous_operations_menu() {
         
         case $danger_choice in
             1)
-                echo -e "\n${BOLD}${RED}⚠️  EXTREME WARNING ⚠️${NC}"
+                echo -e "\n${BOLD}${RED}EXTREME WARNING${NC}"
                 echo -e "${RED}Enabling SELinux will:"
                 echo "  - Disable AppArmor completely"
                 echo "  - Require a system reboot"
@@ -671,7 +731,7 @@ main_menu() {
                 
                 case $sandbox_choice in
                     1)
-                        echo -e "\n${YELLOW}⚠️  WARNING: This will disconnect all network access!${NC}"
+                        echo -e "\n${YELLOW}WARNING: This will disconnect all network access!${NC}"
                         read -p "Are you sure? [y/N]: " confirm || { echo; continue; }
                         if [[ "$confirm" =~ ^[Yy]$ ]]; then
                             "$HARDN_BIN" --sandbox-on

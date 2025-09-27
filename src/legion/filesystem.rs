@@ -7,7 +7,7 @@ pub mod filesystem {
 
     #[allow(dead_code)]
     pub fn check_suid_sgid_files() -> Result<(), Box<dyn std::error::Error>> {
-        println!("  Checking SUID/SGID files...");
+        eprintln!("  Checking SUID/SGID files...");
 
         // Find SUID/SGID files in system directories
         if let Ok(output) = Command::new("find")
@@ -19,10 +19,10 @@ pub mod filesystem {
             let file_count = output_str.lines().count();
 
             if file_count > 0 {
-                println!("    Found {} SUID/SGID files in system directories", file_count);
+                eprintln!("    Found {} SUID/SGID files in system directories", file_count);
                 // Could analyze for suspicious files here
             } else {
-                println!("    No SUID/SGID files found in system directories");
+                eprintln!("    No SUID/SGID files found in system directories");
             }
         }
 
@@ -31,7 +31,7 @@ pub mod filesystem {
 
     #[allow(dead_code)]
     pub fn check_startup_persistence() -> Result<(), Box<dyn std::error::Error>> {
-        println!("  Checking startup persistence...");
+        eprintln!("  Checking startup persistence...");
 
         // Check systemd services
         if let Ok(output) = Command::new("systemctl")
@@ -40,7 +40,7 @@ pub mod filesystem {
         {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let service_count = output_str.lines().count();
-            println!("    {} active systemd services", service_count);
+            eprintln!("    {} active systemd services", service_count);
         }
 
         // Check cron jobs
@@ -48,7 +48,7 @@ pub mod filesystem {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let cron_count = output_str.lines().count();
             if cron_count > 0 {
-                println!("    {} user cron jobs found", cron_count);
+                eprintln!("    {} user cron jobs found", cron_count);
             }
         }
 
@@ -60,7 +60,7 @@ pub mod filesystem {
 
         for file in suspicious_files {
             if Path::new(file).exists() {
-                println!("    Suspicious startup file exists: {}", file);
+                eprintln!("    Suspicious startup file exists: {}", file);
             }
         }
 

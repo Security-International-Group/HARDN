@@ -2,8 +2,6 @@
 # HARDN Security Hardening Module
 # Basic system hardening configurations
 
-# Removed set -e to allow graceful error handling
-
 echo "HARDN Security Hardening Module"
 echo "=================================="
 
@@ -50,19 +48,19 @@ log_action "Attempting to fix broken packages..."
 dpkg --configure -a 2>/dev/null || log_action "Warning: dpkg configure failed, continuing..."
 apt-get install -f -y 2>/dev/null || log_action "Warning: package fix failed, continuing..."
 log_action "Downloading and installing pwquality..."
-apt-get update --quiet 2>/dev/null || log_action "Warning: apt update failed, continuing..."
-apt-get install -y --no-install-recommends libpam-pwquality 2>/dev/null || log_action "Warning: pwquality installation failed, continuing..." 
+timeout 60 apt-get update --quiet 2>/dev/null || log_action "Warning: apt update failed or timed out, continuing..."
+timeout 120 apt-get install -y --no-install-recommends libpam-pwquality 2>/dev/null || log_action "Warning: pwquality installation failed, continuing..." 
 
 # 6. install clamv and start service
 log_action "Installing ClamAV antivirus..."
-apt-get install -y --no-install-recommends clamav clamav-daemon 2>/dev/null || log_action "Warning: ClamAV installation failed, continuing..."
+timeout 120 apt-get install -y --no-install-recommends clamav clamav-daemon 2>/dev/null || log_action "Warning: ClamAV installation failed, continuing..."
 systemctl enable clamav-freshclam 2>/dev/null || true
 systemctl start clamav-freshclam 2>/dev/null || true
 systemctl enable clamav-daemon 2>/dev/null || true
 systemctl start clamav-daemon 2>/dev/null || true   
 # 7. install rkhunter (skip in network-restricted environments)
 log_action "Installing rkhunter..."
-if apt-get install -y rkhunter --no-install-recommends 2>/dev/null; then
+if timeout 120 apt-get install -y rkhunter --no-install-recommends 2>/dev/null; then
     log_action "rkhunter installed successfully"
     # Configure rkhunter to skip network operations
     if [ -f /etc/rkhunter.conf ]; then
@@ -77,15 +75,15 @@ else
 fi
 # 8. install lynis and start service
 log_action "Installing Lynis..."
-apt-get install -y --no-install-recommends lynis 2>/dev/null || log_action "Warning: Lynis installation failed, continuing..."
+timeout 120 apt-get install -y --no-install-recommends lynis 2>/dev/null || log_action "Warning: Lynis installation failed, continuing..."
 # 9. install fail2ban and start service
 log_action "Installing Fail2Ban..."
-apt-get install -y --no-install-recommends fail2ban 2>/dev/null || log_action "Warning: Fail2Ban installation failed, continuing..."
+timeout 120 apt-get install -y --no-install-recommends fail2ban 2>/dev/null || log_action "Warning: Fail2Ban installation failed, continuing..."
 systemctl enable fail2ban 2>/dev/null || true
 systemctl start fail2ban 2>/dev/null || true   
 # 10. install auditd and start service
 log_action "Installing auditd..."
-apt-get install -y --no-install-recommends auditd audispd-plugins 2>/dev/null || log_action "Warning: auditd installation failed, continuing..."
+timeout 120 apt-get install -y --no-install-recommends auditd audispd-plugins 2>/dev/null || log_action "Warning: auditd installation failed, continuing..."
 systemctl enable auditd 2>/dev/null || true
 systemctl start auditd 2>/dev/null || true   
 # 11. configure fail2ban for ssh
@@ -106,10 +104,11 @@ log_action "Setting up system logging..."
 apt-get install -y --no-install-recommends rsyslog 2>/dev/null || log_action "Warning: rsyslog installation failed, continuing..."
 systemctl enable rsyslog 2>/dev/null || true
 systemctl start rsyslog 2>/dev/null || true   
-# 13. setup unattended upgrades
+# 13. setup unattended upgrades (skip interactive config in service context)
 log_action "Setting up unattended upgrades..."
 apt-get install -y --no-install-recommends unattended-upgrades 2>/dev/null || log_action "Warning: unattended-upgrades installation failed, continuing..."
-dpkg-reconfigure -plow unattended-upgrades 2>/dev/null || true
+# Skip dpkg-reconfigure as it may hang in non-interactive environments
+# dpkg-reconfigure -plow unattended-upgrades 2>/dev/null || true
 # 14. setup ufw firewall
 log_action "Setting up UFW firewall..."
 apt-get install -y --no-install-recommends ufw 2>/dev/null || log_action "Warning: UFW installation failed, continuing..."
@@ -145,7 +144,8 @@ kernel.randomize_va_space = 2
 # Disable core dumps
 fs.suid_dumpable = 0
 EOF
-sysctl -p       
+# Apply sysctl changes with timeout to prevent hanging
+timeout 30 sysctl -p 2>/dev/null || log_action "Warning: sysctl -p failed or timed out, continuing..."       
 
 # 16. log completion
 log_action "Logging configuration changes..."

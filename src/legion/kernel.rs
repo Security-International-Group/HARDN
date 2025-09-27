@@ -6,14 +6,14 @@ pub mod kernel {
 
     #[allow(dead_code)]
     pub fn check_kernel_modules() -> Result<(), Box<dyn std::error::Error>> {
-        println!("  Checking kernel modules...");
+        eprintln!("  Checking kernel modules...");
 
         // Check loaded kernel modules
         if let Ok(output) = Command::new("lsmod").output() {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let module_count = output_str.lines().count().saturating_sub(1); // Subtract header
 
-            println!("    {} kernel modules loaded", module_count);
+            eprintln!("    {} kernel modules loaded", module_count);
 
             // Check for suspicious modules
             let suspicious_modules = vec!["cramfs", "freevxfs", "jffs2", "hfs", "hfsplus", "squashfs", "udf"];
@@ -30,9 +30,9 @@ pub mod kernel {
             }
 
             if !found_suspicious.is_empty() {
-                println!("    Suspicious kernel modules loaded:");
+                eprintln!("    Suspicious kernel modules loaded:");
                 for module in found_suspicious {
-                    println!("       {}", module);
+                    eprintln!("       {}", module);
                 }
             }
         }
@@ -42,7 +42,7 @@ pub mod kernel {
 
     #[allow(dead_code)]
     pub fn check_sysctl_params() -> Result<(), Box<dyn std::error::Error>> {
-        println!("  Checking sysctl parameters...");
+        eprintln!("  Checking sysctl parameters...");
 
         // Check important security-related sysctl parameters
         let security_params = vec![
@@ -66,11 +66,11 @@ pub mod kernel {
         }
 
         if issues.is_empty() {
-            println!("    Sysctl security parameters are properly configured");
+            eprintln!("    Sysctl security parameters are properly configured");
         } else {
-            println!("    Sysctl security issues:");
+            eprintln!("    Sysctl security issues:");
             for issue in issues {
-                println!("       {}", issue);
+                eprintln!("       {}", issue);
             }
         }
 
