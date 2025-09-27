@@ -109,8 +109,8 @@ check_dependencies() {
 display_header() {
     clear
     echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}                     ${BOLD}HARDN Service Manager${NC}                           ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}         Linux Security Hardening & Extended Detection Toolkit                ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}                        ${BOLD}HARDN Service Manager${NC}                              ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}          Linux Security Hardening & Extended Detection Toolkit            ${CYAN}║${NC}"
     echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════════════════╝${NC}"
     echo
 }
@@ -715,7 +715,8 @@ main_menu() {
             6)
                 echo -e "\n${BOLD}Generating security report...${NC}"
                 "$HARDN_BIN" --security-report
-                read -p $'\nPress Enter to continue...' || true
+                # Note: The security report now has interactive options, 
+                # so we don't need the extra "Press Enter" here
                 ;;
             7)
                 echo -e "\n${BOLD}HARDN Status:${NC}"

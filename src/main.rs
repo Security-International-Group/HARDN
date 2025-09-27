@@ -92,6 +92,142 @@ fn print_tools() {
     println!("════════════════════════════════════════\n");
 }
 
+/// Interactive tool selection and execution
+fn select_and_run_tool() {
+    let tool_dirs = env_or_defaults("HARDN_TOOL_PATH", DEFAULT_TOOL_DIRS);
+    let module_dirs = env_or_defaults("HARDN_MODULE_PATH", DEFAULT_MODULE_DIRS);
+    
+    println!("\n\x1b[1;36m▶ SELECT A SECURITY TOOL TO RUN:\x1b[0m\n");
+    
+    match list_modules(&tool_dirs) {
+        Ok(tools) if !tools.is_empty() => {
+            // Display tools with numbers
+            for (i, tool) in tools.iter().enumerate() {
+                println!("  {}) {}", i + 1, tool);
+            }
+            println!("  0) Cancel and return\n");
+            
+            print!("Enter your selection [0-{}]: ", tools.len());
+            use std::io::{self, Write};
+            io::stdout().flush().unwrap();
+            
+            let mut input = String::new();
+            io::stdin().read_line(&mut input).unwrap_or_default();
+            
+            match input.trim().parse::<usize>() {
+                Ok(0) => {
+                    println!("\nReturning to recommendations...");
+                }
+                Ok(choice) if choice > 0 && choice <= tools.len() => {
+                    let tool_name = &tools[choice - 1];
+                    println!("\nRunning tool: {}...\n", tool_name);
+                    handle_run_tool(&tool_dirs, tool_name, &module_dirs);
+                }
+                _ => {
+                    println!("\nInvalid selection. Returning to recommendations...");
+                }
+            }
+        }
+        Ok(_) => {
+            println!("  No tools found.");
+        }
+        Err(e) => {
+            println!("  Error listing tools: {}", e);
+        }
+    }
+}
+
+/// Interactive module selection and execution
+fn select_and_run_module() {
+    let module_dirs = env_or_defaults("HARDN_MODULE_PATH", DEFAULT_MODULE_DIRS);
+    
+    println!("\n\x1b[1;36m▶ SELECT A HARDENING MODULE TO RUN:\x1b[0m\n");
+    
+    match list_modules(&module_dirs) {
+        Ok(modules) if !modules.is_empty() => {
+            // Display modules with numbers
+            for (i, module) in modules.iter().enumerate() {
+                println!("  {}) {}", i + 1, module);
+            }
+            println!("  0) Cancel and return\n");
+            
+            print!("Enter your selection [0-{}]: ", modules.len());
+            use std::io::{self, Write};
+            io::stdout().flush().unwrap();
+            
+            let mut input = String::new();
+            io::stdin().read_line(&mut input).unwrap_or_default();
+            
+            match input.trim().parse::<usize>() {
+                Ok(0) => {
+                    println!("\nReturning to recommendations...");
+                }
+                Ok(choice) if choice > 0 && choice <= modules.len() => {
+                    let module_name = &modules[choice - 1];
+                    println!("\nRunning module: {}...\n", module_name);
+                    handle_run_module(&module_dirs, module_name);
+                }
+                _ => {
+                    println!("\nInvalid selection. Returning to recommendations...");
+                }
+            }
+        }
+        Ok(_) => {
+            println!("  No modules found.");
+        }
+        Err(e) => {
+            println!("  Error listing modules: {}", e);
+        }
+    }
+}
+
+/// Display Lynis audit report
+fn display_lynis_report() {
+    println!("\n\x1b[1;36m▶ LYNIS AUDIT REPORT:\x1b[0m\n");
+    
+    let report_path = "/var/log/lynis/lynis-report-concise.log";
+    let alt_report_path = "/var/log/lynis/report.log";
+    
+    // Try the concise report first, then the regular report
+    let path_to_use = if Path::new(report_path).exists() {
+        report_path
+    } else if Path::new(alt_report_path).exists() {
+        alt_report_path
+    } else {
+        println!("  \x1b[33m⚠\x1b[0m No Lynis report found.");
+        println!("  Run 'sudo lynis audit system' to generate a report.");
+        println!("\nPress Enter to continue...");
+        let mut input = String::new();
+        let _ = std::io::stdin().read_line(&mut input);
+        return;
+    };
+    
+    // Display the report using less or cat
+    let output = Command::new("less")
+        .arg(path_to_use)
+        .status()
+        .or_else(|_| {
+            // Fallback to cat if less is not available
+            Command::new("cat")
+                .arg(path_to_use)
+                .status()
+        });
+    
+    match output {
+        Ok(_) => {
+            println!("\n\x1b[1;32m✓\x1b[0m Report displayed successfully.");
+        }
+        Err(e) => {
+            println!("  \x1b[31m✗\x1b[0m Error displaying report: {}", e);
+            println!("  You can manually view the report at: {}", path_to_use);
+        }
+    }
+    
+    println!("\nPress Enter to continue...");
+    let mut input = String::new();
+    let _ = std::io::stdin().read_line(&mut input);
+}
+
 /// Generate and display comprehensive security report
 fn generate_security_report() {
     println!("\n╔═══════════════════════════════════════════════════════════════════════════════╗");
@@ -269,9 +405,9 @@ fn generate_security_report() {
     let total_score = tool_score + module_score + lynis_score;
     
     // Display final report
-    println!("╔═══════════════════════════════════════════════════════════════════════════════╗");
+    println!("╔════════════════════════════════════════════════════════════════════════════════╗");
     println!("║                              SECURITY SCORE SUMMARY                            ║");
-    println!("╠═══════════════════════════════════════════════════════════════════════════════╣");
+    println!("╠════════════════════════════════════════════════════════════════════════════════╣");
     println!("║  Component                │    Score    │ Weight │         Status              ║");
     println!("╠───────────────────────────┼─────────────┼────────┼─────────────────────────────╣");
     
@@ -296,37 +432,92 @@ fn generate_security_report() {
     
     // Format the total score line with proper padding
     let score_text = format!("TOTAL SCORE: {:.1}/100  Grade: {}", total_score, grade);
-    // Calculate padding - total width is 81 characters inside the box borders
-    // Subtracting 2 for initial spaces leaves 79 characters for content
-    let padding = 79 - score_text.len();
+    // Calculate padding - total width is 80 characters inside the box borders
+    // Subtracting 2 for initial spaces leaves 78 characters for content
+    let padding = 78 - score_text.len();
     
     println!("║  {}{}{}{:width$}║", 
              grade_color, score_text, "\x1b[0m", " ", width = padding);
-    println!("╚═══════════════════════════════════════════════════════════════════════════════╝");
+    println!("╚════════════════════════════════════════════════════════════════════════════════╝");
     
     // Recommendations
-    println!("\n\x1b[1;36m▶ RECOMMENDATIONS:\x1b[0m");
+    println!("\n\x1b[1;36m▶ RECOMMENDATIONS:\x1b[0m\n");
+    
+    let mut has_recommendations = false;
     
     if tool_score < 30.0 {
         println!("  • Enable more security tools to improve protection");
-        println!("    Run: sudo hardn run-tool <tool-name>");
+        println!("    Run: sudo hardn run-tool <tool-name>\n");
+        has_recommendations = true;
     }
     
     if module_score < 15.0 {
         println!("  • Execute HARDN modules for system hardening");
-        println!("    Run: sudo hardn run-module hardening");
+        println!("    Run: sudo hardn run-module hardening\n");
+        has_recommendations = true;
     }
     
     if lynis_score < 30.0 {
         println!("  • Review Lynis audit findings and apply recommendations");
-        println!("    View: /var/log/lynis/lynis-report-concise.log");
+        println!("    View: /var/log/lynis/lynis-report-concise.log\n");
+        has_recommendations = true;
     }
     
     if total_score >= 80.0 {
-        println!("  \x1b[1;32m✓ System security posture is strong. Maintain regular audits.\x1b[0m");
+        println!("  \x1b[1;32m✓ System security posture is strong. Maintain regular audits.\x1b[0m\n");
     }
     
-    println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+    // Add interactive menu if there are recommendations
+    if has_recommendations {
+        println!(" What would you like to do?\n");
+        
+        if tool_score < 30.0 {
+            println!("  a) Enable more security tools?");
+        }
+        if module_score < 15.0 {
+            println!("  b) Execute HARDN modules for system hardening?");
+        }
+        if lynis_score < 30.0 {
+            println!("  c) Review Lynis audit findings and apply recommendations?");
+        }
+        println!("  d) None, return to the main menu.");
+        
+        print!("\nEnter your selection: ");
+        use std::io::{self, Write};
+        io::stdout().flush().unwrap();
+        
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap_or_default();
+        let choice = input.trim().to_lowercase();
+        
+        match choice.as_str() {
+            "a" if tool_score < 30.0 => {
+                println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+                // Run tool selection menu
+                select_and_run_tool();
+            },
+            "b" if module_score < 15.0 => {
+                println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+                // Run module selection menu  
+                select_and_run_module();
+            },
+            "c" if lynis_score < 30.0 => {
+                println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+                // Display Lynis report
+                display_lynis_report();
+            },
+            "d" => {
+                println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+                // Return to main menu
+            },
+            _ => {
+                println!("\nInvalid selection. Returning to main menu.");
+                println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+            }
+        }
+    } else {
+        println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+    }
 }
 
 /// Run all available modules
