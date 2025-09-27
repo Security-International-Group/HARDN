@@ -125,7 +125,7 @@ impl ResponseEngine {
 
             // Check if condition matches
             if self.condition_matches(&rule.condition, anomaly) {
-                println!("Executing response rule: {}", rule.name);
+                eprintln!("Executing response rule: {}", rule.name);
 
                 for action in &rule.actions {
                     if self.can_execute_action(&action).await {
@@ -135,11 +135,11 @@ impl ResponseEngine {
                                 self.record_action_execution(&rule.id).await;
                             }
                             Err(e) => {
-                                println!("Failed to execute action {:?}: {}", action, e);
+                                eprintln!("Failed to execute action {:?}: {}", action, e);
                             }
                         }
                     } else {
-                        println!("Action rate limit exceeded for: {:?}", action);
+                        eprintln!("Action rate limit exceeded for: {:?}", action);
                     }
                 }
 
@@ -206,7 +206,7 @@ impl ResponseEngine {
 
     async fn execute_action(&self, action: &ResponseAction) -> Result<(), ResponseError> {
         if self.dry_run {
-            println!("DRY RUN: Would execute action: {:?}", action);
+            eprintln!("DRY RUN: Would execute action: {:?}", action);
             return Ok(());
         }
 
@@ -230,7 +230,7 @@ impl ResponseEngine {
                 self.alert_admin(message, severity).await
             }
             ResponseAction::LogIncident { details } => {
-                println!("Logging incident: {}", details);
+                eprintln!("Logging incident: {}", details);
                 Ok(())
             }
             ResponseAction::CustomCommand { command, args } => {
@@ -241,7 +241,7 @@ impl ResponseEngine {
 
     async fn isolate_process(&self, pid: u32) -> Result<(), ResponseError> {
         // Use cgroups or other isolation mechanisms
-        println!("Isolating process {}", pid);
+        eprintln!("Isolating process {}", pid);
 
         // In a real implementation, this would use cgroups, namespaces, or other isolation
         let output = Command::new("kill")
@@ -257,7 +257,7 @@ impl ResponseEngine {
     }
 
     async fn block_network(&self, ip: &str, port: u16) -> Result<(), ResponseError> {
-        println!("Blocking network access to {}:{}", ip, port);
+        eprintln!("Blocking network access to {}:{}", ip, port);
 
         // Use iptables to block the connection
         let _rule = format!("-A INPUT -s {} -p tcp --dport {} -j DROP", ip, port);
@@ -274,7 +274,7 @@ impl ResponseEngine {
     }
 
     async fn quarantine_file(&self, path: &str) -> Result<(), ResponseError> {
-        println!("Quarantining file: {}", path);
+        eprintln!("Quarantining file: {}", path);
 
         let source_path = PathBuf::from(path);
         let file_name = source_path.file_name()
@@ -297,7 +297,7 @@ impl ResponseEngine {
     }
 
     async fn kill_process(&self, pid: u32) -> Result<(), ResponseError> {
-        println!("Killing process {}", pid);
+        eprintln!("Killing process {}", pid);
 
         let output = Command::new("kill")
             .args(&["-9", &pid.to_string()])
@@ -312,7 +312,7 @@ impl ResponseEngine {
     }
 
     async fn disable_service(&self, name: &str) -> Result<(), ResponseError> {
-        println!("Disabling service: {}", name);
+        eprintln!("Disabling service: {}", name);
 
         let output = Command::new("systemctl")
             .args(&["stop", name])
@@ -333,7 +333,7 @@ impl ResponseEngine {
     }
 
     async fn alert_admin(&self, message: &str, severity: &str) -> Result<(), ResponseError> {
-        println!("ALERT [{}]: {}", severity, message);
+        eprintln!("ALERT [{}]: {}", severity, message);
 
         for channel in &self.alert_channels {
             if !channel.enabled {
@@ -343,23 +343,23 @@ impl ResponseEngine {
             match channel.channel_type {
                 AlertChannelType::Email => {
                     // In a real implementation, send email
-                    println!("Would send email alert to: {}", channel.destination);
+                    eprintln!("Would send email alert to: {}", channel.destination);
                 }
                 AlertChannelType::Slack => {
                     // In a real implementation, send Slack message
-                    println!("Would send Slack alert to: {}", channel.destination);
+                    eprintln!("Would send Slack alert to: {}", channel.destination);
                 }
                 AlertChannelType::Webhook => {
                     // In a real implementation, send HTTP webhook
-                    println!("Would send webhook alert to: {}", channel.destination);
+                    eprintln!("Would send webhook alert to: {}", channel.destination);
                 }
                 AlertChannelType::Syslog => {
                     // Log to syslog
-                    println!("Logging to syslog: {}", message);
+                    eprintln!("Logging to syslog: {}", message);
                 }
                 AlertChannelType::File => {
                     // Append to log file
-                    println!("Would append to log file: {}", channel.destination);
+                    eprintln!("Would append to log file: {}", channel.destination);
                 }
             }
         }
@@ -368,7 +368,7 @@ impl ResponseEngine {
     }
 
     async fn execute_custom_command(&self, command: &str, args: &[String]) -> Result<(), ResponseError> {
-        println!("Executing custom command: {} {:?}", command, args);
+        eprintln!("Executing custom command: {} {:?}", command, args);
 
         let output = Command::new(command)
             .args(args)

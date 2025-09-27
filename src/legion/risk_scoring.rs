@@ -44,6 +44,8 @@ pub struct SystemState {
     pub process_score: f64,
     pub file_integrity_score: f64,
     pub system_health_score: f64,
+    pub memory_usage: f64,
+    pub detected_issues: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,8 +149,10 @@ impl RiskScoringEngine {
         let health_score = self.calculate_health_component(system_state, &mut contributing_factors);
         components.insert("system_health".to_string(), health_score);
 
-        let temporal_score = self.calculate_temporal_component(system_state, &mut contributing_factors);
-        components.insert("temporal".to_string(), temporal_score);
+        // Add detected issues from system checks
+        for issue in &system_state.detected_issues {
+            contributing_factors.push(issue.clone());
+        }
 
         // Calculate weighted overall score
         let overall_score = self.calculate_weighted_score(&components);
@@ -267,14 +271,44 @@ impl RiskScoringEngine {
     }
 
     fn calculate_health_component(&self, state: &SystemState, factors: &mut Vec<String>) -> f64 {
-        let score = state.system_health_score;
+        let mut health_score = 0.0;
+        let mut issue_count = 0;
 
-        if score < 0.3 {
-            factors.push("Poor system health indicators".to_string());
+        // Check CPU usage (high usage is bad)
+        if state.system_health_score > 0.8 {
+            factors.push(format!("High CPU usage: {:.1}%", state.system_health_score * 100.0));
+            health_score += state.system_health_score;
+            issue_count += 1;
+        } else if state.system_health_score > 0.6 {
+            factors.push(format!("Elevated CPU usage: {:.1}%", state.system_health_score * 100.0));
+            health_score += state.system_health_score * 0.5;
         }
 
-        // Invert health score for risk (lower health = higher risk)
-        1.0 - score
+        // Check memory usage (high usage is bad)
+        if state.memory_usage > 0.9 {
+            factors.push(format!("Critical memory usage: {:.1}%", state.memory_usage * 100.0));
+            health_score += 1.0;
+            issue_count += 1;
+        } else if state.memory_usage > 0.8 {
+            factors.push(format!("High memory usage: {:.1}%", state.memory_usage * 100.0));
+            health_score += state.memory_usage;
+            issue_count += 1;
+        } else if state.memory_usage > 0.7 {
+            factors.push(format!("Elevated memory usage: {:.1}%", state.memory_usage * 100.0));
+            health_score += state.memory_usage * 0.5;
+        }
+
+        // If no specific issues but overall health is poor, add general message
+        if issue_count == 0 && (state.system_health_score > 0.5 || state.memory_usage > 0.6) {
+            factors.push("General system health concerns".to_string());
+        }
+
+        // Return risk score based on health issues
+        if health_score > 0.0 {
+            (health_score / (issue_count.max(1) as f64)).min(1.0)
+        } else {
+            0.0
+        }
     }
 
     fn calculate_temporal_component(&self, _state: &SystemState, factors: &mut Vec<String>) -> f64 {

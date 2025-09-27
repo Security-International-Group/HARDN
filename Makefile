@@ -19,15 +19,20 @@ export PATH := $(RUST_BIN_DIR):$(PATH)
 SHELL := /bin/bash
 
 # Default target
-all: build
+all: build-internal
 
 # Build the Debian package + install Rust
 build:
-	@echo "Checking sudo privileges..."
-	@sudo -n true 2>/dev/null || (echo "ERROR: This command requires sudo privileges. Please run with sudo or ensure your user has sudo access." && exit 1)
-	@echo "Requesting sudo credentials..."
-	@sudo -v
-	@echo "Checking hardn system dependencies..."
+	@if [ "$$EUID" -eq 0 ]; then \
+		$(MAKE) build-internal; \
+	else \
+		echo "ERROR: This target requires sudo privileges."; \
+		echo "Please run: sudo make build"; \
+		exit 1; \
+	fi
+
+# Internal target that does the actual build work (called by sudo)
+build-internal:
 	@MISSING_DEPS=""; \
 	for pkg in build-essential pkg-config libssl-dev debhelper lintian python3-all python3-requests python3-setuptools curl wget whiptail; do \
 		if ! dpkg -l "$$pkg" 2>/dev/null | grep -q "^ii"; then \
@@ -36,7 +41,7 @@ build:
 	done; \
 	if [ -n "$$MISSING_DEPS" ]; then \
 		echo "Installing missing dependencies:$$MISSING_DEPS"; \
-		sudo apt update && sudo apt install -y $$MISSING_DEPS; \
+		apt update && apt install -y $$MISSING_DEPS; \
 	else \
 		echo "All required dependencies are already installed."; \
 	fi
@@ -69,8 +74,16 @@ build:
 
 # Install HARDN as a service and start everything
 hardn:
-	@echo "Checking sudo privileges..."
-	@sudo -n true 2>/dev/null || (echo "ERROR: This command requires sudo privileges. Please run with sudo or ensure your user has sudo access." && exit 1)
+	@if [ "$$EUID" -eq 0 ]; then \
+		$(MAKE) hardn-internal; \
+	else \
+		echo "ERROR: This target requires sudo privileges."; \
+		echo "Please run: sudo make hardn"; \
+		exit 1; \
+	fi
+
+# Internal target that does the actual work (called by sudo)
+hardn-internal:
 	@echo "Displaying HARDN banner..."
 	@rustc banner.rs -o banner_temp && ./banner_temp && rm banner_temp
 	@echo "Checking required Python dependencies..."
@@ -82,32 +95,33 @@ hardn:
 	done; \
 	if [ -n "$$MISSING_PY_DEPS" ]; then \
 		echo "Installing missing Python dependencies:$$MISSING_PY_DEPS"; \
-		sudo apt update && sudo apt install -y $$MISSING_PY_DEPS; \
+		apt update && apt install -y $$MISSING_PY_DEPS; \
 	else \
 		echo "All required Python dependencies are already installed."; \
 	fi
 	@echo "Installing HARDN package..."
-	@$(MAKE) install-deb
+	@$(MAKE) install-deb-internal
 	@echo "Enabling and starting HARDN API server..."
-	@sudo systemctl enable hardn-api.service || true
-	@sudo systemctl start hardn-api.service || true
+	@systemctl enable hardn-api.service || true
+	@systemctl start hardn-api.service || true
 	@echo "Running hardening script..."
 	@if [ -f "hardening.sh" ]; then \
 		bash hardening.sh; \
 	else \
-		echo "hardening.sh not found, skipping..."; \
+		echo "Running installed HARDN hardening module..."; \
+		bash /usr/share/hardn/modules/hardening.sh; \
 	fi
-	@echo "Launching HARDN menu..."
-	@hardn -h
+	@echo "Launching HARDN service manager..."
+	@hardn-service-manager
 
-install-deb:
-	@sudo -n true 2>/dev/null || (echo "ERROR: sudo privileges required for package installation" && exit 1)
+# Internal target that does the actual installation work
+install-deb-internal:
 	@DEB_FILE=$$(find . -name "hardn_*.deb" | head -n1); \
 	if [ -z "$$DEB_FILE" ]; then \
 		DEB_FILE=$$(find .. -name "hardn_*_$(ARCH).deb" | head -n1); \
 	fi; \
 	if [ -n "$$DEB_FILE" ]; then \
-		sudo dpkg -i "$$DEB_FILE"; \
+		dpkg -i "$$DEB_FILE"; \
 	else \
 		echo "No .deb file found"; exit 1; \
 	fi

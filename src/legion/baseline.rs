@@ -99,7 +99,7 @@ impl BaselineManager {
         let filename = format!("{}/baseline_{}.json", self.config.baseline_dir, timestamp);
         let json = serde_json::to_string_pretty(baseline)?;
         fs::write(&filename, json)?;
-        println!(" Baseline saved to: {}", filename);
+        eprintln!(" Baseline saved to: {}", filename);
         Ok(())
     }
 
@@ -121,7 +121,7 @@ impl BaselineManager {
             let content = fs::read_to_string(&path)?;
             let baseline: Baseline = serde_json::from_str(&content)?;
             self.current_baseline = Some(baseline);
-            println!("Loaded baseline from: {}", path.display());
+            eprintln!("Loaded baseline from: {}", path.display());
         } else {
             return Err("No baseline found. Run with --create-baseline to create one.".into());
         }

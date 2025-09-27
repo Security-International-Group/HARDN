@@ -1,7 +1,7 @@
 ![hard](docs/IMG_1233.jpeg)
 
 # HARDN
-Linux Security Hardening and Extended Detection & Response Toolkit
+Linux Security Hardening and Extended Detection Response
 
 HARDN is a comprehensive security hardening system for Debian-based Linux systems, providing both automated hardening capabilities and continuous security monitoring.
 > [![ci](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml/badge.svg)](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml)
@@ -14,23 +14,30 @@ HARDN is a comprehensive security hardening system for Debian-based Linux system
 - Continuous Monitoring: LEGION security monitoring daemon
 - Modular Architecture: Extensible tool and module system
 - Service Integration: Systemd service management
+- Interactive Management: User-friendly service manager interface
 
 ## Installation
 
-### 1. Clone and build the binary 
+### 1. Build
 ```
 git clone https://github.com/Security-International-Group/HARDN.git
 cd HARDN
-make build
-make hardn
+sudo make build
+sudo make hardn
 hardn -h 
 ```
-### 2. Verify installation
+### 2. Verify 
 ```
 hardn --version
 ```
-## Quick Start
-After installation, HARDN provides two main services.
+- After installation, HARDN provides two main services, see below. 
+
+### 3. Interactive Service Management
+HARDN includes an interactive service manager for easy system management:
+```
+sudo hardn-service-manager
+```
+This provides a menu-driven interface for managing services, running modules/tools, and monitoring system security.
 
 ### Continuous Monitoring with LEGION and HARDN Services
 
@@ -38,6 +45,7 @@ After installation, HARDN provides two main services.
 - [LEGION](docs/legion-daemon.md)
 - [HARDN](docs/hardn.md)
 - [HARDN API](docs.hardn-api.md)
+- [HARDN Service Manager](docs/hardn-service-manager.md)
 
 ## Services
 
@@ -50,16 +58,22 @@ HARDN installs two systemd services:
 - Manual start: `sudo systemctl start hardn.service`
 
 ### legion-daemon.service
+![legion](docs/legion.jpeg)
 - Type: Monitoring (daemon)
 - Purpose: Continuous security monitoring
 - Status: Active, runs continuously
-- Monitors: SSH, packages, binaries, filesystem, processes, network
+- Monitors: Kernel, Memory, cron, packages, binaries, filesystem, processes, network, IDS
+![enemy](docs/enemy.jpeg)
 
-### HARDN monitoring API
+## monitoring
+
+### HARDN REST-API
 - The backend REST api is there for remote monitoring by host protocol. 
 - Purpose: Remote endpoint monitoring
 - Status: Active and running upon launch
 - Manual Start, see documentation. 
+- The strict purpose would be to see the hardn-service, legion daemon alerting and localy hosts protocols. 
+- This does require a sha256 hash key, public an dpriate to enteract with the backend tool. See doecumentaion referenced above for more information. 
 
 
 ## Architecture
@@ -72,7 +86,7 @@ Security hardening scripts located in `/usr/share/hardn/modules/`
 
 ### Tools
 Security scanning and utility tools in `/usr/share/hardn/tools/`
-- Security scanners (Lynis, AIDE)
+- Security scanners (Lynis, AIDE, LEGION)
 - Network security tools (Fail2ban, Suricata)
 - Utility functions
 

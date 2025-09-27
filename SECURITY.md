@@ -6,8 +6,8 @@ Only versions listed below receive security updates and coordinated disclosure s
 
 | Version | Supported |
 | ------- | --------- |
-| 1.4.x   | Yes       |
-| 1.0.x   | No        |
+| 0.4.17+ | Yes       |
+| 0.4.x16 | No        |
 | < 1.0   | No        |
 
 ## Reporting a Vulnerability

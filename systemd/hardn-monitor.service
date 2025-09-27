@@ -1,18 +1,20 @@
 [Unit]
-Description=HARDN Security Hardening Service
+Description=HARDN Centralized Monitoring and Logging Service
 After=network.target
 Wants=network.target
+Before=hardn.service hardn-api.service legion-daemon.service
 
 [Service]
-Type=oneshot
+Type=simple
 User=root
 Group=root
-ExecStart=/usr/local/bin/hardn --run-all-modules
-RemainAfterExit=no
+WorkingDirectory=/usr/share/hardn
+ExecStart=/usr/bin/hardn-monitor
+Restart=always
+RestartSec=5
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=hardn
-SuccessExitStatus=0 1  # Accept exit codes 0 (success) and 1 (module failures)
+SyslogIdentifier=hardn-monitor
 
 # Security settings
 NoNewPrivileges=yes
@@ -22,8 +24,8 @@ ReadWritePaths=/var/lib/hardn /var/log/hardn
 PrivateTmp=yes
 
 # Resource limits
-MemoryMax=512M
-CPUQuota=75%
+MemoryMax=256M
+CPUQuota=50%
 
 [Install]
 WantedBy=multi-user.target

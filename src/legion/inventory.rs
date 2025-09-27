@@ -7,14 +7,14 @@ pub mod inventory {
 
     #[allow(dead_code)]
     pub fn check_system_info() -> Result<(), Box<dyn std::error::Error>> {
-        println!("  System Information:");
+        eprintln!("  System Information:");
 
         // OS Information
         if let Ok(content) = fs::read_to_string("/etc/os-release") {
             for line in content.lines() {
                 if line.starts_with("PRETTY_NAME=") {
                     let name = line.split_once('=').unwrap().1.trim_matches('"');
-                    println!("    OS: {}", name);
+                    eprintln!("    OS: {}", name);
                     break;
                 }
             }
@@ -23,21 +23,21 @@ pub mod inventory {
         // Kernel version
         if let Ok(output) = Command::new("uname").arg("-r").output() {
             if let Ok(version) = String::from_utf8(output.stdout) {
-                println!("    Kernel: {}", version.trim());
+                eprintln!("    Kernel: {}", version.trim());
             }
         }
 
         // Architecture
         if let Ok(output) = Command::new("uname").arg("-m").output() {
             if let Ok(arch) = String::from_utf8(output.stdout) {
-                println!("     Architecture: {}", arch.trim());
+                eprintln!("     Architecture: {}", arch.trim());
             }
         }
 
         // Hostname
         if let Ok(output) = Command::new("hostname").output() {
             if let Ok(hostname) = String::from_utf8(output.stdout) {
-                println!("      Hostname: {}", hostname.trim());
+                eprintln!("      Hostname: {}", hostname.trim());
             }
         }
 
@@ -46,7 +46,7 @@ pub mod inventory {
 
     #[allow(dead_code)]
     pub fn check_hardware_info() -> Result<(), Box<dyn std::error::Error>> {
-        println!("  Hardware Information:");
+        eprintln!("  Hardware Information:");
 
         // CPU info
         if let Ok(content) = fs::read_to_string("/proc/cpuinfo") {
@@ -65,7 +65,7 @@ pub mod inventory {
             }
 
             if !model_name.is_empty() {
-                println!("    CPU: {} ({} cores)", model_name, cpu_count);
+                eprintln!("    CPU: {} ({} cores)", model_name, cpu_count);
             }
         }
 
@@ -79,7 +79,7 @@ pub mod inventory {
                             .and_then(|s| s.parse().ok())
                             .unwrap_or(0);
                         let mem_gb = mem_kb / 1024 / 1024;
-                        println!("    Memory: {} GB", mem_gb);
+                        eprintln!("    Memory: {} GB", mem_gb);
                     }
                     break;
                 }
@@ -91,7 +91,7 @@ pub mod inventory {
             if let Ok(virt) = String::from_utf8(output.stdout) {
                 let virt = virt.trim();
                 if virt != "none" {
-                    println!("    Virtualization: {}", virt);
+                    eprintln!("    Virtualization: {}", virt);
                 }
             }
         }

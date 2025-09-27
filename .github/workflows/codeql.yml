@@ -1,18 +1,13 @@
-# Advanced Security Scanning with CodeQL and Semgrep
-# Scans all branches for security vulnerabilities and code quality issues
-
-
 name: "SAST"
 
 on:
   push:
     branches: [ "*" ]  
   pull_request:
-    branches: [ "*" ]  
+    branches: [ "*" ]
   schedule:
-    - cron: '0 6 * * 1'  # Weekly scan every Monday at 6 AM UTC
+    - cron: '0 6 * * 1'  # Weekly Monday at 6 AM UTC
   workflow_dispatch:  
-
 env:
   CARGO_TERM_COLOR: always
 
@@ -40,10 +35,10 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4  # TODO: Pin to commit SHA
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3  # TODO: Pin to commit SHA
+      uses: github/codeql-action/init@v3
       with:
         languages: ${{ matrix.language }}
         build-mode: ${{ matrix.build-mode }}
@@ -51,7 +46,7 @@ jobs:
 
     - name: Setup Rust (for Rust analysis)
       if: matrix.language == 'rust'
-      uses: actions-rust-lang/setup-rust-toolchain@v1  # TODO: Pin to commit SHA
+      uses: actions-rust-lang/setup-rust-toolchain@v1.11.0
       with:
         components: rustfmt, clippy
 
@@ -62,7 +57,7 @@ jobs:
         cargo build --release
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3  # TODO: Pin to commit SHA
+      uses: github/codeql-action/analyze@v3
       with:
         category: "/language:${{matrix.language}}"
 
@@ -75,15 +70,15 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4  # TODO: Pin to commit SHA
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: Setup Python
-      uses: actions/setup-python@v4  # TODO: Pin to commit SHA
+      uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b6 # v5.3.0
       with:
         python-version: '3.11'
 
     - name: Run Semgrep Security Scan
-      uses: semgrep/semgrep-action@v1  # TODO: Pin to commit SHA
+      uses: semgrep/semgrep-action@v1
       with:
         config: >-
           p/security-audit
@@ -92,8 +87,12 @@ jobs:
           p/r2c-best-practices
           p/supply-chain
 
+    - name: Upload Semgrep results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: semgrep-results.sarif
+      if: always()
 
-  # Summary Job
   summary:
     name: Security Scan Summary
     runs-on: ubuntu-latest
@@ -115,7 +114,7 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "## Next Steps" >> $GITHUB_STEP_SUMMARY
         if [ "${{ needs.codeql.result }}" != "success" ] || [ "${{ needs.semgrep.result }}" != "success" ] || [ "${{ needs.dependency-check.result }}" != "success" ]; then
-          echo " + Some security scans failed. Please review the detailed results above and fix any critical issues." >> $GITHUB_STEP_SUMMARY
+          echo " Some security scans failed. Please review the detailed results above and fix any critical issues." >> $GITHUB_STEP_SUMMARY
         else
-          echo " *All security scans passed* " >> $GITHUB_STEP_SUMMARY
-        fi
+          echo " All security scans passed! Your code looks secure." >> $GITHUB_STEP_SUMMARY
+

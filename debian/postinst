@@ -79,6 +79,7 @@ case "$1" in
         # Ensure scripts are executable
         chmod +x "${MODULE_DIR}"/*.sh 2>/dev/null || true
         chmod +x "${TOOL_DIR}"/*.sh 2>/dev/null || true
+        chmod +x /usr/bin/hardn-service-manager 2>/dev/null || true
 
         # Create global env vars for module/tool search paths
         echo "#!/bin/sh

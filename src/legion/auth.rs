@@ -5,8 +5,9 @@ use std::process::Command;
 pub mod auth {
     use super::*;
 
+    #[allow(dead_code)]
     pub fn check_auth_failures() -> Result<(), Box<dyn std::error::Error>> {
-        println!("  Checking authentication failures...");
+        eprintln!("  Checking authentication failures...");
 
         // Check recent failed login attempts
         if let Ok(output) = Command::new("journalctl")
@@ -17,9 +18,9 @@ pub mod auth {
             let failure_count = output_str.lines().count();
 
             if failure_count > 0 {
-                println!("    Found {} SSH authentication failures in last hour", failure_count);
+                eprintln!("    Found {} SSH authentication failures in last hour", failure_count);
             } else {
-                println!("    No recent SSH authentication failures");
+                eprintln!("    No recent SSH authentication failures");
             }
         }
 
@@ -28,15 +29,16 @@ pub mod auth {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let lockout_count = output_str.lines().count();
             if lockout_count > 0 {
-                println!("    Active account lockouts detected");
+                eprintln!("    Active account lockouts detected");
             }
         }
 
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn check_sudoers_changes() -> Result<(), Box<dyn std::error::Error>> {
-        println!("  Checking sudoers configuration...");
+        eprintln!("  Checking sudoers configuration...");
 
         // Check for passwordless sudo entries
         if let Ok(content) = fs::read_to_string("/etc/sudoers") {
@@ -50,20 +52,21 @@ pub mod auth {
             }
 
             if !suspicious_lines.is_empty() {
-                println!("    Found passwordless sudo entries:");
+                eprintln!("    Found passwordless sudo entries:");
                 for entry in suspicious_lines {
-                    println!("       {}", entry);
+                    eprintln!("       {}", entry);
                 }
             } else {
-                println!("    No passwordless sudo entries found");
+                eprintln!("    No passwordless sudo entries found");
             }
         }
 
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn check_ssh_config() -> Result<(), Box<dyn std::error::Error>> {
-        println!("  Checking SSH configuration...");
+        eprintln!("  Checking SSH configuration...");
 
         if let Ok(content) = fs::read_to_string("/etc/ssh/sshd_config") {
             let mut issues = Vec::new();
@@ -82,11 +85,11 @@ pub mod auth {
             }
 
             if issues.is_empty() {
-                println!("    SSH configuration appears secure");
+                eprintln!("    SSH configuration appears secure");
             } else {
-                println!("    SSH security issues found:");
+                eprintln!("    SSH security issues found:");
                 for issue in issues {
-                    println!("       - {}", issue);
+                    eprintln!("       - {}", issue);
                 }
             }
         }
