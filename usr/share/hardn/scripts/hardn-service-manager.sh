@@ -105,6 +105,50 @@ check_dependencies() {
     echo "Using HARDN binary: $HARDN_BIN"
 }
 
+# Launch GUI as invoking desktop user (not root)
+launch_gui() {
+    echo -e "\n${BOLD}Launching HARDN Read-Only GUI...${NC}"
+    if ! command -v hardn-gui >/dev/null 2>&1; then
+        print_colored "$RED" "hardn-gui not found in PATH. Make sure the package is installed (sudo make hardn)."
+        read -p $'\nPress Enter to continue...' || true
+        return
+    fi
+
+    # Determine target desktop user
+    local target_user="${SUDO_USER:-}"
+    if [[ -z "$target_user" ]]; then
+        target_user=$(logname 2>/dev/null || who | awk '{print $1}' | head -n1)
+    fi
+    if [[ -z "$target_user" ]]; then
+        print_colored "$RED" "Unable to determine invoking desktop user. Run GUI manually as your user: hardn-gui"
+        read -p $'\nPress Enter to continue...' || true
+        return
+    fi
+
+    local uid
+    uid=$(id -u "$target_user")
+    local xdg_runtime="/run/user/$uid"
+
+    # Build environment for the user session
+    local env_vars=(
+        "DISPLAY=${DISPLAY:-}"
+        "WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}"
+        "XDG_RUNTIME_DIR=$xdg_runtime"
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=$xdg_runtime/bus"
+    )
+
+    if [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]]; then
+        echo "Starting GUI for user '$target_user'..."
+        runuser -u "$target_user" -- env "${env_vars[@]}" nohup hardn-gui >/dev/null 2>&1 &
+        print_colored "$GREEN" "✓ GUI launch attempted for $target_user (check your desktop)."
+    else
+        print_colored "$YELLOW" "No graphical session detected (DISPLAY/WAYLAND_DISPLAY empty). GUI not started."
+        echo "Tip: Run 'hardn-gui' from your desktop user terminal."
+    fi
+
+    read -p $'\nPress Enter to continue...' || true
+}
+
 # Function to display the header
 display_header() {
     clear
@@ -680,6 +724,7 @@ main_menu() {
         echo "8) Sandbox Mode (Network Isolation)"
         echo "9) Run Everything (Modules + Tools)"
         echo "10) Dangerous Operations"
+        echo "g) Launch Read-Only GUI"
         echo
         echo "a) About HARDN"
         echo "v) Show Version"
@@ -751,6 +796,9 @@ main_menu() {
                 ;;
             10)
                 dangerous_operations_menu
+                ;;
+            g|G)
+                launch_gui
                 ;;
             a|A)
                 echo -e "\n${BOLD}About HARDN:${NC}"

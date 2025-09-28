@@ -170,6 +170,15 @@ impl Legion {
                     safe_println!("Error generating enhanced report: {}", e);
                 }
 
+                // Write compact summary line for monitor/GUI
+                safe_println!(
+                    "LEGION SUMMARY: risk={:.3} level={:?} indicators={} issues={}",
+                    risk_score.overall_score,
+                    risk_score.risk_level,
+                    risk_score.contributing_factors.len(),
+                    system_state.detected_issues.len()
+                );
+
                 if self.verbose {
                     safe_println!("Enhanced monitoring cycle completed. Sleeping for 30 seconds...");
                 }

@@ -31,6 +31,7 @@ build/
 # Added by cargo
 
 /target
+<<<<<<< HEAD
 debian/hardn/
 
 # Ignore Debian build artifacts
@@ -39,3 +40,6 @@ debian/*.debhelper
 debian/*.substvars
 debian/debhelper-build-stamp
 debian/hardn/
+=======
+debian/files
+>>>>>>> f1b4ec9 (2025-09-27 18:19:03 update)

@@ -4,6 +4,8 @@ use std::thread;
 use std::time::Duration;
 use std::io::Write;
 use chrono::Utc;
+use serde_json::Value;
+use std::env;
 
 fn log_message(level: &str, message: &str) {
     let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S");
@@ -94,6 +96,40 @@ fn check_api_health() -> Result<(), std::io::Error> {
     Ok(())
 }
 
+fn log_metrics_from_api() {
+    // Query HARDN API for system metrics; keep it lightweight and resilient
+    let api = "http://localhost:8000/overwatch/system";
+    let mut args: Vec<String> = vec!["-s".into()];
+    if let Ok(key_raw) = env::var("HARDN_API_KEY") {
+        let key = key_raw.trim();
+        if !key.is_empty() {
+            args.push("-H".into());
+            args.push(format!("Authorization: Bearer {}", key));
+        }
+    }
+    args.push(api.into());
+    let output = Command::new("curl").args(&args).output();
+
+    if let Ok(result) = output {
+        if result.status.success() {
+            if let Ok(text) = String::from_utf8(result.stdout) {
+                if let Ok(json) = serde_json::from_str::<Value>(&text) {
+                    let cpu = json.get("system_health").and_then(|h| h.get("cpu_percent")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let mem = json.get("system_health").and_then(|h| h.get("memory")).and_then(|m| m.get("percent")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let load = json.get("system_health").and_then(|h| h.get("load_average"));
+                    let (l1, l5, l15) = if let Some(arr) = load.and_then(|v| v.as_array()) {
+                        let l1 = arr.get(0).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                        let l5 = arr.get(1).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                        let l15 = arr.get(2).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                        (l1, l5, l15)
+                    } else { (0.0, 0.0, 0.0) };
+                    log_message("INFO", &format!("Metrics - cpu={:.1}% mem={:.1}% load={:.2},{:.2},{:.2}", cpu, mem, l1, l5, l15));
+                }
+            }
+        }
+    }
+}
+
 fn main() {
     log_message("INFO", "HARDN Centralized Monitor starting");
 
@@ -117,6 +153,9 @@ fn main() {
 
         // Check API health
         let _ = check_api_health();
+
+        // Log metrics summary for GUI consumption
+        log_metrics_from_api();
 
         // Check for inter-service communication (placeholder)
         log_message("DEBUG", "Monitoring inter-service communication channels");

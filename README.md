@@ -32,12 +32,30 @@ hardn --version
 ```
 - After installation, HARDN provides two main services, see below. 
 
-### 3. Interactive Service Management
-HARDN includes an interactive service manager for easy system management:
+### 3. Run (2 commands total)
+After build, `sudo make hardn` installs and starts services, launches the GUI automatically, and opens the service manager. To disable auto-GUI for this run:
+```
+HARDN_NO_AUTO_GUI=1 sudo make hardn
+```
+To open the GUI later manually:
+```
+hardn-gui
+```
+The terminal service manager is still available:
 ```
 sudo hardn-service-manager
 ```
-This provides a menu-driven interface for managing services, running modules/tools, and monitoring system security.
+Both are read-only for monitoring; no configuration is performed by the GUI.
+
+### Read-Only GUI (Single Window)
+A minimal GTK4 desktop viewer that displays existing HARDN monitoring output in real time:
+```
+hardn-gui
+```
+- Read-only: no controls, no configuration
+- Sources: `hardn.service`, `legion-daemon.service`, `hardn-api.service` via journald
+- Auto-refresh: updates continuously as new events arrive
+- Lightweight: ring buffer to keep memory under limits
 
 ### Continuous Monitoring with LEGION and HARDN Services
 

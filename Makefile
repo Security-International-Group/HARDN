@@ -34,7 +34,7 @@ build:
 # Internal target that does the actual build work (called by sudo)
 build-internal:
 	@MISSING_DEPS=""; \
-	for pkg in build-essential pkg-config libssl-dev debhelper lintian python3-all python3-requests python3-setuptools curl wget whiptail; do \
+	for pkg in build-essential pkg-config libssl-dev debhelper lintian python3-all python3-requests python3-setuptools curl wget whiptail libgtk-4-dev libglib2.0-dev; do \
 		if ! dpkg -l "$$pkg" 2>/dev/null | grep -q "^ii"; then \
 			MISSING_DEPS="$$MISSING_DEPS $$pkg"; \
 		fi; \
@@ -101,6 +101,13 @@ hardn-internal:
 	fi
 	@echo "Installing HARDN package..."
 	@$(MAKE) install-deb-internal
+	@echo "Granting GUI log access to invoking user (hardn group)..."
+	@if [ -n "$$SUDO_USER" ]; then \
+		usermod -aG hardn "$$SUDO_USER" || true; \
+		echo "Added $$SUDO_USER to group 'hardn' (re-login required for access)."; \
+	else \
+		echo "No SUDO_USER detected; skip group grant."; \
+	fi
 	@echo "Enabling and starting HARDN API server..."
 	@systemctl enable hardn-api.service || true
 	@systemctl start hardn-api.service || true
@@ -112,7 +119,19 @@ hardn-internal:
 		bash /usr/share/hardn/modules/hardening.sh; \
 	fi
 	@echo "Launching HARDN service manager..."
-	@hardn-service-manager
+	@if [ "$$HARDN_NO_AUTO_GUI" = "1" ]; then \
+		hardn-service-manager; \
+	else \
+		echo "Attempting to launch HARDN read-only GUI (if available)..."; \
+		if command -v hardn-gui >/dev/null 2>&1; then \
+			if [ -n "$$SUDO_USER" ]; then \
+				runuser -u "$$SUDO_USER" -- nohup hardn-gui >/dev/null 2>&1 & \
+			else \
+				nohup hardn-gui >/dev/null 2>&1 & \
+			fi; \
+		fi; \
+		hardn-service-manager; \
+	fi
 
 # Internal target that does the actual installation work
 install-deb-internal:
