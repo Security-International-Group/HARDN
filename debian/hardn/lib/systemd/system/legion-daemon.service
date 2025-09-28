@@ -1,0 +1,29 @@
+[Unit]
+Description=HARDN LEGION Security Monitoring Daemon
+After=network.target hardn-monitor.service
+Wants=network.target hardn-monitor.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/bin/bash -c 'if [ ! -d /var/lib/hardn/legion ] || [ -z "$(ls -A /var/lib/hardn/legion/baseline_*.json 2>/dev/null)" ]; then echo "Creating LEGION baseline..."; /usr/bin/hardn legion --create-baseline --json; fi; exec /usr/bin/hardn legion --daemon --verbose'
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=legion-daemon
+
+# Security settings
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hardn/legion /var/log/hardn
+PrivateTmp=yes
+
+# Resource limits
+MemoryMax=256M
+CPUQuota=30%
+
+[Install]
+WantedBy=multi-user.target
