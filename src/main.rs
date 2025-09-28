@@ -181,6 +181,158 @@ fn select_and_run_module() {
     }
 }
 
+/// Tool status types for enhanced checking
+#[derive(Debug, PartialEq)]
+enum ToolStatusType {
+    Active,       // Tool is running/active
+    Enabled,      // Tool is enabled but not running
+    Installed,    // Tool is installed but not enabled
+    NotInstalled, // Tool is not installed
+}
+
+/// Check tool status with enhanced methods for different tool types
+fn check_enhanced_tool_status(tool_name: &str) -> ToolStatusType {
+    match tool_name {
+        "AIDE" => {
+            // AIDE runs via timer, not as a service
+            if Command::new("systemctl")
+                .args(&["is-active", "dailyaidecheck.timer"])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "active")
+                .unwrap_or(false)
+            {
+                ToolStatusType::Active
+            } else if Command::new("systemctl")
+                .args(&["is-enabled", "dailyaidecheck.timer"])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "enabled")
+                .unwrap_or(false)
+            {
+                ToolStatusType::Enabled
+            } else if Path::new("/usr/bin/aide").exists() || Path::new("/usr/sbin/aide").exists() {
+                ToolStatusType::Installed
+            } else {
+                ToolStatusType::NotInstalled
+            }
+        },
+        "Lynis" => {
+            // Lynis may run via timer or on-demand
+            if Command::new("systemctl")
+                .args(&["is-active", "lynis.timer"])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "active")
+                .unwrap_or(false)
+            {
+                ToolStatusType::Active
+            } else if Command::new("systemctl")
+                .args(&["is-enabled", "lynis.timer"])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "enabled")
+                .unwrap_or(false)
+            {
+                ToolStatusType::Enabled
+            } else if Command::new("which")
+                .arg("lynis")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                ToolStatusType::Installed
+            } else {
+                ToolStatusType::NotInstalled
+            }
+        },
+        "UFW" => {
+            // UFW is a firewall, check if it's active
+            let output = Command::new("ufw")
+                .arg("status")
+                .output();
+            
+            match output {
+                Ok(o) => {
+                    let status = String::from_utf8_lossy(&o.stdout);
+                    if status.contains("Status: active") {
+                        ToolStatusType::Active
+                    } else if status.contains("Status: inactive") {
+                        ToolStatusType::Installed
+                    } else {
+                        ToolStatusType::NotInstalled
+                    }
+                },
+                Err(_) => ToolStatusType::NotInstalled,
+            }
+        },
+        "RKHunter" => {
+            // RKHunter is typically run on-demand or via cron
+            if Command::new("which")
+                .arg("rkhunter")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                // Check if database is initialized
+                if Path::new("/var/lib/rkhunter/db/rkhunter.dat").exists() {
+                    ToolStatusType::Active
+                } else {
+                    ToolStatusType::Installed
+                }
+            } else {
+                ToolStatusType::NotInstalled
+            }
+        },
+        "OSSEC" => {
+            // OSSEC may not use systemd
+            if Command::new("pgrep")
+                .arg("ossec-analysisd")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                ToolStatusType::Active
+            } else if Path::new("/var/ossec").exists() {
+                ToolStatusType::Installed
+            } else {
+                ToolStatusType::NotInstalled
+            }
+        },
+        "AppArmor" | "Fail2Ban" | "Auditd" | "ClamAV" | "Suricata" => {
+            // These are standard systemd services
+            let service_name = match tool_name {
+                "AppArmor" => "apparmor",
+                "Fail2Ban" => "fail2ban",
+                "Auditd" => "auditd",
+                "ClamAV" => "clamav-daemon",
+                "Suricata" => "suricata",
+                _ => return ToolStatusType::NotInstalled,
+            };
+            
+            let status = check_service_status(service_name);
+            if status.active {
+                ToolStatusType::Active
+            } else if status.enabled {
+                ToolStatusType::Enabled
+            } else {
+                // Check if package is installed
+                if Command::new("dpkg")
+                    .args(&["-l", service_name])
+                    .output()
+                    .map(|o| {
+                        String::from_utf8_lossy(&o.stdout)
+                            .lines()
+                            .any(|line| line.starts_with("ii") && line.contains(service_name))
+                    })
+                    .unwrap_or(false)
+                {
+                    ToolStatusType::Installed
+                } else {
+                    ToolStatusType::NotInstalled
+                }
+            }
+        },
+        _ => ToolStatusType::NotInstalled,
+    }
+}
+
 /// Display Lynis audit report
 fn display_lynis_report() {
     println!("\n\x1b[1;36m▶ LYNIS AUDIT REPORT:\x1b[0m\n");
@@ -241,32 +393,56 @@ fn generate_security_report() {
     
     // 1. Check active security tools (40% of total score)
     println!("\x1b[1;36m▶ SECURITY TOOLS ASSESSMENT (40% weight):\x1b[0m");
-    let tools = get_security_tools();
     let mut active_tools = 0;
     let mut enabled_tools = 0;
+    let mut installed_tools = 0;
+    let total_tools = 10;
     
-    for tool in &tools {
-        let status = check_service_status(tool.service_name);
-        if status.active {
-            active_tools += 1;
-            print!("  \x1b[32m✓\x1b[0m {:<12}", tool.name);
-            println!(" [ACTIVE]");
-        } else if status.enabled {
-            enabled_tools += 1;
-            print!("  \x1b[33m●\x1b[0m {:<12}", tool.name);
-            println!(" [ENABLED but not running]");
-        } else {
-            print!("  \x1b[31m✗\x1b[0m {:<12}", tool.name);
-            println!(" [DISABLED]");
+    // Check each tool with appropriate method
+    let tool_statuses = vec![
+        ("AIDE", check_enhanced_tool_status("AIDE")),
+        ("AppArmor", check_enhanced_tool_status("AppArmor")),
+        ("Fail2Ban", check_enhanced_tool_status("Fail2Ban")),
+        ("UFW", check_enhanced_tool_status("UFW")),
+        ("Auditd", check_enhanced_tool_status("Auditd")),
+        ("RKHunter", check_enhanced_tool_status("RKHunter")),
+        ("ClamAV", check_enhanced_tool_status("ClamAV")),
+        ("Suricata", check_enhanced_tool_status("Suricata")),
+        ("OSSEC", check_enhanced_tool_status("OSSEC")),
+        ("Lynis", check_enhanced_tool_status("Lynis")),
+    ];
+    
+    for (tool_name, status) in &tool_statuses {
+        match status {
+            ToolStatusType::Active => {
+                active_tools += 1;
+                print!("  \x1b[32m✓\x1b[0m {:<12}", tool_name);
+                println!(" [ACTIVE]");
+            },
+            ToolStatusType::Enabled => {
+                enabled_tools += 1;
+                print!("  \x1b[33m●\x1b[0m {:<12}", tool_name);
+                println!(" [ENABLED]");
+            },
+            ToolStatusType::Installed => {
+                installed_tools += 1;
+                print!("  \x1b[34m○\x1b[0m {:<12}", tool_name);
+                println!(" [INSTALLED]");
+            },
+            ToolStatusType::NotInstalled => {
+                print!("  \x1b[31m✗\x1b[0m {:<12}", tool_name);
+                println!(" [DISABLED]");
+            },
         }
     }
     
-    // Calculate tool score: active tools get full points, enabled get half
-    let max_tool_points = tools.len() as f64;
-    let tool_points = (active_tools as f64) + (enabled_tools as f64 * 0.5);
+    // Calculate tool score: active tools get full points, enabled get half, installed get quarter
+    let max_tool_points = total_tools as f64;
+    let tool_points = (active_tools as f64) + (enabled_tools as f64 * 0.5) + (installed_tools as f64 * 0.25);
     tool_score = (tool_points / max_tool_points * 40.0).min(40.0);
     
-    println!("\n  Active: {}/{}, Enabled: {}/{}", active_tools, tools.len(), enabled_tools, tools.len());
+    println!("\n  Active: {}/{}, Enabled: {}/{}, Installed: {}/{}", 
+             active_tools, total_tools, enabled_tools, total_tools, installed_tools, total_tools);
     println!("  \x1b[1;33mTool Score: {:.1}/40\x1b[0m\n", tool_score);
     
     // 2. Check executed modules (20% of total score)
