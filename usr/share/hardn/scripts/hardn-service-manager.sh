@@ -32,12 +32,12 @@ find_hardn_binary() {
     fi
     
     local possible_locations=(
+        "/usr/bin/hardn"          # System installation (primary)
         "./target/release/hardn"  # Development build
         "./hardn"                 # Current directory
-        "/usr/local/bin/hardn"    # Local installation
-        "/usr/bin/hardn"          # System installation
         "/opt/hardn/bin/hardn"    # Optional installation
         "$(command -v hardn 2>/dev/null || true)"  # In PATH (avoiding aliases)
+        "/usr/local/bin/hardn"    # Local installation (last resort)
     )
     
     for location in "${possible_locations[@]}"; do
