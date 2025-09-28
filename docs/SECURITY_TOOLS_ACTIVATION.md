@@ -21,14 +21,14 @@ In `/src/main.rs`, the `check_service_status()` function only checks for systemd
 
 ## Solution Components
 
-### 1. Enhanced Security Tool Manager (Rust)
-**File**: `/src/security_tool_manager.rs`
+### 1. Enhanced Detection in Main Binary
+**File**: `/src/main.rs`
 
-This module provides:
-- Multiple detection methods (services, timers, processes, binaries, configs)
-- Proper activation methods for each tool
-- Installation status checking
-- Configuration verification
+The main HARDN binary now includes:
+- `check_enhanced_tool_status()` function with tool-specific detection
+- `ToolStatusType` enum for different status levels
+- Proper detection for timers, processes, and non-service tools
+- Integration with the security report generation
 
 ### 2. Interactive CLI Manager (Bash)
 **File**: `/usr/share/hardn/scripts/security-tools-manager.sh`
@@ -116,33 +116,31 @@ sudo /usr/share/hardn/scripts/security-tools-manager.sh --help
 - Creates systemd timer for daily audits
 - Enables `lynis.timer` for scheduled security audits
 
-## Integration with Main Code
+## How It Works
 
-To integrate the enhanced detection into the main HARDN code:
+### Enhanced Detection in HARDN Binary
 
-1. Add the security_tool_manager module to the main.rs:
-```rust
-mod security_tool_manager;
-use security_tool_manager::{get_security_tools_enhanced, ToolStatus};
-```
+The main HARDN binary (`/src/main.rs`) now includes enhanced detection:
 
-2. Update the `generate_security_report()` function to use the new detection:
-```rust
-let tools = security_tool_manager::get_security_tools_enhanced();
-for tool in &tools {
-    let status = tool.check_status();
-    if status.active {
-        print!("  \x1b[32m✓\x1b[0m {:<12}", tool.name);
-        println!(" [ACTIVE]");
-    } else if status.installed {
-        print!("  \x1b[33m●\x1b[0m {:<12}", tool.name);
-        println!(" [INSTALLED]");
-    } else {
-        print!("  \x1b[31m✗\x1b[0m {:<12}", tool.name);
-        println!(" [NOT INSTALLED]");
-    }
-}
-```
+1. **`check_enhanced_tool_status()` function** handles each tool appropriately:
+   - AIDE: Checks `dailyaidecheck.timer`
+   - Lynis: Checks `lynis.timer` and binary
+   - UFW: Directly checks firewall status
+   - RKHunter: Checks binary and database
+   - Others: Standard systemd checks
+
+2. **Security Report Integration**:
+   - The `generate_security_report()` function uses the enhanced detection
+   - Shows four status levels: ACTIVE, ENABLED, INSTALLED, NOT INSTALLED
+   - Provides accurate scoring based on actual tool state
+
+### Standalone Tool Manager Script
+
+The Bash script (`/usr/share/hardn/scripts/security-tools-manager.sh`) provides:
+- Interactive menu for tool activation
+- Automatic installation if tools are missing
+- Proper initialization and configuration
+- Works independently without recompiling HARDN
 
 ## Testing on Your VM
 
