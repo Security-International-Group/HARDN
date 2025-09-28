@@ -815,41 +815,113 @@ fn run_all_tools() -> i32 {
     }
 }
 
-/// Run all modules and tools
-/// IMPORTANT: This function runs ONLY the .sh scripts in modules and tools directories
+/// Run all modules and tools with comprehensive hardening
+/// IMPORTANT: This function now includes the comprehensive Lynis hardening process
 /// Sandbox commands (--sandbox-on/--sandbox-off) are NEVER included in this batch operation
 fn run_everything() -> i32 {
     println!("\n╔═══════════════════════════════════════╗");
-    println!("║     RUNNING ALL MODULES AND TOOLS       ║");
+    println!("║   COMPREHENSIVE SYSTEM HARDENING       ║");
     println!("╚═════════════════════════════════════════╝\n");
     
-    log_message(LogLevel::Warning, "⚠️  Note: Sandbox mode is NOT included in batch operations");
-    log_message(LogLevel::Info, "Starting complete system hardening...");
+    log_message(LogLevel::Warning, "WARNING: Sandbox mode is NOT included in batch operations");
+    log_message(LogLevel::Info, "Starting comprehensive system hardening with Lynis optimization...");
     
-    // Run all modules first
-    println!("\n▶ PHASE 1: MODULES");
+    // Check if comprehensive hardening script exists
+    let comprehensive_script_paths = vec![
+        "/usr/share/hardn/scripts/hardn-lynis-comprehensive.sh",
+        "./scripts/hardn-lynis-comprehensive.sh",
+        "/opt/hardn/scripts/hardn-lynis-comprehensive.sh",
+    ];
+    
+    let mut comprehensive_script_found = false;
+    let mut comprehensive_result = EXIT_SUCCESS;
+    
+    // PHASE 1: Run comprehensive Lynis hardening if available
+    for script_path in &comprehensive_script_paths {
+        if Path::new(script_path).exists() {
+            println!("\n▶ PHASE 1: COMPREHENSIVE LYNIS HARDENING");
+            println!("═══════════════════════════════════════");
+            log_message(LogLevel::Info, &format!("Found comprehensive hardening script: {}", script_path));
+            
+            match Command::new("bash")
+                .arg(script_path)
+                .env("HARDN_LOG_DIR", DEFAULT_LOG_DIR)
+                .env("HARDN_LIB_DIR", DEFAULT_LIB_DIR)
+                .env("HARDN_VERSION", VERSION)
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .status()
+            {
+                Ok(status) => {
+                    if status.success() {
+                        log_message(LogLevel::Pass, "✓ Comprehensive Lynis hardening completed successfully");
+                    } else {
+                        log_message(LogLevel::Warning, "Comprehensive hardening completed with warnings");
+                        comprehensive_result = EXIT_FAILURE;
+                    }
+                    comprehensive_script_found = true;
+                    break;
+                }
+                Err(e) => {
+                    log_message(LogLevel::Error, &format!("✗ Failed to run comprehensive hardening: {}", e));
+                    comprehensive_result = EXIT_FAILURE;
+                }
+            }
+        }
+    }
+    
+    if !comprehensive_script_found {
+        log_message(LogLevel::Info, "Comprehensive hardening script not found, using standard approach");
+    }
+    
+    // PHASE 2: Run all standard modules
+    println!("\n▶ PHASE 2: STANDARD SECURITY MODULES");
+    println!("═══════════════════════════════════");
     let module_result = run_all_modules();
     
-    // Run all tools second
-    println!("\n▶ PHASE 2: TOOLS");
+    // PHASE 3: Run all security tools
+    println!("\n▶ PHASE 3: SECURITY TOOLS");
+    println!("═════════════════════════");
     let tool_result = run_all_tools();
     
     // Report overall status
     println!("\n╔═══════════════════════════════════════╗");
-    println!("║           EXECUTION SUMMARY             ║");
+    println!("║       HARDENING EXECUTION SUMMARY       ║");
     println!("╚═════════════════════════════════════════╝\n");
     
-    if module_result == EXIT_SUCCESS && tool_result == EXIT_SUCCESS {
-        log_message(LogLevel::Pass, "All modules and tools executed successfully");
+    // Determine final status based on all phases
+    let all_success = comprehensive_result == EXIT_SUCCESS && 
+                      module_result == EXIT_SUCCESS && 
+                      tool_result == EXIT_SUCCESS;
+    
+    if all_success {
+        log_message(LogLevel::Pass, "✓ ALL PHASES COMPLETED SUCCESSFULLY");
+        println!("\n[COMPLETE] System hardening finished successfully!");
+        println!("   - Comprehensive Lynis hardening: {}", 
+                if comprehensive_script_found { "Applied" } else { "Skipped (script not found)" });
+        println!("   - Standard modules: Success");
+        println!("   - Security tools: Success");
+        println!("\n[NEXT STEPS]");
+        println!("   1. Review logs in /var/log/hardn/");
+        println!("   2. Run 'sudo lynis audit system' to check your security score");
+        println!("   3. Reboot if kernel parameters were modified");
         EXIT_SUCCESS
-    } else if module_result != EXIT_SUCCESS && tool_result != EXIT_SUCCESS {
-        log_message(LogLevel::Error, "Both modules and tools had failures");
-        EXIT_FAILURE
-    } else if module_result != EXIT_SUCCESS {
-        log_message(LogLevel::Warning, "Some modules failed, but tools succeeded");
-        EXIT_FAILURE
     } else {
-        log_message(LogLevel::Warning, "Modules succeeded, but some tools failed");
+        log_message(LogLevel::Warning, "WARNING: Some phases had issues");
+        
+        if comprehensive_result != EXIT_SUCCESS && comprehensive_script_found {
+            log_message(LogLevel::Warning, "   - Comprehensive hardening had warnings");
+        }
+        if module_result != EXIT_SUCCESS {
+            log_message(LogLevel::Warning, "   - Some modules failed");
+        }
+        if tool_result != EXIT_SUCCESS {
+            log_message(LogLevel::Warning, "   - Some tools failed");
+        }
+        
+        println!("\n[WARNING] System hardening completed with warnings.");
+        println!("   Review the logs for details: /var/log/hardn/");
+        
         EXIT_FAILURE
     }
 }
