@@ -1689,6 +1689,151 @@ fn interactive_service_monitor() -> i32 {
 
     EXIT_SUCCESS
 }
+/// Format and display log entries in a user-friendly way
+fn display_formatted_logs(logs: &str) {
+    let mut formatted_entries = Vec::new();
+    let mut current_entry = String::new();
+    
+    for line in logs.lines() {
+        // Skip empty lines
+        if line.trim().is_empty() {
+            continue;
+        }
+        
+        // Check if this is a new log entry (starts with timestamp or contains service name with PID)
+        let is_new_entry = line.contains("hardn[") || 
+                          line.contains("legion[") || 
+                          line.contains("hardn-monitor[") ||
+                          line.starts_with("2025-") || // Year prefix for timestamps
+                          line.starts_with("2024-");
+        
+        if is_new_entry {
+            // Process previous entry if exists
+            if !current_entry.is_empty() {
+                formatted_entries.push(format_log_entry(&current_entry));
+            }
+            current_entry = line.to_string();
+        } else {
+            // Continuation of previous entry
+            if !current_entry.is_empty() {
+                current_entry.push(' ');
+                current_entry.push_str(line.trim());
+            }
+        }
+    }
+    
+    // Process the last entry
+    if !current_entry.is_empty() {
+        formatted_entries.push(format_log_entry(&current_entry));
+    }
+    
+    // Display formatted entries
+    if formatted_entries.is_empty() {
+        println!("  No recent activity to display");
+    } else {
+        // Limit to 5 most recent entries for cleaner display
+        let display_count = formatted_entries.len().min(5);
+        let start_index = formatted_entries.len().saturating_sub(5);
+        
+        for entry in &formatted_entries[start_index..] {
+            println!("  {}", entry);
+        }
+        
+        if formatted_entries.len() > 5 {
+            println!("  ... ({} more entries)", formatted_entries.len() - 5);
+        }
+    }
+}
+
+/// Format a single log entry for display
+fn format_log_entry(entry: &str) -> String {
+    let mut formatted = String::new();
+    
+    // Extract timestamp (looking for ISO format: YYYY-MM-DDTHH:MM:SS)
+    if let Some(t_start) = entry.find("202") {
+        if let Some(t_end) = entry[t_start..].find(' ').or_else(|| entry[t_start..].find('.')).or_else(|| entry[t_start..].find('-')) {
+            let timestamp = &entry[t_start..t_start + t_end];
+            if let Some(t_idx) = timestamp.find('T') {
+                let time = &timestamp[t_idx+1..timestamp.len().min(t_idx+9)];
+                formatted.push_str(&format!("[{}] ", time));
+            }
+        }
+    }
+    
+    // Extract service name
+    for service in &["hardn", "legion", "hardn-monitor"] {
+        if let Some(idx) = entry.find(&format!("{}[", service)) {
+            formatted.push_str(&format!("{}: ", service.to_uppercase()));
+            break;
+        }
+    }
+    
+    // Handle different types of log entries
+    if entry.contains("{\"timestamp\"") || entry.contains("{\"event") {
+        // JSON log entry - summarize it
+        if entry.contains("suricata") && entry.contains("stats") {
+            formatted.push_str("Suricata statistics update");
+        } else if entry.contains("\"event_type\":\"stats\"") {
+            formatted.push_str("Network statistics logged");
+        } else if entry.contains("NETWORK ALERT") {
+            formatted.push_str("🌐 Network monitoring alert");
+        } else if entry.contains("event_type") {
+            // Try to extract event type
+            if let Some(et_idx) = entry.find("\"event_type\":") {
+                let after_et = &entry[et_idx + 14..];
+                if let Some(quote_idx) = after_et.find('\"') {
+                    if let Some(end_quote) = after_et[quote_idx+1..].find('\"') {
+                        let event_type = &after_et[quote_idx+1..quote_idx+1+end_quote];
+                        formatted.push_str(&format!("Event: {}", event_type));
+                    }
+                }
+            } else {
+                formatted.push_str("System event logged");
+            }
+        } else {
+            formatted.push_str("System monitoring data");
+        }
+    } else {
+        // Regular log entry - extract the message
+        let message = if let Some(colon_idx) = entry.rfind(": ") {
+            &entry[colon_idx + 2..]
+        } else if let Some(bracket_idx) = entry.rfind("] ") {
+            &entry[bracket_idx + 2..]
+        } else {
+            entry
+        };
+        
+        // Clean up emojis and format
+        let clean_message = message
+            .replace("🌐", "[NET]")
+            .replace("⚠️", "[WARN]")
+            .replace("🔒", "[SEC]")
+            .replace("🚨", "[ALERT]")
+            .replace("✓", "[OK]")
+            .replace("✗", "[FAIL]")
+            .replace("📊", "[STATS]")
+            .replace("🛡️", "[SHIELD]");
+        
+        // Truncate very long messages
+        if clean_message.len() > 80 {
+            formatted.push_str(&format!("{}...", &clean_message[..77]));
+        } else {
+            formatted.push_str(&clean_message);
+        }
+    }
+    
+    // If we couldn't format it nicely, just truncate the original
+    if formatted.trim().is_empty() || formatted.len() < 10 {
+        if entry.len() > 100 {
+            format!("{}...", &entry[..97])
+        } else {
+            entry.to_string()
+        }
+    } else {
+        formatted
+    }
+}
+
 /// Display comprehensive status of HARDN
 fn show_status() {
     println!("\n═══════════════════════════════════════════════════════════════════════════════");
@@ -1780,8 +1925,15 @@ fn show_status() {
     // Check Recent HARDN Logs
     println!("RECENT ACTIVITY:");
     if Path::new(DEFAULT_LOG_DIR).exists() {
-        let log_output = Command::new("tail")
-            .args(&["-n", "5", &format!("{}/hardn.log", DEFAULT_LOG_DIR)])
+        let log_output = Command::new("journalctl")
+            .args(&[
+                "-u", "hardn.service",
+                "-u", "legion-daemon.service",
+                "-u", "hardn-monitor.service",
+                "-n", "10",
+                "--no-pager",
+                "-o", "short-iso",
+            ])
             .output();
         
         match log_output {
@@ -1790,13 +1942,28 @@ fn show_status() {
                 if logs.trim().is_empty() {
                     println!("  No recent log entries");
                 } else {
-                    for line in logs.lines() {
-                        println!("  {}", line);
-                    }
+                    display_formatted_logs(&logs);
                 }
             }
             _ => {
-                println!("  Log file not accessible or empty");
+                // Fallback to file-based logs if journalctl fails
+                let file_output = Command::new("tail")
+                    .args(&["-n", "10", &format!("{}/hardn.log", DEFAULT_LOG_DIR)])
+                    .output();
+                
+                match file_output {
+                    Ok(output) if output.status.success() => {
+                        let logs = String::from_utf8_lossy(&output.stdout);
+                        if logs.trim().is_empty() {
+                            println!("  No recent log entries");
+                        } else {
+                            display_formatted_logs(&logs);
+                        }
+                    }
+                    _ => {
+                        println!("  Log file not accessible or empty");
+                    }
+                }
             }
         }
     } else {
@@ -1814,8 +1981,9 @@ fn print_help() {
 ═══════════════════════════════════════════════════════════════════════════════
 
 QUICK START:
-  sudo make hardn          Launch the interactive service manager (main orchestrator)
-  sudo hardn services      Alternative: Launch service monitoring interface
+  sudo hardn-service-manager  Launch the interactive service manager (recommended)
+  sudo make hardn             Alternative: Build and launch service manager
+  sudo hardn services          Launch service monitoring interface
 
 NAVIGATION:
   • Use arrow keys or numbers to navigate menus
