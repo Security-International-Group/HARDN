@@ -271,32 +271,28 @@ run_legion_menu() {
                 read -p $'\nPress Enter to continue...' || true
                 ;;
             7)
-                echo -e "\n${BOLD}Running LEGION with ML analysis...${NC}"
-                "$HARDN_BIN" legion --ml-enabled
+                echo -e "\n${BOLD}Running LEGION with predictive analysis...${NC}"
+                "$HARDN_BIN" legion --predictive --verbose
                 read -p $'\nPress Enter to continue...' || true
                 ;;
             8)
-                echo -e "\n${BOLD}Running LEGION with predictive analysis...${NC}"
-                "$HARDN_BIN" legion --predictive
-                read -p $'\nPress Enter to continue...' || true
-                ;;
-            9)
                 echo -e "\n${BOLD}Running LEGION with automated response...${NC}"
                 echo -e "${YELLOW}WARNING: Automated response may take security actions automatically!${NC}"
                 read -p "Are you sure? [y/N]: " confirm || { echo; continue; }
                 if [[ "$confirm" =~ ^[Yy]$ ]]; then
-                    "$HARDN_BIN" legion --response-enabled
+                    "$HARDN_BIN" legion --response-enabled --verbose
                 fi
                 read -p $'\nPress Enter to continue...' || true
                 ;;
-            10)
-                echo -e "\n${BOLD}Enter LEGION options:${NC}"
+            9)
+                echo -e "\n${BOLD}Enter custom LEGION options:${NC}"
                 echo "Examples:"
-                echo "  --verbose --ml-enabled"
+                echo "  --verbose --predictive"
                 echo "  --daemon --json"
                 echo "  --create-baseline --verbose"
+                echo "  --response-enabled --predictive --verbose"
                 read -p "Options: " legion_options || { echo; continue; }
-                echo -e "\n${BOLD}Running LEGION with options...${NC}"
+                echo -e "\n${BOLD}Running LEGION with custom options...${NC}"
                 "$HARDN_BIN" legion $legion_options
                 read -p $'\nPress Enter to continue...' || true
                 ;;
