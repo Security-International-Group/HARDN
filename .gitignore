@@ -32,3 +32,10 @@ build/
 
 /target
 debian/hardn/
+
+# Ignore Debian build artifacts
+debian/files
+debian/*.debhelper
+debian/*.substvars
+debian/debhelper-build-stamp
+debian/hardn/
