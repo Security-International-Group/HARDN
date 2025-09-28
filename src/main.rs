@@ -1043,15 +1043,27 @@ fn categorize_tools(tools: &[String]) -> Vec<(&'static str, Vec<&String>)> {
 // The print_modules and print_tools functions now have their own implementations
 
 fn print_about() {
+    // Terminal width (assuming standard 80 chars, but can be adjusted)
+    const TERM_WIDTH: usize = 80;
+    
+    // Helper function to center text
+    let center_text = |text: &str| -> String {
+        let padding = TERM_WIDTH.saturating_sub(text.len()) / 2;
+        format!("{:width$}{}", "", text, width = padding)
+    };
+    
+    // Print centered header
+    println!();
+    println!("{}", center_text(&format!("{} - Linux Security Hardening and Extended Detection & Response Toolkit", APP_NAME)));
+    println!("{}", center_text(&format!("Version: {}", VERSION)));
+    println!();
+    println!("{}", center_text("Developed by: Security International Group (SIG) Team"));
+    println!("{}", center_text("License: MIT"));
+    println!();
+    
+    // Print the rest with normal formatting
     println!(
-        r#"
-{} - Linux Security Hardening and Extended Detection & Response Toolkit
-Version: {}
-
-Developed by: Security International Group (SIG) Team
-License: MIT
-
-HARDN is a comprehensive security hardening and threat detection system
+        r#"HARDN is a comprehensive security hardening and threat detection system
 designed for Debian-based Linux distributions. It provides:
 
   • STIG-compliant security hardening
@@ -1064,8 +1076,7 @@ designed for Debian-based Linux distributions. It provides:
   • Endpoint protection and monitoring
 
 For more information, visit: https://github.com/Security-International-Group/HARDN
-"#,
-        APP_NAME, VERSION
+"#
     );
 }
 
