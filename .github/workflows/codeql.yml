@@ -78,7 +78,7 @@ jobs:
       uses: actions/checkout@v4  # TODO: Pin to commit SHA
 
     - name: Setup Python
-      uses: actions/setup-python@v4  # TODO: Pin to commit SHA
+      uses: actions/setup-python@v6  # TODO: Pin to commit SHA
       with:
         python-version: '3.11'
 
