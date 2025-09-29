@@ -40,7 +40,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4  # TODO: Pin to commit SHA
+      uses: actions/checkout@v5  # TODO: Pin to commit SHA
 
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3  # TODO: Pin to commit SHA
@@ -75,7 +75,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4  # TODO: Pin to commit SHA
+      uses: actions/checkout@v5  # TODO: Pin to commit SHA
 
     - name: Setup Python
       uses: actions/setup-python@v4  # TODO: Pin to commit SHA
