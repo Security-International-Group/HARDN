@@ -40,7 +40,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4  # TODO: Pin to commit SHA
+      uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
 
     - name: Initialize CodeQL
       uses: github/codeql-action/init@3599b3baa15b485a2e49ef411a7a4bb2452e7f93
