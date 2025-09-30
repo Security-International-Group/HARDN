@@ -43,7 +43,7 @@ jobs:
       uses: actions/checkout@v4  # TODO: Pin to commit SHA
 
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3  # TODO: Pin to commit SHA
+      uses: github/codeql-action/init@3599b3baa15b485a2e49ef411a7a4bb2452e7f93
       with:
         languages: ${{ matrix.language }}
         build-mode: ${{ matrix.build-mode }}
