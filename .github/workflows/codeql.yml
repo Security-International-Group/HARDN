@@ -83,7 +83,7 @@ jobs:
         python-version: '3.11'
 
     - name: Run Semgrep Security Scan
-      uses: semgrep/semgrep-action@v1  # TODO: Pin to commit SHA
+      uses: semgrep/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d
       with:
         config: >-
           p/security-audit
