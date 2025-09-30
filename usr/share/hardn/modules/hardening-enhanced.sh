@@ -35,32 +35,11 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # ==========================================
-# 1. AUTHENTICATION AND PAM HARDENING
+# 1. AUTHENTICATION HARDENING (PAM DISABLED BY POLICY)
 # ==========================================
-log_action "Configuring PAM and authentication hardening..."
+log_action "Skipping all PAM-related authentication hardening per HARDN policy"
 
-# Configure password quality requirements (addresses AUTH-9262)
-if [ -f /etc/security/pwquality.conf ]; then
-    cat > /etc/security/pwquality.conf <<EOF
-# Enhanced password policy by HARDN
-minlen = 14
-minclass = 3
-maxrepeat = 3
-maxsequence = 3
-ucredit = -1
-lcredit = -1
-dcredit = -1
-ocredit = -1
-difok = 8
-gecoscheck = 1
-dictcheck = 1
-usercheck = 1
-enforcing = 1
-retry = 3
-enforce_for_root
-EOF
-    log_action "Password quality requirements configured"
-fi
+# NOTE: All PAM modifications (pwquality, pam_* modules, common-auth edits) are intentionally disabled.
 
 # Configure login.defs for password aging (addresses AUTH-9286)
 if [ -f /etc/login.defs ]; then
@@ -80,22 +59,9 @@ if [ -f /etc/login.defs ]; then
     log_action "Login.defs configured for password aging and security"
 fi
 
-# Configure account lockout policy (addresses AUTH-9328)
-if [ -f /etc/pam.d/common-auth ]; then
-    if ! grep -q "pam_tally2" /etc/pam.d/common-auth 2>/dev/null; then
-        # Add account lockout after 5 failed attempts
-        sed -i '1 a\auth required pam_tally2.so onerr=fail audit silent deny=5 unlock_time=900' /etc/pam.d/common-auth
-    fi
-    log_action "Account lockout policy configured"
-fi
+# Account lockout policy via PAM is disabled by policy to prevent unexpected lockouts
 
-# Configure su access restriction (addresses AUTH-9218)
-if [ -f /etc/pam.d/su ]; then
-    if ! grep -q "pam_wheel.so" /etc/pam.d/su; then
-        echo "auth required pam_wheel.so use_uid group=sudo" >> /etc/pam.d/su
-    fi
-    log_action "Su access restricted to sudo group"
-fi
+# PAM-based su access restriction is disabled by policy
 
 # ==========================================
 # 2. SSH HARDENING (Comprehensive)
@@ -536,7 +502,7 @@ echo -e "${GREEN}HARDN Enhanced Hardening Complete!${NC}"
 echo "========================================="
 echo ""
 echo "Applied hardening measures:"
-echo "  ✓ PAM and authentication hardening"
+# echo "  ✓ PAM and authentication hardening"
 echo "  ✓ Comprehensive SSH configuration"
 echo "  ✓ Secure file permissions"
 echo "  ✓ Kernel security parameters"

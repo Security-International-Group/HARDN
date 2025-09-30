@@ -43,13 +43,8 @@ chmod 644 /etc/passwd 2>/dev/null || true
 chmod 600 /etc/shadow 2>/dev/null || true
 chmod 644 /etc/group 2>/dev/null || true
 
-# 5. download pwquality
-log_action "Attempting to fix broken packages..."
-dpkg --configure -a 2>/dev/null || log_action "Warning: dpkg configure failed, continuing..."
-apt-get install -f -y 2>/dev/null || log_action "Warning: package fix failed, continuing..."
-log_action "Downloading and installing pwquality..."
-timeout 60 apt-get update --quiet 2>/dev/null || log_action "Warning: apt update failed or timed out, continuing..."
-timeout 120 apt-get install -y --no-install-recommends libpam-pwquality 2>/dev/null || log_action "Warning: pwquality installation failed, continuing..." 
+# 5. PAM-related components (disabled by policy)
+log_action "Skipping PAM components (pwquality/pam) per HARDN policy to avoid auth stack changes..."
 
 # 6. install clamv and start service
 log_action "Installing ClamAV antivirus..."

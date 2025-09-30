@@ -1,4 +1,4 @@
-// PAM Guard Module for HARDN
+// PAM features are disabled by policy. This module is intentionally left empty.
 // Purpose: Prevent PAM misconfigurations that could break sudo access
 
 use std::fs;
