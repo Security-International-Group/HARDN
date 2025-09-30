@@ -62,7 +62,7 @@ jobs:
         cargo build --release
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3  # TODO: Pin to commit SHA
+      uses: github/codeql-action/analyze@3599b3baa15b485a2e49ef411a7a4bb2452e7f93
       with:
         category: "/language:${{matrix.language}}"
 
