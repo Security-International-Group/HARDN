@@ -1990,9 +1990,9 @@ fn display_formatted_logs(logs: &str) {
     if formatted_entries.is_empty() {
         println!("  No recent activity to display");
     } else {
-        // Limit to 5 most recent entries for cleaner display
-        let display_count = formatted_entries.len().min(5);
-        let start_index = formatted_entries.len().saturating_sub(5);
+    // Limit to 5 most recent entries for cleaner display
+    let display_count = formatted_entries.len().min(5);
+    let start_index = formatted_entries.len().saturating_sub(display_count);
         
         for entry in &formatted_entries[start_index..] {
             println!("  {}", entry);
@@ -2021,7 +2021,8 @@ fn format_log_entry(entry: &str) -> String {
     
     // Extract service name
     for service in &["hardn", "legion", "hardn-monitor"] {
-        if let Some(idx) = entry.find(&format!("{}[", service)) {
+        let needle = format!("{}[", service);
+        if entry.contains(&needle) {
             formatted.push_str(&format!("{}: ", service.to_uppercase()));
             break;
         }
@@ -2252,6 +2253,7 @@ NAVIGATION:
 GETTING HELP:
   sudo hardn --help        Show this help menu
   sudo hardn --about       Show detailed information about HARDN
+    sudo hardn --banner      Display the ASCII art banner
   sudo hardn --status      Show current service status
 
 TROUBLESHOOTING ERRORS:
@@ -2421,6 +2423,10 @@ fn main() {
                     }
                     "-a" | "--about" | "about" => {
                         print_about();
+                        EXIT_SUCCESS
+                    }
+                    "-b" | "--banner" | "banner" => {
+                        print_banner();
                         EXIT_SUCCESS
                     }
                     "-s" | "--status" | "status" => {

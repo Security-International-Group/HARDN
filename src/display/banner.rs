@@ -13,7 +13,9 @@ pub fn print_banner() {
   ███    █▀           ███    █▀         ███    ███      ████████▀        ▀█   █▀
                                         ███    ███
                                         
-                         Extended Detection and Response
+           E X T E N D E D + D E T E C T I O N + A N D + R E S P O N S E
+        -------------------------------------------------------------------
+            S E C U R I T Y -- I N T E R N A T I O N A L -- G R O U P
 "#
     );
 }

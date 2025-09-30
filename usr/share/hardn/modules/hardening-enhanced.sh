@@ -154,7 +154,7 @@ EOF
     cat > /etc/ssh/sshd_banner <<EOF
 ***************************************************************************
                             NOTICE TO USERS
-
+                       ***** W A R N I N G *****
 This computer system is for authorized use only. Users have no explicit or 
 implicit expectation of privacy. Any or all uses of this system and all 
 files on this system may be intercepted, monitored, recorded, copied, 
@@ -170,6 +170,7 @@ this system you indicate your awareness of and consent to these terms and
 conditions of use.
 
 LOG OFF IMMEDIATELY if you do not agree to the conditions stated in this warning.
+          S E C U R I T Y - I N T E R N A T I O N A L - G R O U P
 ***************************************************************************
 EOF
     

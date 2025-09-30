@@ -61,7 +61,6 @@ print_colored() {
     echo -e "${color}$@${NC}"
 }
 
-# Function to check if running as root
 check_root() {
     if [[ $EUID -ne 0 ]]; then
         print_colored "$RED" "This script must be run as root!"
@@ -70,21 +69,20 @@ check_root() {
     fi
 }
 
-# Function to check for required commands
 check_dependencies() {
     local missing_deps=()
-    
+
     for cmd in systemctl journalctl; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             missing_deps+=("$cmd")
         fi
     done
-    
+
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
         print_colored "$RED" "Error: Missing required dependencies: ${missing_deps[*]}"
         exit 1
     fi
-    
+
     if [[ -z "$HARDN_BIN" || ! -x "$HARDN_BIN" ]]; then
         print_colored "$RED" "Error: HARDN binary not found!"
         echo "Please ensure HARDN is installed or built."
@@ -101,7 +99,7 @@ check_dependencies() {
         echo "  export HARDN_BINARY=/path/to/hardn"
         exit 1
     fi
-    
+
     echo "Using HARDN binary: $HARDN_BIN"
 }
 
@@ -316,8 +314,27 @@ run_modules_menu() {
         echo
        
         local modules
-        modules=$("$HARDN_BIN" --list-modules 2>/dev/null | grep -E "^    - " | sed 's/    - //' || true)
-        
+        modules=$("$HARDN_BIN" --list-modules 2>/dev/null | sed -n 's/^[[:space:]]*[•-][[:space:]]\{1,\}\(.*\)$/\1/p' || true)
+
+        if [[ -z "$modules" ]]; then
+            # Fallback: inspect module directories directly
+            local -a module_dirs=()
+            IFS=':' read -ra module_dirs <<< "${HARDN_MODULE_PATH:-/usr/share/hardn/modules:/usr/lib/hardn/src/setup/modules}"
+            local -A seen_modules=()
+            for dir in "${module_dirs[@]}"; do
+                [ -d "$dir" ] || continue
+                while IFS= read -r -d '' module_file; do
+                    local base
+                    base=$(basename "$module_file")
+                    base=${base%.sh}
+                    seen_modules[$base]=1
+                done < <(find "$dir" -maxdepth 1 -type f -name '*.sh' -print0 2>/dev/null)
+            done
+            if ((${#seen_modules[@]})); then
+                modules=$(printf '%s\n' "${!seen_modules[@]}" | sort)
+            fi
+        fi
+
         if [[ -z "$modules" ]]; then
             print_colored "$RED" "No modules found!"
             echo "Make sure HARDN is properly installed."

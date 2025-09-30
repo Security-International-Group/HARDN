@@ -2,8 +2,8 @@ Package: hardn
 Version: 1.0.0-1
 Architecture: amd64
 Maintainer: Security International Group <office@cybersynapse.io>
-Installed-Size: 3893
-Depends: libc6 (>= 2.34), libgcc-s1 (>= 4.2), libglib2.0-0 (>= 2.53.1), libgtk-4-1 (>= 4.0.0), python3:any, adduser, curl, wget, lsof, psmisc, procps, git, python3-fastapi, python3-uvicorn, python3-requests, python3-psutil
+Installed-Size: 3952
+Depends: libc6 (>= 2.39), libgcc-s1 (>= 4.2), libglib2.0-0t64 (>= 2.54.0), libgtk-4-1 (>= 4.0.0), python3:any, adduser, curl, wget, lsof, psmisc, procps, git, python3-fastapi, python3-uvicorn, python3-requests, python3-psutil
 Recommends: whiptail
 Section: admin
 Priority: optional
