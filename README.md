@@ -1,4 +1,4 @@
-![hard](docs/IMG_1233.jpeg)
+![hard](docs/assets/IMG_1233.jpeg)
 
 # HARDN
 Linux Security Hardening and Extended Detection Response
@@ -62,7 +62,7 @@ hardn-gui
 #### References
 - [LEGION](docs/legion-daemon.md)
 - [HARDN](docs/hardn.md)
-- [HARDN API](docs.hardn-api.md)
+- [HARDN API](docs/hardn-api.md)
 - [HARDN Service Manager](docs/hardn-service-manager.md)
 
 ## Services
@@ -76,12 +76,12 @@ HARDN installs two systemd services:
 - Manual start: `sudo systemctl start hardn.service`
 
 ### legion-daemon.service
-![legion](docs/legion.jpeg)
+![legion](docs/assets/legion.jpeg)
 - Type: Monitoring (daemon)
 - Purpose: Continuous security monitoring
 - Status: Active, runs continuously
 - Monitors: Kernel, Memory, cron, packages, binaries, filesystem, processes, network, IDS
-![enemy](docs/enemy.jpeg)
+![enemy](docs/assets/enemy.jpeg)
 
 ## monitoring
 
