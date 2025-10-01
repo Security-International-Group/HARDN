@@ -1,11 +1,11 @@
-use std::fs;
-use std::process::Command;
-use std::thread;
-use std::time::Duration;
-use std::io::Write;
 use chrono::Utc;
 use serde_json::Value;
 use std::env;
+use std::fs;
+use std::io::Write;
+use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 fn log_message(level: &str, message: &str) {
     let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S");
@@ -15,7 +15,8 @@ fn log_message(level: &str, message: &str) {
     if let Ok(mut file) = fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open("/var/log/hardn/hardn-monitor.log") {
+        .open("/var/log/hardn/hardn-monitor.log")
+    {
         let _ = file.write_all(log_entry.as_bytes());
     }
 
@@ -36,7 +37,10 @@ fn check_service_status(service: &str) -> Result<String, std::io::Error> {
 }
 
 fn restart_service(service: &str) -> Result<(), std::io::Error> {
-    log_message("WARN", &format!("{} is stopped - attempting restart", service));
+    log_message(
+        "WARN",
+        &format!("{} is stopped - attempting restart", service),
+    );
 
     let output = Command::new("systemctl")
         .args(&["restart", service])
@@ -55,7 +59,7 @@ fn monitor_services() {
     let services = vec![
         "hardn.service",
         "hardn-api.service",
-        "legion-daemon.service"
+        "legion-daemon.service",
     ];
 
     let mut status_messages = Vec::new();
@@ -70,12 +74,18 @@ fn monitor_services() {
                 }
             }
             Err(e) => {
-                log_message("ERROR", &format!("Failed to check status of {}: {}", service, e));
+                log_message(
+                    "ERROR",
+                    &format!("Failed to check status of {}: {}", service, e),
+                );
             }
         }
     }
 
-    log_message("INFO", &format!("Service Status - {}", status_messages.join(", ")));
+    log_message(
+        "INFO",
+        &format!("Service Status - {}", status_messages.join(", ")),
+    );
 }
 
 fn check_api_health() -> Result<(), std::io::Error> {
@@ -114,16 +124,35 @@ fn log_metrics_from_api() {
         if result.status.success() {
             if let Ok(text) = String::from_utf8(result.stdout) {
                 if let Ok(json) = serde_json::from_str::<Value>(&text) {
-                    let cpu = json.get("system_health").and_then(|h| h.get("cpu_percent")).and_then(|v| v.as_f64()).unwrap_or(0.0);
-                    let mem = json.get("system_health").and_then(|h| h.get("memory")).and_then(|m| m.get("percent")).and_then(|v| v.as_f64()).unwrap_or(0.0);
-                    let load = json.get("system_health").and_then(|h| h.get("load_average"));
+                    let cpu = json
+                        .get("system_health")
+                        .and_then(|h| h.get("cpu_percent"))
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
+                    let mem = json
+                        .get("system_health")
+                        .and_then(|h| h.get("memory"))
+                        .and_then(|m| m.get("percent"))
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
+                    let load = json
+                        .get("system_health")
+                        .and_then(|h| h.get("load_average"));
                     let (l1, l5, l15) = if let Some(arr) = load.and_then(|v| v.as_array()) {
                         let l1 = arr.get(0).and_then(|v| v.as_f64()).unwrap_or(0.0);
                         let l5 = arr.get(1).and_then(|v| v.as_f64()).unwrap_or(0.0);
                         let l15 = arr.get(2).and_then(|v| v.as_f64()).unwrap_or(0.0);
                         (l1, l5, l15)
-                    } else { (0.0, 0.0, 0.0) };
-                    log_message("INFO", &format!("Metrics - cpu={:.1}% mem={:.1}% load={:.2},{:.2},{:.2}", cpu, mem, l1, l5, l15));
+                    } else {
+                        (0.0, 0.0, 0.0)
+                    };
+                    log_message(
+                        "INFO",
+                        &format!(
+                            "Metrics - cpu={:.1}% mem={:.1}% load={:.2},{:.2},{:.2}",
+                            cpu, mem, l1, l5, l15
+                        ),
+                    );
                 }
             }
         }

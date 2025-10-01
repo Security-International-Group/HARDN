@@ -1,20 +1,30 @@
-// declares the tools module.
-// Add submodule declarations here as needed, e.g.:
-// pub mod some_tool;
+//! Legion security HEURISTICS engine module DEMO
+//! This crate exposes two primary groups of functionality:
+//! - `core`: foundational orchestration, configuration, and baseline collectors
+//! - `modules`: domain-specific analytics and response capabilities
 
-pub mod legion;
-pub mod config;
-pub mod baseline;
-pub mod behavioral;
-pub mod threat_intel;
-pub mod response;
-pub mod correlation;
-pub mod risk_scoring;
-pub mod inventory;
-pub mod auth;
-pub mod packages;
-pub mod filesystem;
-pub mod processes;
-pub mod network;
-pub mod kernel;
-pub mod containers;
+macro_rules! safe_println {
+	() => {{
+		use std::io::{self, Write};
+		if let Err(e) = writeln!(io::stdout()) {
+			if e.kind() == std::io::ErrorKind::BrokenPipe {
+				std::process::exit(0);
+			} else {
+				let _ = writeln!(io::stderr(), "Write error: {}", e);
+			}
+		}
+	}};
+	($($arg:tt)*) => {{
+		use std::io::{self, Write};
+		if let Err(e) = writeln!(io::stdout(), $($arg)*) {
+			if e.kind() == std::io::ErrorKind::BrokenPipe {
+				std::process::exit(0);
+			} else {
+				let _ = writeln!(io::stderr(), "Write error: {}", e);
+			}
+		}
+	}};
+}
+
+pub mod core;
+pub mod modules;

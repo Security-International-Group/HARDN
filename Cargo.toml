@@ -41,6 +41,7 @@ ctrlc = "3.4"
 gtk4 = { version = "0.8", package = "gtk4" }
 glib = "0.18"
 gio = "0.18"
+comfy-table = "7.2"
 
 [profile.release]
 opt-level = "z"    # Optimize for size

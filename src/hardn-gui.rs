@@ -4,8 +4,8 @@ use std::time::{Duration, SystemTime};
 use glib::clone;
 use glib::timeout_add_local;
 use glib::ControlFlow;
-use gtk4::{prelude::*, Application, ApplicationWindow, ScrolledWindow, TextBuffer, TextView};
 use gtk4::prelude::{ApplicationExt, ApplicationExtManual};
+use gtk4::{prelude::*, Application, ApplicationWindow, ScrolledWindow, TextBuffer, TextView};
 
 // Simple normalized event structure
 #[derive(Clone, Debug)]
@@ -23,7 +23,10 @@ struct EventBuffer {
 
 impl EventBuffer {
     fn new(max_items: usize) -> Self {
-        Self { items: Vec::with_capacity(max_items.min(10_000)), max_items }
+        Self {
+            items: Vec::with_capacity(max_items.min(10_000)),
+            max_items,
+        }
     }
 
     fn push(&mut self, item: EventItem) {
@@ -37,7 +40,10 @@ impl EventBuffer {
     fn to_display_text(&self) -> String {
         let mut out = String::with_capacity(self.items.len().saturating_mul(96));
         for ev in &self.items {
-            out.push_str(&format!("[{}] {}: {}\n", ev.timestamp, ev.source, ev.message));
+            out.push_str(&format!(
+                "[{}] {}: {}\n",
+                ev.timestamp, ev.source, ev.message
+            ));
         }
         out
     }
@@ -66,19 +72,26 @@ struct ServiceHealth {
 
 #[derive(Clone, Debug, Default)]
 struct AlertsState {
-    metrics: Option<String>,  // e.g., "cpu=12% mem=34% load=0.50,0.40,0.30"
+    metrics: Option<String>,        // e.g., "cpu=12% mem=34% load=0.50,0.40,0.30"
     legion_summary: Option<String>, // e.g., "risk=0.123 level=Low indicators=2 issues=1"
 }
 
 fn parse_service_status(line: &str) -> Option<ServiceHealth> {
-    if !line.contains("Service Status -") { return None; }
+    if !line.contains("Service Status -") {
+        return None;
+    }
     let mut health = ServiceHealth::default();
     if let Some(idx) = line.find("Service Status -") {
         let slice = &line[idx + "Service Status -".len()..];
         for part in slice.split(',') {
             let p = part.trim();
-            let (name, state) = if let Some((n, s)) = p.split_once(':') { (n.trim(), s.trim()) } else { continue };
-            let running = state.eq_ignore_ascii_case("running") || state.eq_ignore_ascii_case("active");
+            let (name, state) = if let Some((n, s)) = p.split_once(':') {
+                (n.trim(), s.trim())
+            } else {
+                continue;
+            };
+            let running =
+                state.eq_ignore_ascii_case("running") || state.eq_ignore_ascii_case("active");
             match name {
                 "hardn" => health.hardn = Some(running),
                 "hardn-api" | "api" => health.api = Some(running),
@@ -105,9 +118,14 @@ fn render_header_text(h: &ServiceHealth) -> String {
         mk("LEGION", h.legion),
         mk("MONITOR", h.monitor)
     );
-    let any_down = [h.hardn, h.api, h.legion, h.monitor].into_iter().any(|x| matches!(x, Some(false)));
+    let any_down = [h.hardn, h.api, h.legion, h.monitor]
+        .into_iter()
+        .any(|x| matches!(x, Some(false)));
     if any_down {
-        format!("{}Tip: To interact with HARDN run: sudo hardn-service-manager\n\n", header)
+        format!(
+            "{}Tip: To interact with HARDN run: sudo hardn-service-manager\n\n",
+            header
+        )
     } else {
         format!("{}\n", header)
     }
@@ -132,7 +150,9 @@ fn normalize_line(line: &str) -> Option<EventItem> {
     // journalctl short-iso typically: "2025-09-27T12:34:56+00:00 hostname unit[pid]: message"
     // We'll try to split timestamp and the rest; keep robust if format varies.
     let line = line.trim();
-    if line.is_empty() { return None; }
+    if line.is_empty() {
+        return None;
+    }
 
     // Extract timestamp (first token) and message
     let mut parts = line.splitn(2, ' ');
@@ -144,12 +164,19 @@ fn normalize_line(line: &str) -> Option<EventItem> {
     let (source, message) = match source_end {
         Some(idx) => {
             let (src, msg) = rest.split_at(idx);
-            (src.trim().to_string(), msg.trim_start_matches(':').trim().to_string())
+            (
+                src.trim().to_string(),
+                msg.trim_start_matches(':').trim().to_string(),
+            )
         }
         None => ("journal".to_string(), rest.to_string()),
     };
 
-    Some(EventItem { timestamp: ts, source, message })
+    Some(EventItem {
+        timestamp: ts,
+        source,
+        message,
+    })
 }
 
 fn now_iso() -> String {
@@ -292,5 +319,3 @@ fn main() {
 
     app.run();
 }
-
-

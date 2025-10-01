@@ -16,15 +16,15 @@ pub const EXIT_USAGE: i32 = 2;
 /// Default directories to search for module scripts
 /// These are searched in order, with the first match being used
 pub const DEFAULT_MODULE_DIRS: &[&str] = &[
-    "/usr/share/hardn/modules",              // Production: installed via package
-    "/usr/lib/hardn/src/setup/modules",  // Development/legacy
-    "/usr/local/share/hardn/modules",        // Local installation
+    "/usr/share/hardn/modules",         // Production: installed via package
+    "/usr/lib/hardn/src/setup/modules", // Development/legacy
+    "/usr/local/share/hardn/modules",   // Local installation
 ];
 
 /// Default directories to search for tool scripts
 /// Tools are standalone security utilities that can be run independently
 pub const DEFAULT_TOOL_DIRS: &[&str] = &[
-    "/usr/share/hardn/tools",                // Production: installed via package
-    "/usr/lib/hardn/src/setup/tools",    // Development/legacy
-    "/usr/local/share/hardn/tools",          // Local installation
+    "/usr/share/hardn/tools",         // Production: installed via package
+    "/usr/lib/hardn/src/setup/tools", // Development/legacy
+    "/usr/local/share/hardn/tools",   // Local installation
 ];
