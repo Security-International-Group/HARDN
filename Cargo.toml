@@ -36,6 +36,12 @@ dashmap = "5.4"
 lru = "0.9"
 sha2 = "0.10"
 atty = "0.2"
+tempfile = "3.0"
+ctrlc = "3.4"
+gtk4 = { version = "0.8", package = "gtk4" }
+glib = "0.18"
+gio = "0.18"
+comfy-table = "7.2"
 
 [profile.release]
 opt-level = "z"    # Optimize for size
@@ -45,3 +51,14 @@ lto = true         # Enable link-time optimization
 [[bin]]
 name = "hardn"
 path = "src/main.rs"
+
+[[bin]]
+name = "hardn-monitor"
+path = "src/hardn-monitor.rs"
+
+[[bin]]
+name = "hardn-gui"
+path = "src/hardn-gui.rs"
+
+[patch.crates-io]
+partitions = { git = "https://github.com/DDOtten/partitions.git", branch = "master" }

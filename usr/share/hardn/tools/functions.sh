@@ -93,11 +93,6 @@ backup_file() {
                 backup_file="/var/lib/hardn/backups/apt/${file_name}.bak.${backup_suffix}"
                 mkdir -p "/var/lib/hardn/backups/apt"
                 ;;
-            "/etc/pam.d")
-                # For PAM config files, store backups in /var/lib/hardn/backups/pam/
-                backup_file="/var/lib/hardn/backups/pam/${file_name}.bak.${backup_suffix}"
-                mkdir -p "/var/lib/hardn/backups/pam"
-                ;;
             *)
                 # Default: create backup in same directory
                 backup_file="${file}.bak.${backup_suffix}"

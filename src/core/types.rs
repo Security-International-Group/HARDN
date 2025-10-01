@@ -29,7 +29,7 @@ impl ToolCategory {
     pub fn new(name: &'static str, tools: Vec<&'static str>) -> Self {
         Self { name, tools }
     }
-    
+
     pub fn contains(&self, tool: &str) -> bool {
         self.tools.iter().any(|&t| t == tool)
     }

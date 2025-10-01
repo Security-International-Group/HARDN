@@ -6,6 +6,12 @@ HARDN Legion is an advanced heuristics-based security monitoring and anomaly det
 
 ## Architecture Overview
 
+### Design Goals
+- **Unified Detection Core**: Blend signature intelligence, heuristic scoring, and baseline drift analytics to spot both known malware and novel intrusions quickly.
+- **Lean Execution Model**: Prioritize sequential, CPU-friendly collectors and detectors; avoid GPU, SIMD batching, or other parallel hardware requirements so Legion stays lightweight on endpoints.
+- **Deterministic Responsiveness**: Keep monitoring loops predictable and low latency, ensuring automated containment can fire without delaying user workloads.
+- **Central Control Surface**: The Legion daemon is the authoritative interface for telemetry, configuration, response triggers, and GUI data access—every client reads from and writes to this service.
+
 Legion operates in two primary modes with enhanced capabilities:
 
 ### 1. Interactive Scanning Mode
@@ -50,6 +56,18 @@ ProtectSystem=strict
 ReadWritePaths=/var/log /var/lib/hardn
 MemoryLimit=256M
 ```
+
+#### Daemon Responsibilities
+- **Telemetry Hub**: Streams normalized event data, risk scores, and detailed findings to the GUI and external consumers through a single API surface.
+- **Control Plane**: Accepts configuration pushes, response commands, and policy updates, applying them atomically to monitoring modules.
+- **Baseline Steward**: Coordinates learning cycles, persists baselines, and manages drift heuristics without delegating to auxiliary workers.
+- **Logging Authority**: Owns structured logging and alert journaling, guaranteeing consistent audit trails for every detection and automated response.
+
+### Bottom-Up Framework
+- **Collection Layer** (`TelemetrySource`): CPU-friendly collectors gather system, process, network, kernel, and filesystem telemetry sequentially without parallel fan-out, ensuring predictable latency and reduced resource impact.
+- **Analysis Layer** (`HeuristicModule`, `SignatureModule`): Pure-Rust heuristics and signature engines operate on immutable telemetry batches, generating findings with explicit severity and provenance metadata for traceability.
+- **Response Layer** (`ResponseModule`): Deterministic responders receive consolidated findings along with baseline context, enforcing policy decisions (alert, isolate, block) while honoring the daemon’s automatic-response allowance.
+- **LegionCore Orchestrator**: The `framework` module provides a pristine pipeline that wires these layers together inside the daemon, delivering a single-cycle report for the GUI, logging system, and automated response engine.
 
 ### Baseline Management
 

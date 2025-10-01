@@ -1,6 +1,6 @@
 /*use clap::{App, Arg};
 
-// mod.rs - CLI module 
+// mod.rs - CLI module
 
 pub mod args;  // Declare submodule for argument parsing
 
@@ -20,6 +20,6 @@ pub fn run() {
 
     if let Some(input) = matches.value_of("input") {
         println!("Processing input: {}", input);
-       
+
     }
 }*/

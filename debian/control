@@ -1,7 +1,7 @@
 Source: hardn
 Section: admin
 Priority: optional
-Maintainer: Security International Group <contact@sig.com>
+Maintainer: Security International Group <office@cybersynapse.io>
 Build-Depends: debhelper-compat (= 13),
         build-essential,
         debhelper,
@@ -14,7 +14,9 @@ Build-Depends: debhelper-compat (= 13),
         wget,
         whiptail,
         bash,
-        pkg-config
+        pkg-config,
+        libgtk-4-dev,
+        libglib2.0-dev
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
 Homepage: https://github.com/Security-International-Group/HARDN
@@ -23,7 +25,7 @@ Vcs-Browser: https://github.com/Security-International-Group/HARDN
 
 Package: hardn
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, python3:any, adduser, curl, wget, lsof, psmisc, procps, git, python3-fastapi, python3-uvicorn, python3-requests, python3-psutil
+Depends: ${shlibs:Depends}, ${misc:Depends}, python3:any, adduser, curl, wget, lsof, psmisc, procps, git, python3-fastapi, python3-uvicorn, python3-requests, python3-psutil,
 Recommends: whiptail
 Description: Linux Security Hardening Framework (Demo Version)
  HARDN is a comprehensive Linux security hardening toolkit demonstration.
