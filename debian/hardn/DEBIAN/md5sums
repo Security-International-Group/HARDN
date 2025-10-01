@@ -9,8 +9,7 @@ b8c180f579f033637b67612817d6b7cd  usr/bin/hardn-monitor
 ce4554c706a7240cdaae02e466f59063  usr/share/applications/hardn-gui.desktop
 380ce539a1fda4b70791073e32e9e6e3  usr/share/doc/hardn/changelog.Debian.gz
 201ddc4ae7a3d1e4842cfab7985360af  usr/share/doc/hardn/copyright
-ce163b3629377b1fcbe17faa76537510  usr/share/hardn/modules/hardening-enhanced.sh
-f887eb35162a302d3b309e88e90a0c27  usr/share/hardn/modules/hardening.sh
+fc7a9c7f85e13e67ee3af617123ea8b9  usr/share/hardn/modules/hardening.sh
 23ab056864c15d0f95411db9b4c2a339  usr/share/hardn/src/hardn-api.py
 e2335ccd766568b3ae7fb7cae48ed62a  usr/share/hardn/tools/aide.sh
 e6f79812819f3059968eeac5627de2d4  usr/share/hardn/tools/fail2ban.sh

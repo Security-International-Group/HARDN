@@ -32,5 +32,8 @@ override_dh_auto_install:
 	install -d debian/hardn/usr/share/applications
 	install -m 644 usr/share/applications/hardn-gui.desktop debian/hardn/usr/share/applications/ 2>/dev/null || true
 
+override_dh_dwz:
+	dh_dwz --no-dwz-multifile
+
 %:
 	dh $@ --buildsystem=makefile
