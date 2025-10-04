@@ -210,7 +210,8 @@ install-deb-internal:
 	fi; \
 	if [ -n "$$DEB_FILE" ]; then \
 		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Installing %s$(COLOR_RESET)\n' "$$DEB_FILE"; \
-		dpkg -i "$$DEB_FILE"; \
+		apt-get update -qq; \
+		apt-get install -y -qq "$$DEB_FILE"; \
 	else \
 		printf '$(CASTLE_PREFIX) $(COLOR_WARN)No .deb file found for installation!$(COLOR_RESET)\n'; exit 1; \
 	fi
