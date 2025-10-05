@@ -133,7 +133,7 @@ HARDN integrates and manages multiple security tools:
 ### Network Security
 - **UFW (Uncomplicated Firewall)**: Host-based firewall
 - **Fail2Ban**: Intrusion prevention system
-- **Suricata**: Network intrusion detection (when installed)
+- **Legion Network Sensor**: Built-in anomaly and network telemetry detection
 
 ### System Integrity
 - **AIDE**: File integrity monitoring

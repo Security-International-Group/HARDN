@@ -1,35 +1,47 @@
 #!/bin/bash
+# HARDN Fail2Ban Setup Script
 
+set -euo pipefail
 
-    printf "\033[1;31m[+] Installing and enabling Fail2Ban...\033[0m\n"
-    apt update
-    apt install -y fail2ban
-    systemctl enable --now fail2ban
-    printf "\033[1;32m[+] Fail2Ban installed and enabled successfully.\033[0m\n"
+source "$(cd "$(dirname "$0")" && pwd)/functions.sh"
 
-    printf "\033[1;31m[+] Configuring Fail2Ban for SSH...\033[0m\n"
-    cat << EOF > /etc/fail2ban/jail.local
+check_root
+log_tool_execution "fail2ban.sh"
+
+HARDN_STATUS "info" "Ensuring Fail2Ban package is installed"
+if install_package fail2ban; then
+    HARDN_STATUS "pass" "Fail2Ban package present"
+else
+    HARDN_STATUS "error" "Failed to install Fail2Ban"
+    exit 1
+fi
+
+HARDN_STATUS "info" "Configuring Fail2Ban SSH jail"
+cat <<'EOF' > /etc/fail2ban/jail.local
+[DEFAULT]
+ignoreip = 127.0.0.1/8 ::1
+allowipv6 = auto
+bantime = 1h
+findtime = 10m
+maxretry = 5
+backend = systemd
+
 [sshd]
 enabled = true
-port = ssh
-logpath = /var/log/auth.log
-maxretry = 5
-bantime = 3600
+port = 22
+logpath = %(sshd_log)s
 EOF
 
-    systemctl restart fail2ban
-    printf "\033[1;32m[+] Fail2Ban configured and restarted successfully.\033[0m\n"
+if fail2ban-client -t >/dev/null 2>&1; then
+    HARDN_STATUS "pass" "Fail2Ban configuration test passed"
+else
+    HARDN_STATUS "warning" "Fail2Ban configuration test reported issues"
+fi
 
-    printf "\033[1;31m[+] Installing and enabling AppArmor…\033[0m\n"
-    apt install -y apparmor apparmor-utils apparmor-profiles || {
-        printf "\033[1;31m[-] Failed to install AppArmor.\033[0m\n"
-        return 1
-    }
+if enable_service fail2ban; then
+    HARDN_STATUS "pass" "Fail2Ban service enabled and running"
+else
+    HARDN_STATUS "warning" "Unable to enable or start Fail2Ban service"
+fi
 
-  
-    systemctl restart apparmor || {
-        printf "\033[1;31m[-] Failed to restart AppArmor service.\033[0m\n"
-        return 1
-    }
-
-    systemctl enable --now apparmor 
+HARDN_STATUS "info" "Fail2Ban setup complete"

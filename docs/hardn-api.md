@@ -4,6 +4,8 @@
 
 The HARDN API provides comprehensive overwatch and health monitoring for endpoints in distributed environments. It integrates with HARDN security services and the Legion monitoring daemon to enable real-time system monitoring, diagnostics, and management. This API facilitates secure access to endpoint health data, service status, and system metrics for administrators and automated monitoring systems.
 
+This server does not replace the **Grafana** endpoint system or the **Wazuh** agent, but allows an Open Source tool for those intrested in hollistic monitoring within their own tool sets. 
+
 ## Authentication
 
 All API requests require authentication using SSH key-based Bearer tokens. Generate an SSH key pair locally and use the public key value in the Authorization header.
@@ -49,7 +51,7 @@ ssh-keygen -t rsa -b 4096 -C "hardn-api-key" -f ~/.ssh/hardn_api_key
 SSH_KEY=$(cat ~/.ssh/hardn_api_key.pub)
 echo $SSH_KEY
 
-# Example output: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDhkn08fVebPZo4dNFlP5x8siPv01i44CYPdeFgh/ROntK3774wGKp7UXeQbBgZoLOyzEGkrF686z6byQfvhBLqIWwDyED8XKKNtIDTJ6YrBKOoFoW9kGI4W6P+mT/ydhCzrDN0xe1anjKgGij8FWe4jtmsYqzE7cQy3GCe3VkDAAMHikeoXjXZgtMF+CNzMOfxXaZyUUjUMO68s3dZzu55zzZuRfJ0UQOdvE55bT3tmpykWICkdGfnyEKFqHE4OS0tsFfDRMZR2Zk/Uxn/qxm5k8kcQYnJTbGy3jX5AbI3m5ng70e35q5w8akzyc5VL6Lt65Z8vVzvXwpb37++rq6v hardn-test-key
+# Example output: ssh-rsa <YOUR_API_KEY_HERE> hardn-test-key
 
 # 3. Use in curl command
 curl -H "Authorization: Bearer $SSH_KEY" http://localhost:8000/health

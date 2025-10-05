@@ -68,11 +68,16 @@ struct ServiceHealth {
     api: Option<bool>,
     legion: Option<bool>,
     monitor: Option<bool>,
+    grafana: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default)]
 struct AlertsState {
-    metrics: Option<String>,        // e.g., "cpu=12% mem=34% load=0.50,0.40,0.30"
+    core_services: Option<String>, // e.g., "systemd=running networkd=running journald=running"
+    systemd_metrics: Option<String>, // e.g., "failed_units=0 queued_jobs=0"
+    journal_metrics: Option<String>, // e.g., "disk_usage_mb=12.3"
+    network_metrics: Option<String>, // e.g., "links=3 online=3 degraded=0"
+    metrics: Option<String>,       // e.g., "cpu=12% mem=34% load=0.50,0.40,0.30"
     legion_summary: Option<String>, // e.g., "risk=0.123 level=Low indicators=2 issues=1"
 }
 
@@ -97,6 +102,7 @@ fn parse_service_status(line: &str) -> Option<ServiceHealth> {
                 "hardn-api" | "api" => health.api = Some(running),
                 "legion-daemon" | "legion" => health.legion = Some(running),
                 "hardn-monitor" | "monitor" => health.monitor = Some(running),
+                "hardn-grafana" | "grafana" => health.grafana = Some(running),
                 _ => {}
             }
         }
@@ -112,13 +118,14 @@ fn render_header_text(h: &ServiceHealth) -> String {
         None => format!("{}: ?", label),
     };
     let header = format!(
-        "{}  {}  {}  {}\n",
+        "{}  {}  {}  {}  {}\n",
         mk("HARDN", h.hardn),
         mk("API", h.api),
         mk("LEGION", h.legion),
-        mk("MONITOR", h.monitor)
+        mk("MONITOR", h.monitor),
+        mk("GRAFANA", h.grafana)
     );
-    let any_down = [h.hardn, h.api, h.legion, h.monitor]
+    let any_down = [h.hardn, h.api, h.legion, h.monitor, h.grafana]
         .into_iter()
         .any(|x| matches!(x, Some(false)));
     if any_down {
@@ -135,6 +142,34 @@ fn parse_metrics(line: &str) -> Option<String> {
     // From monitor: "Metrics - cpu=..% mem=..% load=x,y,z"
     if let Some(idx) = line.find("Metrics - ") {
         return Some(line[idx + "Metrics - ".len()..].trim().to_string());
+    }
+    None
+}
+
+fn parse_core_services(line: &str) -> Option<String> {
+    if let Some(idx) = line.find("Core Services - ") {
+        return Some(line[idx + "Core Services - ".len()..].trim().to_string());
+    }
+    None
+}
+
+fn parse_systemd_metrics(line: &str) -> Option<String> {
+    if let Some(idx) = line.find("Systemd Metrics - ") {
+        return Some(line[idx + "Systemd Metrics - ".len()..].trim().to_string());
+    }
+    None
+}
+
+fn parse_journal_metrics(line: &str) -> Option<String> {
+    if let Some(idx) = line.find("Journal Metrics - ") {
+        return Some(line[idx + "Journal Metrics - ".len()..].trim().to_string());
+    }
+    None
+}
+
+fn parse_networkd_metrics(line: &str) -> Option<String> {
+    if let Some(idx) = line.find("Networkd Metrics - ") {
+        return Some(line[idx + "Networkd Metrics - ".len()..].trim().to_string());
     }
     None
 }
@@ -243,7 +278,11 @@ fn main() {
             let header = if let Ok(h) = health_ref.lock() { render_header_text(&*h) } else { String::new() };
             let alerts = if let Ok(a) = alerts_ref.lock() {
                 let mut s = String::new();
-                if let Some(ref m) = a.metrics { s.push_str(&format!("Metrics: {}\n", m)); }
+                if let Some(ref core) = a.core_services { s.push_str(&format!("Core Services: {}\n", core)); }
+                if let Some(ref sys) = a.systemd_metrics { s.push_str(&format!("Systemd: {}\n", sys)); }
+                if let Some(ref journal) = a.journal_metrics { s.push_str(&format!("Journal: {}\n", journal)); }
+                if let Some(ref network) = a.network_metrics { s.push_str(&format!("Networkd: {}\n", network)); }
+                if let Some(ref m) = a.metrics { s.push_str(&format!("Host Metrics: {}\n", m)); }
                 if let Some(ref l) = a.legion_summary { s.push_str(&format!("LEGION: {}\n", l)); }
                 if !s.is_empty() { s.push('\n'); }
                 s
@@ -293,7 +332,20 @@ fn main() {
                                     if h.api.is_some() { hs.api = h.api; }
                                     if h.legion.is_some() { hs.legion = h.legion; }
                                     if h.monitor.is_some() { hs.monitor = h.monitor; }
+                                    if h.grafana.is_some() { hs.grafana = h.grafana; }
                                 }
+                            }
+                            if let Some(core) = parse_core_services(&line) {
+                                if let Ok(mut a) = alerts_local.lock() { a.core_services = Some(core); }
+                            }
+                            if let Some(sys) = parse_systemd_metrics(&line) {
+                                if let Ok(mut a) = alerts_local.lock() { a.systemd_metrics = Some(sys); }
+                            }
+                            if let Some(journal) = parse_journal_metrics(&line) {
+                                if let Ok(mut a) = alerts_local.lock() { a.journal_metrics = Some(journal); }
+                            }
+                            if let Some(network) = parse_networkd_metrics(&line) {
+                                if let Ok(mut a) = alerts_local.lock() { a.network_metrics = Some(network); }
                             }
                             if let Some(m) = parse_metrics(&line) {
                                 if let Ok(mut a) = alerts_local.lock() { a.metrics = Some(m); }

@@ -967,7 +967,7 @@ fn get_tool_categories() -> Vec<ToolCategory> {
         ),
         ToolCategory::new(
             "Network Security",
-            vec!["ufw", "fail2ban", "suricata", "openssh", "iptables"],
+            vec!["ufw", "fail2ban", "legion", "openssh", "iptables"],
         ),
         ToolCategory::new(
             "System Monitoring",
@@ -1119,10 +1119,10 @@ fn get_security_tools() -> Vec<SecurityToolInfo> {
             description: "Antivirus engine for detecting trojans and malware",
         },
         SecurityToolInfo {
-            name: "Suricata",
-            service_name: "suricata",
-            _process_name: "suricata",
-            description: "Network IDS/IPS and security monitoring",
+            name: "Legion",
+            service_name: "legion-daemon",
+            _process_name: "legion",
+            description: "Continuous anomaly detection and network telemetry",
         },
         SecurityToolInfo {
             name: "OSSEC",

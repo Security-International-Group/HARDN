@@ -1,39 +1,16 @@
 #!/bin/bash
 
-install_and_configure_lynis() {
-    printf "\033[1;31m[+] Installing and configuring Lynis security auditing tool...\033[0m\n"
-    
-    # Check if Lynis is already installed
-    if dpkg -s lynis >/dev/null 2>&1; then
-        printf "\033[1;32m[+] Lynis is already installed.\033[0m\n"
-    else
-        printf "\033[1;31m[+] Installing Lynis...\033[0m\n"
-        apt update
-        apt install -y lynis || {
-            printf "\033[1;31m[-] Failed to install Lynis.\033[0m\n"
-            return 1
-        }
-    fi
+set -euo pipefail
 
-    printf "\033[1;31m[+] Configuring Lynis...\033[0m\n"
-    
-    # Create Lynis configuration directory
-    mkdir -p /etc/lynis
-    
-    # Check if old configuration exists and back it up
-    if [ -f /etc/lynis/custom.prf ]; then
-        # Check if it uses old format
-        if grep -E "^[a-z-]{1,}:" /etc/lynis/custom.prf >/dev/null 2>&1; then
-            printf "\033[1;33m[!] Found old format configuration, backing up and replacing...\033[0m\n"
-            cp /etc/lynis/custom.prf /etc/lynis/custom.prf.old-$(date +%Y%m%d-%H%M%S)
-        fi
-    fi
-    
-    # Create basic Lynis configuration
-    cat > /etc/lynis/custom.prf << 'EOF'
+source "$(cd "$(dirname "$0")" && pwd)/functions.sh"
+
+check_root
+log_tool_execution "lynis.sh"
+
+create_custom_profile() {
+    cat > /etc/lynis/custom.prf <<'EOF'
 # Custom Lynis profile for HARDN
 # Using new format (key=value) for Lynis 3.x compatibility
-# Note: log-file and report-file are command-line options, not profile settings
 
 # Skip certain tests that might not apply
 skip-test=FIRE-4513
@@ -61,13 +38,10 @@ refresh-repositories=yes
 # Test for NIS/NIS+
 test-scan-mode=yes
 EOF
+}
 
-    # Create log directory with proper permissions
-    mkdir -p /var/log/lynis
-    chmod 755 /var/log/lynis
-    
-    # Create logrotate configuration for Lynis
-    cat > /etc/logrotate.d/lynis << 'EOF'
+create_logrotate_config() {
+    cat > /etc/logrotate.d/lynis <<'EOF'
 /var/log/lynis/*.log {
     weekly
     missingok
@@ -90,108 +64,162 @@ EOF
     create 640 root root
 }
 EOF
+}
 
-    # Create a script for regular Lynis audits
-    cat > /usr/local/bin/lynis-audit.sh << 'EOF'
+create_audit_runner() {
+    cat > /usr/local/bin/lynis-audit.sh <<'EOF'
 #!/bin/bash
 # Automated Lynis security audit script for HARDN
 
-# Create log directory if it doesn't exist
-mkdir -p /var/log/lynis
+set -euo pipefail
 
-# Log files
 AUDIT_LOG="/var/log/lynis/hardn-audit.log"
 REPORT_FILE="/var/log/lynis/hardn-report.dat"
 CONCISE_REPORT="/var/log/lynis/lynis-report-concise.log"
 RUN_LOG="/var/log/lynis/audit-runs.log"
 
-# Run Lynis audit with verbose output
-echo "$(date): Starting Lynis security audit" >> "$RUN_LOG"
-lynis audit system --verbose --log-file "$AUDIT_LOG" --report-file "$REPORT_FILE" 2>/dev/null
+mkdir -p /var/log/lynis
 
-# Check if audit completed successfully
-if [ $? -eq 0 ]; then
+echo "$(date): Starting Lynis security audit" >> "$RUN_LOG"
+if lynis audit system --verbose --log-file "$AUDIT_LOG" --report-file "$REPORT_FILE" 2>/dev/null; then
     echo "$(date): Lynis audit completed successfully" >> "$RUN_LOG"
     echo "Audit log: $AUDIT_LOG" >> "$RUN_LOG"
     echo "Report file: $REPORT_FILE" >> "$RUN_LOG"
-    
-    # Generate concise report using ripgrep if available
+
     if command -v rg >/dev/null 2>&1; then
-        echo "$(date): Generating concise report..." >> "$RUN_LOG"
-        rg -i "Hardening index|NONE|UNSAFE|WEAK|NOT FOUND|DISABLED|^Suggestion:" "$AUDIT_LOG" | sed 's/^[0-9]\+|[0-9-]\+ [0-9:]\+ //' > "$CONCISE_REPORT"
-        if [ $? -eq 0 ]; then
+        echo "$(date): Generating concise report" >> "$RUN_LOG"
+        if rg -i "Hardening index|NONE|UNSAFE|WEAK|NOT FOUND|DISABLED|^Suggestion:" "$AUDIT_LOG" \
+            | sed 's/^[0-9]\+|[0-9-]\+ [0-9:]\+ //' > "$CONCISE_REPORT"; then
             echo "$(date): Concise report generated: $CONCISE_REPORT" >> "$RUN_LOG"
         else
             echo "$(date): Failed to generate concise report" >> "$RUN_LOG"
         fi
     else
-        echo "$(date): ripgrep not found, skipping concise report generation" >> "$RUN_LOG"
+        echo "$(date): ripgrep not found, concise report skipped" >> "$RUN_LOG"
     fi
 else
-    echo "$(date): Lynis audit failed with exit code $?" >> "$RUN_LOG"
+    echo "$(date): Lynis audit failed" >> "$RUN_LOG"
 fi
 EOF
 
     chmod +x /usr/local/bin/lynis-audit.sh
-    
-    printf "\033[1;32m[+] Lynis installed and configured successfully.\033[0m\n"
-    printf "\033[1;33m[!] Running Lynis security audit (this may take a few minutes)...\033[0m\n"
-    
-    # Ensure log directory exists
-    mkdir -p /var/log/lynis
-    
-    # Run comprehensive audit with verbose output
-    lynis audit system --verbose --log-file /var/log/lynis/hardn-audit.log --report-file /var/log/lynis/hardn-report.dat 2>/dev/null
-    
-    # Generate concise report if ripgrep is available
-    if command -v rg >/dev/null 2>&1; then
-        printf "\033[1;33m[!] Generating concise security report...\033[0m\n"
-        rg -i "Hardening index|NONE|UNSAFE|WEAK|NOT FOUND|DISABLED|^Suggestion:" /var/log/lynis/hardn-audit.log | sed 's/^[0-9]\+|[0-9-]\+ [0-9:]\+ //' > /var/log/lynis/lynis-report-concise.log
-        
-        if [ $? -eq 0 ]; then
-            printf "\033[1;32m[+] Concise report generated successfully.\033[0m\n"
-            
-            # Display summary statistics
-            TOTAL_LINES=$(wc -l < /var/log/lynis/lynis-report-concise.log)
-            HARDENING_INDEX=$(grep -i "Hardening index" /var/log/lynis/lynis-report-concise.log | head -1)
-            UNSAFE_COUNT=$(grep -c "UNSAFE" /var/log/lynis/lynis-report-concise.log)
-            NOT_FOUND_COUNT=$(grep -c "NOT FOUND" /var/log/lynis/lynis-report-concise.log)
-            WEAK_COUNT=$(grep -c "WEAK" /var/log/lynis/lynis-report-concise.log)
-            DISABLED_COUNT=$(grep -c "DISABLED" /var/log/lynis/lynis-report-concise.log)
-            SUGGESTIONS_COUNT=$(grep -c "^Suggestion:" /var/log/lynis/lynis-report-concise.log)
-            
-            printf "\033[1;36m\n=== Security Audit Summary ===\033[0m\n"
-            [ -n "$HARDENING_INDEX" ] && printf "\033[1;33m$HARDENING_INDEX\033[0m\n"
-            printf "\033[1;31mSecurity Issues Found:\033[0m\n"
-            printf "  - UNSAFE findings: \033[1;31m$UNSAFE_COUNT\033[0m\n"
-            printf "  - NOT FOUND items: \033[1;33m$NOT_FOUND_COUNT\033[0m\n"
-            printf "  - WEAK configurations: \033[1;33m$WEAK_COUNT\033[0m\n"
-            printf "  - DISABLED features: \033[1;33m$DISABLED_COUNT\033[0m\n"
-            printf "  - Suggestions: \033[1;36m$SUGGESTIONS_COUNT\033[0m\n"
-            printf "\033[1;36m==============================\033[0m\n\n"
-        else
-            printf "\033[1;33m[!] Failed to generate concise report (ripgrep might not be configured properly)\033[0m\n"
-        fi
-    else
-        printf "\033[1;33m[!] ripgrep not installed. Installing for future report generation...\033[0m\n"
-        apt install -y ripgrep 2>/dev/null || printf "\033[1;33m[!] Could not install ripgrep. Concise reports will not be generated.\033[0m\n"
+}
+
+ensure_lynis_installed() {
+    if dpkg -s lynis >/dev/null 2>&1; then
+        HARDN_STATUS "pass" "Lynis package already installed"
+        return 0
     fi
-    
-    printf "\033[1;33m[!] Lynis audit complete.\033[0m\n"
-    printf "\033[1;32m[+] Audit log: /var/log/lynis/hardn-audit.log\033[0m\n"
-    printf "\033[1;32m[+] Report file: /var/log/lynis/hardn-report.dat\033[0m\n"
-    [ -f /var/log/lynis/lynis-report-concise.log ] && printf "\033[1;32m[+] Concise report: /var/log/lynis/lynis-report-concise.log\033[0m\n"
-    printf "\033[1;33m[!] To run automated audits, add this to crontab:\033[0m\n"
-    printf "0 2 * * * /usr/local/bin/lynis-audit.sh\n"
+
+    HARDN_STATUS "info" "Installing Lynis package"
+    if apt-get update >/dev/null 2>&1 && apt-get install -y lynis >/dev/null 2>&1; then
+        HARDN_STATUS "pass" "Lynis installed successfully"
+        return 0
+    else
+        HARDN_STATUS "error" "Failed to install Lynis"
+        return 1
+    fi
+}
+
+prepare_configuration() {
+    mkdir -p /etc/lynis
+
+    if [ -f /etc/lynis/custom.prf ] && grep -E "^[a-z-]+:" /etc/lynis/custom.prf >/dev/null 2>&1; then
+        local backup="/etc/lynis/custom.prf.old-$(date +%Y%m%d-%H%M%S)"
+        cp /etc/lynis/custom.prf "$backup"
+        HARDN_STATUS "info" "Backed up legacy Lynis profile to $backup"
+    fi
+
+    create_custom_profile
+    HARDN_STATUS "info" "Custom Lynis profile deployed"
+
+    mkdir -p /var/log/lynis
+    chmod 755 /var/log/lynis
+    create_logrotate_config
+    HARDN_STATUS "info" "Logrotate policy for Lynis installed"
+
+    create_audit_runner
+    HARDN_STATUS "info" "Automated Lynis audit helper installed"
+}
+
+generate_concise_report() {
+    local audit_log="/var/log/lynis/hardn-audit.log"
+    local concise_report="/var/log/lynis/lynis-report-concise.log"
+
+    if ! command -v rg >/dev/null 2>&1; then
+        HARDN_STATUS "warning" "ripgrep not available; attempting installation for concise reports"
+        if apt-get install -y ripgrep >/dev/null 2>&1; then
+            HARDN_STATUS "pass" "ripgrep installed for Lynis summaries"
+        else
+            HARDN_STATUS "warning" "Could not install ripgrep; concise report generation skipped"
+            return
+        fi
+    fi
+
+    if rg -i "Hardening index|NONE|UNSAFE|WEAK|NOT FOUND|DISABLED|^Suggestion:" "$audit_log" \
+        | sed 's/^[0-9]\+|[0-9-]\+ [0-9:]\+ //' > "$concise_report"; then
+        HARDN_STATUS "pass" "Concise Lynis report generated"
+        summarize_concise_report "$concise_report"
+    else
+        HARDN_STATUS "warning" "Failed to generate concise Lynis report"
+    fi
+}
+
+summarize_concise_report() {
+    local concise_report="$1"
+
+    local hardening_index
+    hardening_index=$(grep -i "Hardening index" "$concise_report" | head -1)
+    local unsafe_count
+    unsafe_count=$(grep -c "UNSAFE" "$concise_report")
+    local not_found_count
+    not_found_count=$(grep -c "NOT FOUND" "$concise_report")
+    local weak_count
+    weak_count=$(grep -c "WEAK" "$concise_report")
+    local disabled_count
+    disabled_count=$(grep -c "DISABLED" "$concise_report")
+    local suggestions_count
+    suggestions_count=$(grep -c "^Suggestion:" "$concise_report")
+
+    [ -n "$hardening_index" ] && HARDN_STATUS "info" "$hardening_index"
+    HARDN_STATUS "info" "UNSAFE findings: $unsafe_count"
+    HARDN_STATUS "info" "NOT FOUND items: $not_found_count"
+    HARDN_STATUS "info" "WEAK configurations: $weak_count"
+    HARDN_STATUS "info" "DISABLED features: $disabled_count"
+    HARDN_STATUS "info" "Suggestions: $suggestions_count"
+}
+
+run_lynis_audit() {
+    local audit_log="/var/log/lynis/hardn-audit.log"
+    local report_file="/var/log/lynis/hardn-report.dat"
+
+    mkdir -p /var/log/lynis
+    HARDN_STATUS "info" "Running Lynis audit (this may take a few minutes)"
+
+    if lynis audit system --verbose --log-file "$audit_log" --report-file "$report_file" 2>/dev/null; then
+        HARDN_STATUS "pass" "Lynis audit completed successfully"
+        HARDN_STATUS "info" "Audit log: $audit_log"
+        HARDN_STATUS "info" "Report file: $report_file"
+        generate_concise_report
+    else
+        HARDN_STATUS "error" "Lynis audit command failed"
+    fi
 }
 
 main() {
-    install_and_configure_lynis
+    HARDN_STATUS "info" "Starting Lynis installation and configuration"
+
+    if ! ensure_lynis_installed; then
+        exit 1
+    fi
+
+    prepare_configuration
+    run_lynis_audit
+
+    HARDN_STATUS "info" "To schedule regular audits add: 0 2 * * * /usr/local/bin/lynis-audit.sh"
+    HARDN_STATUS "info" "Lynis setup complete"
 }
 
-# Run main function if script is executed directly
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
-fi
+main "$@"
 
 printf "[HARDN] lynis.sh executed at $(date)\n" | tee -a /var/log/hardn/hardn-tools.log

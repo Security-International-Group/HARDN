@@ -6,6 +6,8 @@ source "$(cd "$(dirname "$0")" && pwd)/functions.sh"
 # Purpose: Install and configure Suricata IDS/IPS
 # Location: /src/tools/suricata.sh
 
+
+
 check_root
 log_tool_execution "suricata.sh"
 
@@ -76,38 +78,6 @@ fix_suricata_configuration() {
 }
 
 HARDN_STATUS "info" "Setting up Suricata IDS/IPS..."
-
-configure_suricata_resource_limits() {
-    local service_override_dir="/etc/systemd/system/suricata.service.d"
-    local override_file="${service_override_dir}/hardn-limits.conf"
-    local cpu_quota="${SURICATA_CPU_QUOTA:-75%}"
-    local memory_limit="${SURICATA_MEMORY_LIMIT:-0}"
-
-    HARDN_STATUS "info" "Applying resource limits to Suricata service (CPU quota: ${cpu_quota}${memory_limit:+, memory max: ${memory_limit}})"
-
-    mkdir -p "$service_override_dir"
-
-    {
-        echo "[Service]"
-        echo "CPUQuota=${cpu_quota}"
-        echo "Nice=5"
-        echo "IOSchedulingClass=idle"
-        if [[ -n "$memory_limit" && "$memory_limit" != "0" ]]; then
-            echo "MemoryMax=${memory_limit}"
-        fi
-    } > "$override_file"
-
-    if systemctl daemon-reload 2>/dev/null; then
-        HARDN_STATUS "pass" "systemd daemon reloaded for Suricata overrides"
-        if systemctl restart suricata 2>/dev/null; then
-            HARDN_STATUS "pass" "Suricata service restarted with CPU quota ${cpu_quota}"
-        else
-            HARDN_STATUS "warning" "Failed to restart Suricata after applying resource limits"
-        fi
-    else
-        HARDN_STATUS "warning" "Unable to reload systemd after applying Suricata resource limits"
-    fi
-}
 
 # Try to install Suricata from package first
 if ! is_package_installed suricata; then
@@ -278,13 +248,6 @@ if command_exists suricata; then
         HARDN_STATUS "pass" "Suricata service enabled and started"
     else
         HARDN_STATUS "warning" "Failed to enable/start Suricata service"
-    fi
-
-    # Apply resource limits to keep Suricata from saturating CPU
-    if command_exists systemctl; then
-        configure_suricata_resource_limits
-    else
-        HARDN_STATUS "warning" "systemctl not available; skipping Suricata CPU quota enforcement"
     fi
 
     # Test configuration if config file exists
