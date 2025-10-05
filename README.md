@@ -9,7 +9,7 @@ HARDN is a comprehensive security hardening system for Debian-based Linux system
 ## Features
 - HARDN builds a rust core and binary. 
 - Security Scanners: Lynis, AIDE, Legion integration
-- Network Security: Fail2ban, Suricata support
+- Network Security: Fail2ban with Legion network sensor
 - System Hardening: Basic security configurations
 - Continuous Monitoring: LEGION security monitoring daemon
 - Modular Architecture: Extensible tool and module system
@@ -105,7 +105,7 @@ Security hardening scripts located in `/usr/share/hardn/modules/`
 ### Tools
 Security scanning and utility tools in `/usr/share/hardn/tools/`
 - Security scanners (Lynis, AIDE, LEGION)
-- Network security tools (Fail2ban, Suricata)
+- Network security tools (Fail2ban, Legion network sensor)
 - Utility functions
 
 ## Configuration

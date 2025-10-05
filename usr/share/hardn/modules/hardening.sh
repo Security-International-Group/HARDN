@@ -220,61 +220,123 @@ systemctl start clamav-freshclam 2>/dev/null || true
 # ==========================================
 HARDN_STATUS "Applying comprehensive kernel hardening..."
 
-cat > /etc/sysctl.d/99-hardn-hardening.conf <<EOF
+write_sysctl_setting() {
+    local key="$1"
+    local value="$2"
+    local target="$3"
+    local path="/proc/sys/${key//./\/}"
+
+    if [ -e "$path" ]; then
+        local apply_value="$value"
+        if ! sysctl -e -w "$key=$apply_value" >/dev/null 2>&1; then
+            if [[ -n "${SYSCTL_FALLBACKS[$key]:-}" ]]; then
+                local fallback_value="${SYSCTL_FALLBACKS[$key]}"
+                if sysctl -e -w "$key=$fallback_value" >/dev/null 2>&1; then
+                    log_warning "Sysctl $key=$value unsupported; applied fallback $fallback_value"
+                    apply_value="$fallback_value"
+                else
+                    log_warning "Unable to apply sysctl $key with fallback ${fallback_value}; skipping persistent entry"
+                    return
+                fi
+            else
+                log_warning "Unable to apply sysctl $key=$value; skipping persistent entry"
+                return
+            fi
+        fi
+
+        printf '%s = %s\n' "$key" "$apply_value" >> "$target"
+    else
+        log_warning "Skipping unsupported sysctl: $key"
+    fi
+}
+
+SYSCTL_FILE="/etc/sysctl.d/99-hardn-hardening.conf"
+cat > "$SYSCTL_FILE" <<EOF
 # HARDN Enhanced Kernel Security Parameters
 # Generated: $(date)
-
-# Network Security
-net.ipv4.ip_forward = 0
-net.ipv6.conf.all.forwarding = 0
-net.ipv4.conf.all.send_redirects = 0
-net.ipv4.conf.default.send_redirects = 0
-net.ipv4.conf.all.accept_source_route = 0
-net.ipv4.conf.default.accept_source_route = 0
-net.ipv6.conf.all.accept_source_route = 0
-net.ipv6.conf.default.accept_source_route = 0
-net.ipv4.conf.all.accept_redirects = 0
-net.ipv4.conf.default.accept_redirects = 0
-net.ipv6.conf.all.accept_redirects = 0
-net.ipv6.conf.default.accept_redirects = 0
-net.ipv4.conf.all.secure_redirects = 0
-net.ipv4.conf.default.secure_redirects = 0
-net.ipv4.conf.all.log_martians = 1
-net.ipv4.conf.default.log_martians = 1
-net.ipv4.icmp_echo_ignore_broadcasts = 1
-net.ipv4.icmp_ignore_bogus_error_responses = 1
-net.ipv4.conf.all.rp_filter = 1
-net.ipv4.conf.default.rp_filter = 1
-net.ipv4.tcp_syncookies = 1
-net.ipv6.conf.all.accept_ra = 0
-net.ipv6.conf.default.accept_ra = 0
-
-# Kernel Security
-kernel.randomize_va_space = 2
-fs.suid_dumpable = 0
-kernel.exec-shield = 1
-kernel.panic = 60
-kernel.panic_on_oops = 1
-kernel.sysrq = 0
-kernel.core_uses_pid = 1
-kernel.kptr_restrict = 2
-kernel.yama.ptrace_scope = 1
-kernel.dmesg_restrict = 1
-kernel.unprivileged_userns_clone = 0
-kernel.unprivileged_bpf_disabled = 1
-net.core.bpf_jit_harden = 2
-
-# File System Security
-fs.protected_hardlinks = 1
-fs.protected_symlinks = 1
-fs.protected_fifos = 2
-fs.protected_regular = 2
-
-# Process Security
-kernel.pid_max = 65536
-kernel.modules_disabled = 0
-kernel.perf_event_paranoid = 3
 EOF
+
+declare -A SYSCTL_FALLBACKS=(
+    ["fs.protected_fifos"]=1
+    ["fs.protected_regular"]=1
+)
+
+network_sysctls=(
+    "net.ipv4.ip_forward=0"
+    "net.ipv6.conf.all.forwarding=0"
+    "net.ipv4.conf.all.send_redirects=0"
+    "net.ipv4.conf.default.send_redirects=0"
+    "net.ipv4.conf.all.accept_source_route=0"
+    "net.ipv4.conf.default.accept_source_route=0"
+    "net.ipv6.conf.all.accept_source_route=0"
+    "net.ipv6.conf.default.accept_source_route=0"
+    "net.ipv4.conf.all.accept_redirects=0"
+    "net.ipv4.conf.default.accept_redirects=0"
+    "net.ipv6.conf.all.accept_redirects=0"
+    "net.ipv6.conf.default.accept_redirects=0"
+    "net.ipv4.conf.all.secure_redirects=0"
+    "net.ipv4.conf.default.secure_redirects=0"
+    "net.ipv4.conf.all.log_martians=1"
+    "net.ipv4.conf.default.log_martians=1"
+    "net.ipv4.icmp_echo_ignore_broadcasts=1"
+    "net.ipv4.icmp_ignore_bogus_error_responses=1"
+    "net.ipv4.conf.all.rp_filter=1"
+    "net.ipv4.conf.default.rp_filter=1"
+    "net.ipv4.tcp_syncookies=1"
+    "net.ipv6.conf.all.accept_ra=0"
+    "net.ipv6.conf.default.accept_ra=0"
+)
+
+kernel_sysctls=(
+    "kernel.randomize_va_space=2"
+    "fs.suid_dumpable=0"
+    "kernel.exec-shield=1"
+    "kernel.panic=60"
+    "kernel.panic_on_oops=1"
+    "kernel.sysrq=0"
+    "kernel.core_uses_pid=1"
+    "kernel.kptr_restrict=2"
+    "kernel.yama.ptrace_scope=1"
+    "kernel.dmesg_restrict=1"
+    "kernel.unprivileged_userns_clone=0"
+    "kernel.unprivileged_bpf_disabled=1"
+    "net.core.bpf_jit_harden=2"
+)
+
+filesystem_sysctls=(
+    "fs.protected_hardlinks=1"
+    "fs.protected_symlinks=1"
+    "fs.protected_fifos=2"
+    "fs.protected_regular=2"
+)
+
+process_sysctls=(
+    "kernel.pid_max=65536"
+    "kernel.modules_disabled=0"
+    "kernel.perf_event_paranoid=3"
+)
+
+{
+    printf '\n# Network Security\n'
+    for item in "${network_sysctls[@]}"; do
+        write_sysctl_setting "${item%%=*}" "${item#*=}" "$SYSCTL_FILE"
+    done
+
+    printf '\n# Kernel Security\n'
+    for item in "${kernel_sysctls[@]}"; do
+        write_sysctl_setting "${item%%=*}" "${item#*=}" "$SYSCTL_FILE"
+    done
+
+    printf '\n# File System Security\n'
+    for item in "${filesystem_sysctls[@]}"; do
+        write_sysctl_setting "${item%%=*}" "${item#*=}" "$SYSCTL_FILE"
+    done
+
+    printf '\n# Process Security\n'
+    for item in "${process_sysctls[@]}"; do
+        write_sysctl_setting "${item%%=*}" "${item#*=}" "$SYSCTL_FILE"
+    done
+} >> "$SYSCTL_FILE"
 
 sysctl -p /etc/sysctl.d/99-hardn-hardening.conf 2>/dev/null || log_warning "Some sysctl settings failed to apply"
 
@@ -512,8 +574,8 @@ fi
 # ==========================================
 # APPARMOR PROFILES
 # ==========================================
-HARDN_STATUS "Enabling AppArmor profiles..."
-
+HARDN_STATUS "Enabling AppArmor  - ENFORCE - profiles...for non-native Unix apps to work, you will need to whitelist them individually..."
+sleep 2
 if command -v aa-enforce >/dev/null 2>&1; then
     # Install apparmor-profiles if not present
     apt-get install -y apparmor-profiles apparmor-utils 2>/dev/null || true
@@ -597,6 +659,19 @@ else
 fi
 
 # =========================================
+# FIREWIRE
+# ==========================================
+HARDN_STATUS "Disabling FireWire (IEEE 1394) support..."
+if [ -f /etc/modprobe.d/blacklist-firewire.conf ]; then
+    echo "blacklist firewire-core" >> /etc/modprobe.d/blacklist-firewire.conf
+else
+    echo "blacklist firewire-core" > /etc/modprobe.d/blacklist-firewire.conf
+fi  
+modprobe -r firewire-core 2>/dev/null || true
+
+HARDN_STATUS "Firewire support disabled"
+
+# ==========================================
 # unattended-upgrades
 # ==========================================
 HARDN_STATUS "Installing unattended-upgrades..."
@@ -631,7 +706,7 @@ echo "  ✓ Secure file permissions"
 echo "  ✓ Kernel security parameters"
 echo "  ✓ Disabled unnecessary services"
 echo "  ✓ Secure mount options"
-echo "  ✓ Enhanced audit rules"
+echo "  ✓ MITRE ATT&CK audit rules"
 echo "  ✓ Strict firewall configuration"
 echo "  ✓ Log rotation configured"
 echo "  ✓ Core dumps disabled"

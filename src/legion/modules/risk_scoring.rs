@@ -61,6 +61,16 @@ pub struct ScriptResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityPlatformStatus {
+    pub name: String,
+    pub service_unit: String,
+    pub active: bool,
+    pub enabled: bool,
+    pub recent_warnings: u32,
+    pub last_warning: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemState {
     pub timestamp: DateTime<Utc>,
     pub anomaly_score: f64,
@@ -73,6 +83,7 @@ pub struct SystemState {
     pub memory_usage: f64,
     pub detected_issues: Vec<String>,
     pub script_results: Vec<ScriptResult>,
+    pub security_platforms: Vec<SecurityPlatformStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -183,6 +194,21 @@ impl RiskScoringEngine {
         // Add detected issues from system checks
         for issue in &system_state.detected_issues {
             contributing_factors.push(issue.clone());
+        }
+
+        for platform in &system_state.security_platforms {
+            if !platform.active {
+                contributing_factors.push(format!(
+                    "{} service ({}) is not active",
+                    platform.name, platform.service_unit
+                ));
+            }
+            if platform.recent_warnings > 0 {
+                contributing_factors.push(format!(
+                    "{} reported {} warnings in the last hour",
+                    platform.name, platform.recent_warnings
+                ));
+            }
         }
 
         // Calculate weighted overall score

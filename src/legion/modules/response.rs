@@ -159,6 +159,40 @@ impl ResponseEngine {
         Ok(executed_actions)
     }
 
+    pub async fn execute_manual_action(
+        &self,
+        label: &str,
+        action: &ResponseAction,
+    ) -> Result<(), ResponseError> {
+        if !self.can_execute_action(action).await {
+            return Err(ResponseError::RateLimitExceeded);
+        }
+
+        let anomaly = Anomaly {
+            anomaly_type: "manual_reactive_action".to_string(),
+            severity: "operator_review".to_string(),
+            score: 0.0,
+            description: label.to_string(),
+            indicators: vec![format!("{:?}", action)],
+        };
+
+        match self.execute_action(action).await {
+            Ok(_) => {
+                let action_key = format!("{:?}", action);
+                self.record_action_execution(&action_key).await;
+                let executed = vec![action.clone()];
+                self.log_incident(&anomaly, &executed, true, None).await;
+                Ok(())
+            }
+            Err(err) => {
+                let executed = vec![action.clone()];
+                self.log_incident(&anomaly, &executed, false, Some(err.to_string()))
+                    .await;
+                Err(err)
+            }
+        }
+    }
+
     fn condition_matches(&self, condition: &ResponseCondition, anomaly: &Anomaly) -> bool {
         // Check anomaly score threshold
         if anomaly.score < condition.anomaly_score_threshold {

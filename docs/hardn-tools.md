@@ -102,10 +102,10 @@ sudo /usr/share/hardn/scripts/security-tools-manager.sh --help
 - Updates virus definitions with `freshclam`
 - Starts both freshclam and clamav-daemon services
 
-### Suricata
-- Installs `suricata` and `suricata-update`
-- Updates IDS rules with `suricata-update`
-- Enables and starts `suricata.service`
+### Legion Network Sensor
+- Uses the Legion daemon to analyse live socket telemetry
+- No additional packages or services required
+- Emits alerts directly into the Legion monitoring pipeline
 
 ### OSSEC
 - Requires manual installation (not in standard repos)
@@ -177,7 +177,7 @@ sudo /usr/share/hardn/scripts/security-tools-manager.sh --status
 
 - Always run these tools as root/sudo
 - Review firewall rules after enabling UFW
-- Some tools may impact system performance (ClamAV, Suricata)
+- Some tools may impact system performance (ClamAV)
 - Configure tools appropriately for your environment
 - Regular updates are crucial (virus definitions, IDS rules, etc.)
 

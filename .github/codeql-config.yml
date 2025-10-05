@@ -1,7 +1,6 @@
 disable-default-queries: false
 queries:
-  - uses: security-experimental
-query-filters:
+  - uses: security-extended
   - exclude:
       problem.severity:
         - warning

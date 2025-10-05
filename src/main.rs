@@ -4,6 +4,7 @@ mod cli;
 mod core;
 mod display;
 mod execution;
+mod graphana;
 mod legion;
 mod services;
 mod utils;
@@ -14,9 +15,14 @@ use crate::display::banner::print_banner;
 use crate::execution::run_script;
 use crate::utils::{detect_debian_version, log_message, LogLevel};
 use crate::utils::{env_or_defaults, find_script, join_paths, list_modules};
+use chrono::{DateTime, Utc};
 use ctrlc;
+use glob::glob;
+use serde::Serialize;
+use std::collections::BTreeSet;
 use std::env;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -182,7 +188,7 @@ fn select_and_run_module() {
 }
 
 /// Tool status types for enhanced checking
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum ToolStatusType {
     Active,       // Tool is running/active
     Enabled,      // Tool is enabled but not running
@@ -190,8 +196,23 @@ enum ToolStatusType {
     NotInstalled, // Tool is not installed
 }
 
+#[derive(Debug, Clone)]
+struct ToolStatusDetail {
+    state: ToolStatusType,
+    enabled: bool,
+    installed: bool,
+}
+
+fn tool_detail(state: ToolStatusType, enabled: bool, installed: bool) -> ToolStatusDetail {
+    ToolStatusDetail {
+        state,
+        enabled,
+        installed,
+    }
+}
+
 /// Check tool status with enhanced methods for different tool types
-fn check_enhanced_tool_status(tool_name: &str) -> ToolStatusType {
+fn get_tool_status_detail(tool_name: &str) -> ToolStatusDetail {
     match tool_name {
         "AIDE" => {
             // AIDE runs via timer, not as a service
@@ -201,18 +222,18 @@ fn check_enhanced_tool_status(tool_name: &str) -> ToolStatusType {
                 .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "active")
                 .unwrap_or(false)
             {
-                ToolStatusType::Active
+                tool_detail(ToolStatusType::Active, true, true)
             } else if Command::new("systemctl")
                 .args(&["is-enabled", "dailyaidecheck.timer"])
                 .output()
                 .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "enabled")
                 .unwrap_or(false)
             {
-                ToolStatusType::Enabled
+                tool_detail(ToolStatusType::Enabled, true, true)
             } else if Path::new("/usr/bin/aide").exists() || Path::new("/usr/sbin/aide").exists() {
-                ToolStatusType::Installed
+                tool_detail(ToolStatusType::Installed, false, true)
             } else {
-                ToolStatusType::NotInstalled
+                tool_detail(ToolStatusType::NotInstalled, false, false)
             }
         }
         "Lynis" => {
@@ -223,23 +244,23 @@ fn check_enhanced_tool_status(tool_name: &str) -> ToolStatusType {
                 .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "active")
                 .unwrap_or(false)
             {
-                ToolStatusType::Active
+                tool_detail(ToolStatusType::Active, true, true)
             } else if Command::new("systemctl")
                 .args(&["is-enabled", "lynis.timer"])
                 .output()
                 .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "enabled")
                 .unwrap_or(false)
             {
-                ToolStatusType::Enabled
+                tool_detail(ToolStatusType::Enabled, true, true)
             } else if Command::new("which")
                 .arg("lynis")
                 .output()
                 .map(|o| o.status.success())
                 .unwrap_or(false)
             {
-                ToolStatusType::Installed
+                tool_detail(ToolStatusType::Installed, false, true)
             } else {
-                ToolStatusType::NotInstalled
+                tool_detail(ToolStatusType::NotInstalled, false, false)
             }
         }
         "UFW" => {
@@ -250,14 +271,14 @@ fn check_enhanced_tool_status(tool_name: &str) -> ToolStatusType {
                 Ok(o) => {
                     let status = String::from_utf8_lossy(&o.stdout);
                     if status.contains("Status: active") {
-                        ToolStatusType::Active
+                        tool_detail(ToolStatusType::Active, true, true)
                     } else if status.contains("Status: inactive") {
-                        ToolStatusType::Installed
+                        tool_detail(ToolStatusType::Installed, false, true)
                     } else {
-                        ToolStatusType::NotInstalled
+                        tool_detail(ToolStatusType::NotInstalled, false, false)
                     }
                 }
-                Err(_) => ToolStatusType::NotInstalled,
+                Err(_) => tool_detail(ToolStatusType::NotInstalled, false, false),
             }
         }
         "RKHunter" => {
@@ -270,48 +291,61 @@ fn check_enhanced_tool_status(tool_name: &str) -> ToolStatusType {
             {
                 // Check if database is initialized
                 if Path::new("/var/lib/rkhunter/db/rkhunter.dat").exists() {
-                    ToolStatusType::Active
+                    tool_detail(ToolStatusType::Active, true, true)
                 } else {
-                    ToolStatusType::Installed
+                    // If installed, treat as enabled when cron job exists
+                    let cron_enabled = Path::new("/etc/cron.daily/rkhunter").exists()
+                        || Path::new("/etc/cron.d/rkhunter").exists();
+                    if cron_enabled {
+                        tool_detail(ToolStatusType::Enabled, true, true)
+                    } else {
+                        tool_detail(ToolStatusType::Installed, false, true)
+                    }
                 }
             } else {
-                ToolStatusType::NotInstalled
+                tool_detail(ToolStatusType::NotInstalled, false, false)
             }
         }
         "OSSEC" => {
             // OSSEC may not use systemd
             if Command::new("pgrep")
-                .arg("ossec-analysisd")
+                .args(["-f", "ossec-analysisd"])
                 .output()
                 .map(|o| o.status.success())
                 .unwrap_or(false)
             {
-                ToolStatusType::Active
+                tool_detail(ToolStatusType::Active, true, true)
             } else if Path::new("/var/ossec").exists() {
-                ToolStatusType::Installed
+                let enabled = Command::new("systemctl")
+                    .args(&["is-enabled", "ossec"])
+                    .output()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "enabled")
+                    .unwrap_or(false);
+                if enabled {
+                    tool_detail(ToolStatusType::Enabled, true, true)
+                } else {
+                    tool_detail(ToolStatusType::Installed, false, true)
+                }
             } else {
-                ToolStatusType::NotInstalled
+                tool_detail(ToolStatusType::NotInstalled, false, false)
             }
         }
-        "AppArmor" | "Fail2Ban" | "Auditd" | "ClamAV" | "Suricata" => {
+        "AppArmor" | "Fail2Ban" | "Auditd" | "ClamAV" | "Legion" => {
             // These are standard systemd services
             let service_name = match tool_name {
                 "AppArmor" => "apparmor",
                 "Fail2Ban" => "fail2ban",
                 "Auditd" => "auditd",
                 "ClamAV" => "clamav-daemon",
-                "Suricata" => "suricata",
-                _ => return ToolStatusType::NotInstalled,
+                "Legion" => "legion-daemon",
+                _ => return tool_detail(ToolStatusType::NotInstalled, false, false),
             };
 
             let status = check_service_status(service_name);
-            if status.active {
-                ToolStatusType::Active
-            } else if status.enabled {
-                ToolStatusType::Enabled
-            } else {
-                // Check if package is installed
-                if Command::new("dpkg")
+            let is_enabled = status.enabled || status.active;
+            let mut is_installed = status.active || status.enabled;
+            if !is_installed {
+                is_installed = Command::new("dpkg")
                     .args(&["-l", service_name])
                     .output()
                     .map(|o| {
@@ -319,15 +353,22 @@ fn check_enhanced_tool_status(tool_name: &str) -> ToolStatusType {
                             .lines()
                             .any(|line| line.starts_with("ii") && line.contains(service_name))
                     })
-                    .unwrap_or(false)
-                {
-                    ToolStatusType::Installed
-                } else {
-                    ToolStatusType::NotInstalled
-                }
+                    .unwrap_or(false);
             }
+
+            let state = if status.active {
+                ToolStatusType::Active
+            } else if is_enabled {
+                ToolStatusType::Enabled
+            } else if is_installed {
+                ToolStatusType::Installed
+            } else {
+                ToolStatusType::NotInstalled
+            };
+
+            tool_detail(state, is_enabled, is_installed)
         }
-        _ => ToolStatusType::NotInstalled,
+        _ => tool_detail(ToolStatusType::NotInstalled, false, false),
     }
 }
 
@@ -373,6 +414,115 @@ fn display_lynis_report() {
     let _ = std::io::stdin().read_line(&mut input);
 }
 
+const HARDN_MONITOR_STATE_PATH: &str = "/var/lib/hardn/monitor/hardn_summary.json";
+
+#[derive(Serialize)]
+struct HardnMonitorSnapshot {
+    timestamp: DateTime<Utc>,
+    total_score: f64,
+    grade: String,
+    component_scores: HardnScoreBreakdown,
+    tool_summary: HardnToolSummary,
+    module_logs: Vec<String>,
+    services: Vec<HardnServiceStatusEntry>,
+    hardn_processes: Vec<String>,
+    recommendations: Vec<String>,
+    status_note: Option<String>,
+}
+
+#[derive(Serialize)]
+struct HardnScoreBreakdown {
+    tools: f64,
+    modules: f64,
+    lynis: f64,
+}
+
+#[derive(Serialize)]
+struct HardnToolSummary {
+    active: u32,
+    enabled: u32,
+    installed: u32,
+    missing: u32,
+    total: u32,
+    statuses: Vec<HardnToolStatusEntry>,
+}
+
+#[derive(Serialize)]
+struct HardnToolStatusEntry {
+    name: String,
+    state: String,
+}
+
+#[derive(Serialize)]
+struct HardnServiceStatusEntry {
+    name: String,
+    active: bool,
+    enabled: bool,
+    pid: Option<u32>,
+}
+
+impl HardnMonitorSnapshot {
+    fn new(
+        tool_score: f64,
+        module_score: f64,
+        lynis_score: f64,
+        total_score: f64,
+        grade: &str,
+        tool_summary: HardnToolSummary,
+        module_logs: Vec<String>,
+        services: Vec<HardnServiceStatusEntry>,
+        hardn_processes: Vec<String>,
+        recommendations: Vec<String>,
+        status_note: Option<String>,
+    ) -> Self {
+        Self {
+            timestamp: Utc::now(),
+            total_score: sanitize_score(total_score),
+            grade: grade.to_string(),
+            component_scores: HardnScoreBreakdown {
+                tools: sanitize_score(tool_score),
+                modules: sanitize_score(module_score),
+                lynis: sanitize_score(lynis_score),
+            },
+            tool_summary,
+            module_logs,
+            services,
+            hardn_processes,
+            recommendations,
+            status_note,
+        }
+    }
+}
+
+fn sanitize_score(value: f64) -> f64 {
+    if value.is_finite() {
+        value
+    } else {
+        0.0
+    }
+}
+
+fn persist_hardn_monitor_snapshot(
+    snapshot: &HardnMonitorSnapshot,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let path = Path::new(HARDN_MONITOR_STATE_PATH);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let temp_path = path
+        .parent()
+        .map(|dir| dir.join("hardn_summary.json.tmp"))
+        .unwrap_or_else(|| Path::new("hardn_summary.json.tmp").to_path_buf());
+
+    let data = serde_json::to_vec_pretty(snapshot)?;
+    fs::write(&temp_path, &data)?;
+    let _ = fs::set_permissions(&temp_path, fs::Permissions::from_mode(0o640));
+    fs::rename(&temp_path, path)?;
+
+    Ok(())
+}
+
 /// Generate and display comprehensive security report
 fn generate_security_report() {
     println!("\n╔═══════════════════════════════════════════════════════════════════════════════╗");
@@ -385,56 +535,86 @@ fn generate_security_report() {
     let tool_score: f64;
     let module_score: f64;
     let mut lynis_score: f64;
+    let mut recommendations: Vec<String> = Vec::new();
+    let mut status_note: Option<String> = None;
+    let mut tool_status_entries: Vec<HardnToolStatusEntry> = Vec::new();
 
     // 1. Check active security tools (40% of total score)
     println!("\x1b[1;36m▶ SECURITY TOOLS ASSESSMENT (40% weight):\x1b[0m");
-    let mut active_tools = 0;
-    let mut enabled_tools = 0;
-    let mut installed_tools = 0;
-    let total_tools = 10;
+    let mut active_tools: u32 = 0;
+    let mut enabled_tools: u32 = 0;
+    let mut installed_tools: u32 = 0;
+    let mut tool_points: f64 = 0.0;
+    let total_tools: u32 = 10;
 
     // Check each tool with appropriate method
     let tool_statuses = vec![
-        ("AIDE", check_enhanced_tool_status("AIDE")),
-        ("AppArmor", check_enhanced_tool_status("AppArmor")),
-        ("Fail2Ban", check_enhanced_tool_status("Fail2Ban")),
-        ("UFW", check_enhanced_tool_status("UFW")),
-        ("Auditd", check_enhanced_tool_status("Auditd")),
-        ("RKHunter", check_enhanced_tool_status("RKHunter")),
-        ("ClamAV", check_enhanced_tool_status("ClamAV")),
-        ("Suricata", check_enhanced_tool_status("Suricata")),
-        ("OSSEC", check_enhanced_tool_status("OSSEC")),
-        ("Lynis", check_enhanced_tool_status("Lynis")),
+        ("AIDE", get_tool_status_detail("AIDE")),
+        ("AppArmor", get_tool_status_detail("AppArmor")),
+        ("Fail2Ban", get_tool_status_detail("Fail2Ban")),
+        ("UFW", get_tool_status_detail("UFW")),
+        ("Auditd", get_tool_status_detail("Auditd")),
+        ("RKHunter", get_tool_status_detail("RKHunter")),
+        ("ClamAV", get_tool_status_detail("ClamAV")),
+        ("Legion", get_tool_status_detail("Legion")),
+        ("OSSEC", get_tool_status_detail("OSSEC")),
+        ("Lynis", get_tool_status_detail("Lynis")),
     ];
 
-    for (tool_name, status) in &tool_statuses {
-        match status {
+    for (tool_name, detail) in &tool_statuses {
+        match detail.state {
             ToolStatusType::Active => {
                 active_tools += 1;
+                tool_points += 1.0;
                 print!("  \x1b[32m✓\x1b[0m {:<12}", tool_name);
                 println!(" [ACTIVE]");
+                tool_status_entries.push(HardnToolStatusEntry {
+                    name: (*tool_name).to_string(),
+                    state: "active".to_string(),
+                });
             }
             ToolStatusType::Enabled => {
-                enabled_tools += 1;
+                tool_points += 0.5;
                 print!("  \x1b[33m●\x1b[0m {:<12}", tool_name);
                 println!(" [ENABLED]");
+                tool_status_entries.push(HardnToolStatusEntry {
+                    name: (*tool_name).to_string(),
+                    state: "enabled".to_string(),
+                });
             }
             ToolStatusType::Installed => {
-                installed_tools += 1;
+                tool_points += 0.25;
                 print!("  \x1b[34m○\x1b[0m {:<12}", tool_name);
                 println!(" [INSTALLED]");
+                tool_status_entries.push(HardnToolStatusEntry {
+                    name: (*tool_name).to_string(),
+                    state: "installed".to_string(),
+                });
             }
             ToolStatusType::NotInstalled => {
                 print!("  \x1b[31m✗\x1b[0m {:<12}", tool_name);
                 println!(" [DISABLED]");
+                tool_status_entries.push(HardnToolStatusEntry {
+                    name: (*tool_name).to_string(),
+                    state: "missing".to_string(),
+                });
             }
+        }
+
+        if detail.enabled {
+            enabled_tools += 1;
+        }
+        if detail.installed {
+            installed_tools += 1;
         }
     }
 
     // Calculate tool score: active tools get full points, enabled get half, installed get quarter
+    if installed_tools > total_tools {
+        installed_tools = total_tools;
+    }
+    let missing_tools = total_tools.saturating_sub(installed_tools);
     let max_tool_points = total_tools as f64;
-    let tool_points =
-        (active_tools as f64) + (enabled_tools as f64 * 0.5) + (installed_tools as f64 * 0.25);
     tool_score = (tool_points / max_tool_points * 40.0).min(40.0);
 
     println!(
@@ -447,34 +627,78 @@ fn generate_security_report() {
     println!("\x1b[1;36m▶ MODULE EXECUTION STATUS (20% weight):\x1b[0m");
 
     // Check if log directory exists and analyze module execution
-    let mut executed_modules = Vec::new();
+    let mut module_log_set: BTreeSet<String> = BTreeSet::new();
     if Path::new(DEFAULT_LOG_DIR).exists() {
-        // Check for module execution logs
-        let log_files = vec![
-            "hardn.log",
-            "hardn-tools.log",
-            "hardn-modules.log",
-            "hardening.log",
-            "audit.log",
+        let log_root = Path::new(DEFAULT_LOG_DIR);
+        let patterns = vec![
+            format!("{}/**/*.log", DEFAULT_LOG_DIR),
+            format!("{}/**/*.out", DEFAULT_LOG_DIR),
         ];
 
-        for log_file in &log_files {
-            let log_path = format!("{}/{}", DEFAULT_LOG_DIR, log_file);
-            if Path::new(&log_path).exists() {
-                executed_modules.push(log_file.to_string());
-                println!("  \x1b[32m✓\x1b[0m {} found", log_file);
+        for pattern in patterns {
+            if let Ok(entries) = glob(&pattern) {
+                for entry in entries.flatten() {
+                    if entry.is_file() {
+                        let relative = entry
+                            .strip_prefix(log_root)
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_else(|_| entry.display().to_string());
+                        module_log_set.insert(relative.trim_start_matches('/').to_string());
+                    }
+                }
+            }
+        }
+
+        if module_log_set.is_empty() {
+            let expected_logs = vec![
+                "hardn.log",
+                "hardn-tools.log",
+                "hardn-modules.log",
+                "hardening.log",
+                "audit.log",
+            ];
+
+            for log_file in &expected_logs {
+                let log_path = log_root.join(log_file);
+                if log_path.exists() {
+                    module_log_set.insert(log_file.to_string());
+                }
             }
         }
     }
 
+    let executed_modules: Vec<String> = module_log_set.into_iter().collect();
+
+    if executed_modules.is_empty() {
+        println!(
+            "  \x1b[33m⚠\x1b[0m No module logs found in {}",
+            DEFAULT_LOG_DIR
+        );
+    } else {
+        for log in &executed_modules {
+            println!("  \x1b[32m✓\x1b[0m {}", log);
+        }
+    }
+
     // Check HARDN services
-    let hardn_services = vec!["hardn", "hardn", "hardn-monitor"];
+    let hardn_services = vec![
+        "hardn.service",
+        "legion-daemon.service",
+        "hardn-monitor.service",
+    ];
     let mut active_services = 0;
+    let mut service_status_entries: Vec<HardnServiceStatusEntry> = Vec::new();
     for service in &hardn_services {
         let status = check_service_status(service);
         if status.active || status.enabled {
             active_services += 1;
         }
+        service_status_entries.push(HardnServiceStatusEntry {
+            name: service.to_string(),
+            active: status.active,
+            enabled: status.enabled,
+            pid: status.pid,
+        });
     }
 
     // Calculate module score based on logs and services
@@ -663,27 +887,66 @@ fn generate_security_report() {
     let mut has_recommendations = false;
 
     if tool_score < 30.0 {
+        let rec = "Enable more security tools to improve protection (Run: sudo hardn run-tool <tool-name>)";
+        recommendations.push(rec.to_string());
         println!("  • Enable more security tools to improve protection");
         println!("    Run: sudo hardn run-tool <tool-name>\n");
         has_recommendations = true;
     }
 
     if module_score < 15.0 {
+        let rec =
+            "Execute HARDN modules for system hardening (Run: sudo hardn run-module hardening)";
+        recommendations.push(rec.to_string());
         println!("  • Execute HARDN modules for system hardening");
         println!("    Run: sudo hardn run-module hardening\n");
         has_recommendations = true;
     }
 
     if lynis_score < 30.0 {
+        let rec = "Review Lynis audit findings and apply recommendations (View: /var/log/lynis/lynis-report-concise.log)";
+        recommendations.push(rec.to_string());
         println!("  • Review Lynis audit findings and apply recommendations");
         println!("    View: /var/log/lynis/lynis-report-concise.log\n");
         has_recommendations = true;
     }
 
     if total_score >= 80.0 {
-        println!(
-            "  \x1b[1;32m✓ System security posture is strong. Maintain regular audits.\x1b[0m\n"
-        );
+        let note = "System security posture is strong. Maintain regular audits.".to_string();
+        status_note = Some(note.clone());
+        println!("  \x1b[1;32m✓ {}\x1b[0m\n", note);
+    }
+
+    let tool_summary_snapshot = HardnToolSummary {
+        active: active_tools,
+        enabled: enabled_tools,
+        installed: installed_tools,
+        missing: missing_tools,
+        total: total_tools,
+        statuses: tool_status_entries,
+    };
+
+    let module_logs_snapshot = executed_modules.clone();
+    let hardn_processes_snapshot = check_hardn_processes();
+    let recommendations_snapshot = recommendations.clone();
+    let status_note_snapshot = status_note.clone();
+
+    let snapshot = HardnMonitorSnapshot::new(
+        tool_score,
+        module_score,
+        lynis_score,
+        total_score,
+        grade,
+        tool_summary_snapshot,
+        module_logs_snapshot,
+        service_status_entries,
+        hardn_processes_snapshot,
+        recommendations_snapshot,
+        status_note_snapshot,
+    );
+
+    if let Err(e) = persist_hardn_monitor_snapshot(&snapshot) {
+        eprintln!("Failed to persist HARDN monitor snapshot: {}", e);
     }
 
     // Add interactive menu if there are recommendations
@@ -1386,7 +1649,7 @@ fn get_tool_categories() -> Vec<ToolCategory> {
         ),
         ToolCategory::new(
             "Network Security",
-            vec!["ufw", "fail2ban", "suricata", "openssh", "iptables"],
+            vec!["ufw", "fail2ban", "legion", "openssh", "iptables"],
         ),
         ToolCategory::new(
             "System Monitoring",
@@ -1555,16 +1818,22 @@ fn get_security_tools() -> Vec<SecurityToolInfo> {
             description: "Antivirus engine for detecting trojans and malware",
         },
         SecurityToolInfo {
-            name: "Suricata",
-            service_name: "suricata",
-            process_name: "suricata",
-            description: "Network IDS/IPS and security monitoring",
+            name: "Legion",
+            service_name: "legion-daemon",
+            process_name: "legion",
+            description: "Continuous anomaly detection and network telemetry",
         },
         SecurityToolInfo {
             name: "OSSEC",
             service_name: "ossec",
             process_name: "ossec-analysisd",
             description: "Host-based Intrusion Detection System",
+        },
+        SecurityToolInfo {
+            name: "Grafana",
+            service_name: "hardn-grafana",
+            process_name: "grafana-server",
+            description: "Visualization dashboards for HARDN telemetry",
         },
         SecurityToolInfo {
             name: "Lynis",
@@ -1717,8 +1986,8 @@ fn get_service_status_detailed(service: &str) -> String {
 fn manage_service(action: &str) -> i32 {
     // List of manageable HARDN services (in dependency order)
     // Note: hardn-monitor is optional and may not be present
-    let services = vec!["hardn", "hardn"];
-    let optional_services = vec!["hardn-monitor"];
+    let services = vec!["hardn", "hardn-api", "legion-daemon"];
+    let optional_services = vec!["hardn-monitor", "hardn-grafana"];
 
     match action {
         "enable" => {
@@ -1984,6 +2253,7 @@ fn interactive_service_monitor() -> i32 {
         "hardn-api.service",
         "legion-daemon.service",
         "hardn-monitor.service",
+        "hardn-grafana.service",
     ];
 
     loop {
@@ -2255,8 +2525,8 @@ fn format_log_entry(entry: &str) -> String {
     // Handle different types of log entries
     if entry.contains("{\"timestamp\"") || entry.contains("{\"event") {
         // JSON log entry - summarize it
-        if entry.contains("suricata") && entry.contains("stats") {
-            formatted.push_str("Suricata statistics update");
+        if entry.contains("legion-network-sensor") {
+            formatted.push_str("Legion network sensor alert");
         } else if entry.contains("\"event_type\":\"stats\"") {
             formatted.push_str("Network statistics logged");
         } else if entry.contains("NETWORK ALERT") {
@@ -2341,7 +2611,7 @@ fn show_status() {
 
     // Check HARDN Services
     println!("HARDN SERVICES:");
-    let hardn_services = vec!["hardn", "legion-daemon"];
+    let hardn_services = vec!["hardn", "hardn-api", "legion-daemon", "hardn-grafana"];
     let mut any_active = false;
 
     for service_name in &hardn_services {
@@ -2688,6 +2958,10 @@ fn main() {
                     EXIT_SUCCESS
                 }
                 "services" => interactive_service_monitor(),
+                "grafana" | "graphana" => {
+                    crate::graphana::print_grafana_help();
+                    EXIT_SUCCESS
+                }
                 "--run-all-modules" | "run-all-modules" => run_all_modules(),
                 "--run-all-tools" | "run-all-tools" => run_all_tools(),
                 "--run-everything" | "run-everything" => run_everything(),
@@ -2710,6 +2984,7 @@ fn main() {
                 "service" => manage_service(&args[2]),
                 "run-module" => handle_run_module(&module_dirs, &args[2]),
                 "run-tool" => handle_run_tool(&tool_dirs, &args[2], &module_dirs),
+                "grafana" | "graphana" => crate::graphana::handle_grafana_command(&args[2..]),
                 _ => {
                     log_message(LogLevel::Error, &format!("Unknown command: {}", args[1]));
                     print_help();

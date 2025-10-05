@@ -41,3 +41,34 @@ graph TD
     B --> M[systemd Commands]
     B --> N[Network Manager Queries]
 ```
+
+## HARDN Monitor
+- the mermaid architecture of the HARDN Monitor detailing how it gathers data from in-cluster services and supplies read-only outputs to the GUI.
+- HARDN Monitor aggregates operational data from HARDN Service, LEGION, HARDN API, and Grafana, normalizes it into read-only datasets, and exposes those to the GUI without any Prometheus integration.
+
+```mermaid
+graph TD
+    A[HARDN Service] --> E[HARDN Monitor]
+    B[LEGION] --> E
+    C[HARDN API] --> E
+    D[Grafana] --> E
+    E --> F[Data Normalizer]
+    F --> G[Read-Only Dataset]
+    G --> H[HARDN GUI]
+```
+
+## Grafana
+- the mermaid architecture of Grafana showing user access, data source proxying, dashboard rendering, and alert evaluation.
+- Grafana authenticates users, retrieves data from monitored sources such as the HARDN Monitor and Logging Store, renders dashboards, and runs alert rules that publish notifications.
+
+```mermaid
+graph TD
+    A[Users] --> B[Grafana UI]
+    B --> C[Auth Service]
+    B --> D[Dashboard Engine]
+    D --> E[Data Source Proxy]
+    E --> F[Time-Series DB]
+    E --> G[Log Store]
+    D --> H[Alert Rule Engine]
+    H --> I[Notification Channels]
+```

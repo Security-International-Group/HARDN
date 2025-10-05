@@ -31,7 +31,7 @@ The service manager addresses the complexity of managing multiple security compo
 ### Tool Execution
 - Dynamic listing of available security tools by category:
   - Security Scanners (Lynis, AIDE)
-  - Network Security (Fail2ban, Suricata)
+  - Network Security (Fail2ban, Legion)
   - Utility Tools (functions)
 - Individual tool execution
 - Batch execution of all tools

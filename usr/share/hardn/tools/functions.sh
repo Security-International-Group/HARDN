@@ -12,6 +12,42 @@ CYAN='\033[0;36m'
 WHITE='\033[1;37m'
 NC='\033[0m' # No Color
 
+# HARDN log destinations
+HARDN_LOG_FILE="/var/log/hardn/hardn-tools.log"
+HARDN_JOURNAL_UNIT="hardn.service"
+HARDN_JOURNAL_TAG="HARDN"
+
+# Map HARDN levels to syslog priorities
+hardn_journal_priority() {
+    local level="$1"
+    case "$level" in
+        pass)
+            printf 'notice'
+            ;;
+        warning)
+            printf 'warning'
+            ;;
+        error)
+            printf 'err'
+            ;;
+        *)
+            printf 'info'
+            ;;
+    esac
+}
+
+log_to_hardn_journal() {
+    local level="$1"
+    local message="$2"
+    local priority="$(hardn_journal_priority "$level")"
+
+    if command -v systemd-cat >/dev/null 2>&1; then
+        printf '%s\n' "$message" | systemd-cat -u "$HARDN_JOURNAL_UNIT" -t "$HARDN_JOURNAL_TAG" -p "$priority" 2>/dev/null || true
+    elif command -v logger >/dev/null 2>&1; then
+        logger -t "$HARDN_JOURNAL_TAG" -p "user.$priority" -- "$message" 2>/dev/null || true
+    fi
+}
+
 # HARDN status function for consistent logging and output
 # Usage: HARDN_STATUS "level" "message"
 # Levels: info, pass, warning, error
@@ -19,33 +55,39 @@ HARDN_STATUS() {
     local level="$1"
     local message="$2"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    local log_file="/var/log/hardn/hardn-tools.log"
+
+    if [ -z "$message" ]; then
+        message="$level"
+        level="info"
+    fi
     
     # Ensure log directory exists
-    mkdir -p "$(dirname "$log_file")" 2>/dev/null || true
+    mkdir -p "$(dirname "$HARDN_LOG_FILE")" 2>/dev/null || true
     
     case "$level" in
         "info")
             printf "${BLUE}[INFO]${NC} %s\n" "$message"
-            echo "[$timestamp] [INFO] $message" >> "$log_file" 2>/dev/null || true
+            echo "[$timestamp] [INFO] $message" >> "$HARDN_LOG_FILE" 2>/dev/null || true
             ;;
         "pass")
             printf "${GREEN}[PASS]${NC} %s\n" "$message"
-            echo "[$timestamp] [PASS] $message" >> "$log_file" 2>/dev/null || true
+            echo "[$timestamp] [PASS] $message" >> "$HARDN_LOG_FILE" 2>/dev/null || true
             ;;
         "warning")
             printf "${YELLOW}[WARNING]${NC} %s\n" "$message"
-            echo "[$timestamp] [WARNING] $message" >> "$log_file" 2>/dev/null || true
+            echo "[$timestamp] [WARNING] $message" >> "$HARDN_LOG_FILE" 2>/dev/null || true
             ;;
         "error")
             printf "${RED}[ERROR]${NC} %s\n" "$message"
-            echo "[$timestamp] [ERROR] $message" >> "$log_file" 2>/dev/null || true
+            echo "[$timestamp] [ERROR] $message" >> "$HARDN_LOG_FILE" 2>/dev/null || true
             ;;
         *)
             printf "${WHITE}[UNKNOWN]${NC} %s\n" "$message"
-            echo "[$timestamp] [UNKNOWN] $message" >> "$log_file" 2>/dev/null || true
+            echo "[$timestamp] [UNKNOWN] $message" >> "$HARDN_LOG_FILE" 2>/dev/null || true
             ;;
     esac
+
+    log_to_hardn_journal "$level" "$message"
 }
 
 # Additional helper functions for HARDN tools
@@ -163,10 +205,11 @@ command_exists() {
 # Log execution completion
 log_tool_execution() {
     local tool_name="$1"
-    local log_file="/var/log/hardn/hardn-tools.log"
-    
-    mkdir -p "$(dirname "$log_file")" 2>/dev/null || true
-    printf "[HARDN] %s executed at %s\n" "$tool_name" "$(date)" | tee -a "$log_file" 2>/dev/null || true
+    local message="[HARDN] $tool_name executed at $(date)"
+
+    mkdir -p "$(dirname "$HARDN_LOG_FILE")" 2>/dev/null || true
+    printf '%s\n' "$message" | tee -a "$HARDN_LOG_FILE" 2>/dev/null || true
+    log_to_hardn_journal "info" "$message"
 }
 
 # Source the tool configuration checker if it exists
@@ -190,6 +233,8 @@ tool_is_configured() {
 
 # Export functions so they're available to sourcing scripts
 export -f HARDN_STATUS
+export -f hardn_journal_priority
+export -f log_to_hardn_journal
 export -f is_package_installed
 export -f is_service_active
 export -f service_exists

@@ -21,61 +21,79 @@ BOLD='\033[1m'
 
 # Configuration
 readonly LOG_DIR="/var/log/hardn"
-readonly HARDN_SERVICES="hardn.service hardn-api.service legion-daemon.service hardn-monitor.service"
+readonly HARDN_SERVICES="hardn.service hardn-api.service legion-daemon.service hardn-monitor.service hardn-grafana.service"
+readonly DEFAULT_TOOL_PATHS="/usr/share/hardn/tools:/usr/lib/hardn/src/setup/tools"
+declare -ar DEFAULT_TOOL_COMMANDS=(aide apparmor auditd clamv fail2ban lynis ossec suricata ufw)
+HARDN_BIN="${HARDN_BINARY:-}"
 
-# Function to find HARDN binary
-find_hardn_binary() {
-    # Check environment variable first
-    if [[ -n "${HARDN_BINARY:-}" && -x "${HARDN_BINARY}" ]]; then
-        echo "${HARDN_BINARY}"
-        return 0
-    fi
-    
-    local possible_locations=(
-        "/usr/bin/hardn"          # System installation (primary)
-        "./target/release/hardn"  # Development build
-        "./hardn"                 # Current directory
-        "/opt/hardn/bin/hardn"    # Optional installation
-        "$(command -v hardn 2>/dev/null || true)"  # In PATH (avoiding aliases)
-        "/usr/local/bin/hardn"    # Local installation (last resort)
-    )
-    
-    for location in "${possible_locations[@]}"; do
-        if [[ -n "$location" && -x "$location" ]]; then
-            echo "$location"
-            return 0
-        fi
-    done
-    
-    return 1
+print_colored() {
+    local color="$1"
+    shift
+    printf "%b%s%b\n" "$color" "$*" "$NC"
 }
 
-# Find HARDN binary
-HARDN_BIN=$(find_hardn_binary || echo "")
-readonly HARDN_BIN
-
-# Function to print colored output
-print_colored() {
-    local color=$1
-    shift
-    echo -e "${color}$@${NC}"
+format_tool_display() {
+    local name="${1,,}"
+    case "$name" in
+        aide)
+            echo "AIDE (Integrity Monitoring)"
+            ;;
+        apparmor)
+            echo "AppArmor (Mandatory Access Control)"
+            ;;
+        auditd)
+            echo "Auditd (Linux Auditing)"
+            ;;
+        clamv|clamav)
+            echo "ClamAV (Malware Scanner)"
+            ;;
+        fail2ban)
+            echo "Fail2Ban (Brute-force Defense)"
+            ;;
+        lynis)
+            echo "Lynis (Security Audit)"
+            ;;
+        ossec)
+            echo "OSSEC (HIDS)"
+            ;;
+        legion)
+            echo "LEGION (Threat Hunting)"
+            ;;
+        rkhunter)
+            echo "RKHunter (Rootkit Scanner)"
+            ;;
+        suricata)
+            echo "Suricata (IDS/IPS)"
+            ;;
+        ufw)
+            echo "UFW Firewall"
+            ;;
+        *)
+            local human=${name//[_-]/ }
+            human=${human,,}
+            local formatted=""
+            for word in $human; do
+                formatted+="${word^} "
+            done
+            echo "${formatted% }"
+            ;;
+    esac
 }
 
 check_root() {
     if [[ $EUID -ne 0 ]]; then
-        print_colored "$RED" "This script must be run as root!"
-        echo "Please run with: sudo $0"
+        print_colored "$RED" "This service manager must be run as root."
+        echo "Try again with sudo or from a root shell."
         exit 1
     fi
 }
 
 check_dependencies() {
-    local missing_deps=()
+    local -a required_cmds=(systemctl journalctl find sed awk)
+    local -a missing_deps=()
 
-    for cmd in systemctl journalctl; do
-        if ! command -v "$cmd" >/dev/null 2>&1; then
-            missing_deps+=("$cmd")
-        fi
+    for cmd in "${required_cmds[@]}"; do
+        command -v "$cmd" >/dev/null 2>&1 || missing_deps+=("$cmd")
     done
 
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
@@ -83,7 +101,35 @@ check_dependencies() {
         exit 1
     fi
 
-    if [[ -z "$HARDN_BIN" || ! -x "$HARDN_BIN" ]]; then
+    if [[ -n "${HARDN_BIN:-}" && -x "$HARDN_BIN" ]]; then
+        :
+    else
+        if [[ -n "${HARDN_BINARY:-}" && -x "$HARDN_BINARY" ]]; then
+            HARDN_BIN="$HARDN_BINARY"
+        fi
+
+        if [[ -z "${HARDN_BIN:-}" || ! -x "$HARDN_BIN" ]]; then
+            local candidates=(
+                "./target/release/hardn"
+                "./hardn"
+                "/usr/local/bin/hardn"
+                "/usr/bin/hardn"
+                "/opt/hardn/bin/hardn"
+            )
+            for candidate in "${candidates[@]}"; do
+                if [[ -x "$candidate" ]]; then
+                    HARDN_BIN="$candidate"
+                    break
+                fi
+            done
+        fi
+
+        if [[ -z "${HARDN_BIN:-}" || ! -x "$HARDN_BIN" ]]; then
+            HARDN_BIN=$(command -v hardn 2>/dev/null || true)
+        fi
+    fi
+
+    if [[ -z "${HARDN_BIN:-}" || ! -x "$HARDN_BIN" ]]; then
         print_colored "$RED" "Error: HARDN binary not found!"
         echo "Please ensure HARDN is installed or built."
         echo "Searched locations:"
@@ -100,6 +146,7 @@ check_dependencies() {
         exit 1
     fi
 
+    export HARDN_BIN
     echo "Using HARDN binary: $HARDN_BIN"
 }
 
@@ -121,6 +168,39 @@ launch_gui() {
         print_colored "$RED" "Unable to determine invoking desktop user. Run GUI manually as your user: hardn-gui"
         read -p $'\nPress Enter to continue...' || true
         return
+    fi
+
+    local log_dir="/var/log/hardn"
+    local -a gui_feeds=(
+        "$log_dir/hardn-monitor.log"
+        "$log_dir/legion.log"
+        "$log_dir/legion-audit.log"
+    )
+
+    if [[ -d "$log_dir" ]]; then
+        if command -v setfacl >/dev/null 2>&1; then
+            if setfacl -m "u:${target_user}:rX" "$log_dir" 2>/dev/null; then
+                setfacl -m "d:u:${target_user}:rX" "$log_dir" 2>/dev/null || true
+                for feed in "${gui_feeds[@]}"; do
+                    [[ -e "$feed" ]] && setfacl -m "u:${target_user}:r--" "$feed" 2>/dev/null || true
+                done
+                print_colored "$GREEN" "✓ Granted read-only GUI access to HARDN monitoring feeds for $target_user."
+            else
+                print_colored "$YELLOW" "Unable to adjust ACLs for $target_user; falling back to world-readable HARDN logs."
+                chmod o+rx "$log_dir" 2>/dev/null || true
+                for feed in "${gui_feeds[@]}"; do
+                    [[ -e "$feed" ]] && chmod o+r "$feed" 2>/dev/null || true
+                done
+            fi
+        else
+            print_colored "$YELLOW" "setfacl not available; granting world read-only access to HARDN logs."
+            chmod o+rx "$log_dir" 2>/dev/null || true
+            for feed in "${gui_feeds[@]}"; do
+                [[ -e "$feed" ]] && chmod o+r "$feed" 2>/dev/null || true
+            done
+        fi
+    else
+        print_colored "$YELLOW" "HARDN log directory $log_dir not present yet; GUI will stream data once logs are created."
     fi
 
     local uid
@@ -388,46 +468,65 @@ run_modules_menu() {
 
 
 run_tools_menu() {
+    local default_tool_dirs="$DEFAULT_TOOL_PATHS"
+
     while true; do
         display_header
         echo -e "${BOLD}Available HARDN Tools:${NC}"
         echo -e "─────────────────────────────────────────────────"
         echo
-        
-        local tools_output
-        tools_output=$("$HARDN_BIN" --list-tools 2>/dev/null || true)
-        
-        if [[ -z "$tools_output" ]]; then
+
+    local -a tool_display=()
+    local -a tool_command=()
+    declare -A seen_tools=()
+
+        for tool in "${DEFAULT_TOOL_COMMANDS[@]}"; do
+            tool_command+=("$tool")
+            tool_display+=("$(format_tool_display "$tool")")
+            seen_tools["$tool"]=1
+        done
+
+        local -a tool_dirs=()
+        local IFS=':'
+        read -ra tool_dirs <<< "${HARDN_TOOL_PATH:-$default_tool_dirs}"
+
+        for dir in "${tool_dirs[@]}"; do
+            [[ -d "$dir" ]] || continue
+            while IFS= read -r -d '' tool_script; do
+                local base
+                base=$(basename "$tool_script")
+                base=${base%.sh}
+                local command="${base,,}"
+                [[ -n "$command" ]] || continue
+                if [[ -z "${seen_tools[$command]:-}" ]]; then
+                    tool_command+=("$command")
+                    tool_display+=("$(format_tool_display "$command")")
+                    seen_tools["$command"]=1
+                fi
+            done < <(find "$dir" -maxdepth 1 -type f -name '*.sh' -print0 2>/dev/null)
+        done
+
+        local tool_count=${#tool_display[@]}
+
+        if (( tool_count == 0 )); then
             print_colored "$RED" "No tools found!"
-            echo "Make sure HARDN is properly installed."
+            echo "Make sure HARDN is properly installed or update tool definitions."
             read -p $'\nPress Enter to continue...' || true
             return
         fi
-        
-        local i=1
-        declare -a tool_array
-        local current_category=""
-        
-        while IFS= read -r line; do
-            # Check for category headers
-            if [[ "$line" =~ ^[A-Z].*:$ ]]; then
-                current_category="${line%:}"
-                echo -e "\n${PURPLE}$current_category:${NC}"
-            # Check for tool lines (starting with bullet)
-            elif [[ "$line" =~ ^[[:space:]]*•[[:space:]] ]]; then
-                local tool_name=$(echo "$line" | sed 's/^[[:space:]]*•[[:space:]]*//')
-                echo "$i) $tool_name"
-                tool_array[$i]=$tool_name
-                ((i++))
-            fi
-        done <<< "$tools_output"
-        
+
+        for ((idx=0; idx<tool_count; idx++)); do
+            printf "%d) %s\n" "$((idx + 1))" "${tool_display[$idx]}"
+        done
+
+        echo
+        print_colored "$YELLOW" "Administrator note: update ${HARDN_TOOL_PATH:-$default_tool_dirs} with custom tool scripts and align this menu with your deployment."
         echo
         echo "a) Run ALL tools"
         echo "0) Back to Main Menu"
         echo
-        read -p "Select tool [0-$((i-1)),a]: " tool_choice || { echo; return; }
-        
+        read -p "Select tool [0-${tool_count},a]: " tool_choice || { echo; return; }
+
         case $tool_choice in
             a|A)
                 echo -e "\n${BOLD}Running all tools...${NC}"
@@ -437,17 +536,115 @@ run_tools_menu() {
             0)
                 return
                 ;;
-            [1-9]*)
-                # Validate numeric input
-                if [[ "$tool_choice" =~ ^[0-9]+$ ]] && [[ $tool_choice -lt $i && $tool_choice -gt 0 ]]; then
-                    local selected_tool="${tool_array[$tool_choice]}"
-                    echo -e "\n${BOLD}Running tool: $selected_tool${NC}"
-                    "$HARDN_BIN" run-tool "$selected_tool"
-                    read -p $'\nPress Enter to continue...' || true
+            '')
+                continue
+                ;;
+            *)
+                if [[ "$tool_choice" =~ ^[0-9]+$ ]]; then
+                    local index=$((tool_choice - 1))
+                    if (( index >= 0 && index < tool_count )); then
+                        local selected_display="${tool_display[$index]}"
+                        local selected_command="${tool_command[$index]}"
+                        echo -e "\n${BOLD}Running tool: $selected_display${NC}"
+
+                        local script_found=false
+                        for dir in "${tool_dirs[@]}"; do
+                            if [[ -f "$dir/${selected_command}.sh" ]]; then
+                                script_found=true
+                                break
+                            fi
+                        done
+                        if [[ "$script_found" == false ]]; then
+                            print_colored "$YELLOW" "No dedicated script located for '${selected_command}'. Update your tooling to match custom deployments."
+                        fi
+
+                        if "$HARDN_BIN" run-tool "$selected_command"; then
+                            :
+                        else
+                            print_colored "$RED" "Tool execution reported errors. Review hardn.service logs for details."
+                        fi
+                        read -p $'\nPress Enter to continue...' || true
+                    else
+                        print_colored "$RED" "Invalid option!"
+                        sleep 1
+                    fi
                 else
                     print_colored "$RED" "Invalid option!"
                     sleep 1
                 fi
+                ;;
+        esac
+    done
+}
+
+run_grafana_menu() {
+    while true; do
+        display_header
+        echo -e "${BOLD}Grafana Visualization Service:${NC}"
+        echo -e "─────────────────────────────────────────────────"
+        echo
+        echo "1) Install or Upgrade Grafana"
+        echo "2) Reapply HARDN Grafana configuration"
+        echo "3) Start Grafana service"
+        echo "4) Stop Grafana service"
+        echo "5) Restart Grafana service"
+        echo "6) Enable Grafana on boot"
+        echo "7) Disable Grafana on boot"
+        echo "8) Show Grafana status"
+        echo "9) View Grafana service logs"
+        echo
+        echo "0) Back to Main Menu"
+        echo
+        read -p "Select option [0-9]: " grafana_choice || { echo; return; }
+
+        case $grafana_choice in
+            1)
+                echo -e "\n${BOLD}Installing or upgrading Grafana...${NC}"
+                "$HARDN_BIN" grafana install
+                read -p $'\nPress Enter to continue...' || true
+                ;;
+            2)
+                echo -e "\n${BOLD}Reapplying HARDN Grafana configuration...${NC}"
+                "$HARDN_BIN" grafana configure
+                read -p $'\nPress Enter to continue...' || true
+                ;;
+            3)
+                echo -e "\n${BOLD}Starting Grafana service...${NC}"
+                manage_service "hardn-grafana.service" "start"
+                read -p $'\nPress Enter to continue...' || true
+                ;;
+            4)
+                echo -e "\n${BOLD}Stopping Grafana service...${NC}"
+                manage_service "hardn-grafana.service" "stop"
+                read -p $'\nPress Enter to continue...' || true
+                ;;
+            5)
+                echo -e "\n${BOLD}Restarting Grafana service...${NC}"
+                manage_service "hardn-grafana.service" "restart"
+                read -p $'\nPress Enter to continue...' || true
+                ;;
+            6)
+                echo -e "\n${BOLD}Enabling Grafana service on boot...${NC}"
+                manage_service "hardn-grafana.service" "enable"
+                read -p $'\nPress Enter to continue...' || true
+                ;;
+            7)
+                echo -e "\n${BOLD}Disabling Grafana service on boot...${NC}"
+                manage_service "hardn-grafana.service" "disable"
+                read -p $'\nPress Enter to continue...' || true
+                ;;
+            8)
+                echo -e "\n${BOLD}Grafana service status:${NC}"
+                "$HARDN_BIN" grafana status
+                read -p $'\nPress Enter to continue...' || true
+                ;;
+            9)
+                echo -e "\n${BOLD}Recent Grafana service logs:${NC}"
+                journalctl -u hardn-grafana.service -n 100 --no-pager -o short-iso
+                read -p $'\nPress Enter to continue...' || true
+                ;;
+            0)
+                return
                 ;;
             *)
                 print_colored "$RED" "Invalid option!"
@@ -471,8 +668,8 @@ manage_services_menu() {
         echo "4) Enable ALL Services (Start on boot)"
         echo "5) Disable ALL Services (Don't start on boot)"
         echo
-        echo "6) Manage Individual Service"
-        echo "7) View Service Logs (Live & Historical)"
+    echo "6) Manage Individual Service"
+    echo "7) View Service Logs (Live & Historical)"
         echo
         echo "0) Back to Main Menu"
         echo
@@ -531,13 +728,15 @@ manage_services_menu() {
                 echo "1) hardn.service"
                 echo "2) hardn-api.service"
                 echo "3) legion-daemon.service"
-                read -p "Select [1-3]: " svc_num || { echo; continue; }
+                echo "4) hardn-grafana.service"
+                read -p "Select [1-4]: " svc_num || { echo; continue; }
                 
                 local selected_service=""
                 case $svc_num in
                     1) selected_service="hardn.service" ;;
                     2) selected_service="hardn-api.service" ;;
                     3) selected_service="legion-daemon.service" ;;
+                    4) selected_service="hardn-grafana.service" ;;
                     *) 
                         print_colored "$RED" "Invalid selection!"
                         sleep 1
@@ -571,7 +770,7 @@ manage_services_menu() {
                 ;;
             7)
                 echo -e "\n${BOLD}╔═══════════════════════════════════════════════════════════════════════════╗${NC}"
-                echo -e "${BOLD}║                        HARDN Service Logs Viewer                        ║${NC}"
+                echo -e "${BOLD}║                        HARDN Services Logs Viewer                        ║${NC}"
                 echo -e "${BOLD}╚═══════════════════════════════════════════════════════════════════════════╝${NC}"
                 echo -e "\n${CYAN}Choose log viewing mode:${NC}"
                 echo "1) Live All Services (follow mode)"
@@ -586,14 +785,14 @@ manage_services_menu() {
                 case $log_choice in
                     1)
                         echo -e "\n${BOLD}${GREEN}LIVE MODE: Following all HARDN service logs...${NC}"
-                        echo -e "${CYAN}Showing real-time logs from: hardn.service, hardn-api.service, legion-daemon.service, hardn-monitor.service${NC}"
+                        echo -e "${CYAN}Showing real-time logs from: hardn.service, hardn-api.service, legion-daemon.service, hardn-monitor.service, hardn-grafana.service${NC}"
                         echo -e "${YELLOW}Press Ctrl+C to stop following${NC}\n"
-                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -f --no-pager
+                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -u hardn-grafana.service -f --no-pager
                         ;;
                     2)
                         echo -e "\n${BOLD}Recent Logs from All HARDN Services${NC}"
                         echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -n 50 --no-pager -o short-iso
+                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -u hardn-grafana.service -n 50 --no-pager -o short-iso
                         ;;
                     3)
                         echo -e "\n${BOLD}Select individual service:${NC}"
@@ -601,7 +800,8 @@ manage_services_menu() {
                         echo "2) hardn-api.service (REST API Server)"
                         echo "3) legion-daemon.service (LEGION Monitoring Daemon)"
                         echo "4) hardn-monitor.service (Centralized Monitoring)"
-                        read -p "Select [1-4]: " service_choice || { echo; continue; }
+                        echo "5) hardn-grafana.service (Grafana Visualization)"
+                        read -p "Select [1-5]: " service_choice || { echo; continue; }
                         
                         case $service_choice in
                             1) 
@@ -620,18 +820,22 @@ manage_services_menu() {
                                 echo -e "\n${BOLD}HARDN Monitor Service Logs${NC}"
                                 journalctl -u hardn-monitor.service -n 100 --no-pager -o short-iso
                                 ;;
+                            5)
+                                echo -e "\n${BOLD}Grafana Visualization Service Logs${NC}"
+                                journalctl -u hardn-grafana.service -n 100 --no-pager -o short-iso
+                                ;;
                             *) print_colored "$RED" "Invalid service selection!" ;;
                         esac
                         ;;
                     4)
                         echo -e "\n${BOLD}Critical Errors from All HARDN Services${NC}"
                         echo -e "${RED}Showing only ERROR, CRITICAL, and ALERT priority logs${NC}\n"
-                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -p err -n 50 --no-pager -o short-iso
+                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -u hardn-grafana.service -p err -n 50 --no-pager -o short-iso
                         ;;
                     5)
                         echo -e "\n${BOLD}HARDN Service Performance Metrics${NC}"
                         echo -e "${CYAN}Service Status Summary:${NC}"
-                        for service in hardn.service hardn-api.service legion-daemon.service hardn-monitor.service; do
+                        for service in hardn.service hardn-api.service legion-daemon.service hardn-monitor.service hardn-grafana.service; do
                             status=$(systemctl is-active "$service" 2>/dev/null || echo "unknown")
                             if [ "$status" = "active" ]; then
                                 echo -e "  [ACTIVE] $service: ${GREEN}RUNNING${NC}"
@@ -640,7 +844,7 @@ manage_services_menu() {
                             fi
                         done
                         echo -e "\n${CYAN}Recent Performance Logs:${NC}"
-                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -g "CPU|Memory|load" -n 20 --no-pager -o short-iso
+                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -u hardn-grafana.service -g "CPU|Memory|load" -n 20 --no-pager -o short-iso
                         ;;
                     6)
                         echo -e "\n${BOLD}Custom journalctl command${NC}"
@@ -673,7 +877,7 @@ dangerous_operations_menu() {
     while true; do
         display_header
         echo -e "${BOLD}${RED}DANGEROUS OPERATIONS - USE WITH EXTREME CAUTION${NC}"
-        echo -e "${RED}These operations can break your system and require manual intervention!${NC}"
+        echo -e "${RED}These operations are for advanced security needs and could damage your system if not performed correctly!${NC}"
         echo -e "─────────────────────────────────────────────────"
         echo
         echo "1) Enable SELinux (REQUIRES REBOOT - DISABLES AppArmor)"
@@ -686,9 +890,9 @@ dangerous_operations_menu() {
             1)
                 echo -e "\n${BOLD}${RED}EXTREME WARNING${NC}"
                 echo -e "${RED}Enabling SELinux will:"
-                echo "  - Disable AppArmor completely"
+                echo "  - Disable AppArmor"
                 echo "  - Require a system reboot"
-                echo "  - May break existing applications"
+                echo "  - May disconnect existing applications"
                 echo "  - Requires manual SELinux policy configuration"
                 echo -e "${NC}"
                 read -p "Do you understand these risks and want to proceed? [yes/NO]: " confirm || { echo; continue; }
@@ -736,8 +940,9 @@ main_menu() {
         echo "7) View HARDN Status"
         echo "8) Sandbox Mode (Network Isolation)"
         echo "9) Run Everything (Modules + Tools)"
-        echo "10) Dangerous Operations"
-        echo "g) Launch Read-Only GUI"
+        echo "10) Advanced Operations"
+        echo "11) Grafana Visualization Service"
+        echo "g) Launch HARDN SIEM"
         echo
         echo "a) About HARDN"
         echo "v) Show Version"
@@ -809,6 +1014,9 @@ main_menu() {
                 ;;
             10)
                 dangerous_operations_menu
+                ;;
+            11)
+                run_grafana_menu
                 ;;
             g|G)
                 launch_gui

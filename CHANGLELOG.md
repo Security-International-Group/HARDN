@@ -9,50 +9,50 @@ All notable changes to this project will be documented in this file.
 ### What's Changed
 
 #### Service Manager Integration & Interactive Interface
-- **Interactive Service Manager**: Added comprehensive menu-driven interface for managing all HARDN services
-- **Ctrl+C Handling**: Implemented graceful signal handling - Ctrl+C now returns to menus instead of exiting the application
-- **Service Monitoring**: Real-time service status display with color-coded indicators (active/enabled/inactive)
-- **Log Viewing**: Interactive log monitoring for individual services and all services simultaneously
-- **Main Orchestrator**: Established `hardn-service-manager.sh` as the primary interface for overall monitoring and launching
+- New menu lets you manage every HARDN service from one screen.
+- Pressing Ctrl+C drops you back to the menu instead of killing the app.
+- Live status panel shows which services are running, enabled, or down using clear colors.
+- Added quick log viewers for single services or the whole stack.
+- `hardn-service-manager.sh` is now the main launch point.
 
 #### LEGION Security Monitoring System DEMO
-- **Active Monitoring**: Implemented continuous security monitoring with syslog, journal, and network monitoring
-- **Threat Intelligence**: Integrated threat correlation and anomaly detection capabilities
-- **IOC Communication**: Added Indicators of Compromise (IOC) communication framework
-- **Security Events**: Enhanced security event processing with detailed logging and alerting
-- **Live System Metrics**: Fixed CPU and memory usage reporting to show real-time data instead of hardcoded values
-- **Detailed Contributing Factors**: Enhanced risk reporting to list specific security issues found instead of generic messages
-- **Comprehensive System Checks**: Added detailed checks for authentication failures, SUID/SGID files, kernel parameters, and container security
+- LEGION now watches syslog, the journal, and network events in real time.
+- Basic threat-correlation and anomaly spotting are wired in.
+- IOC messaging hooks are in place for future feeds.
+- Security alerts now include detailed log context.
+- CPU and memory stats report real usage instead of placeholder numbers.
+- Risk reports now call out the exact problems they found.
+- Extra checks look for auth failures, risky SUID/SGID files, kernel gaps, and container issues.
 
 #### User Experience Improvements
-- **Simplified Help System**: Refactored `hardn -h` into a clean, user-focused help menu
-- **Navigation Guidance**: Added clear instructions for menu navigation (arrow keys, numbers, 'q' to quit)
-- **Quick Start Commands**: Prominently featured `sudo make hardn` as the main orchestrator command
-- **Troubleshooting Section**: Added practical error resolution guidance in help output
-- **Package Commands**: Replaced direct file references with clean package-level commands
+- `hardn -h` now shows a plain-language help screen.
+- Menus explain how to move around and how to quit.
+- `sudo make hardn` is highlighted as the fastest way to launch the toolkit.
+- Help text includes quick fixes for common errors.
+- Examples now use package-friendly commands instead of raw file paths.
 
 #### Technical Enhancements
-- **Modular Architecture**: Improved code organization with separate modules for services, legion, display, etc.
-- **Async Operations**: Enhanced tokio-based async operations for concurrent monitoring
-- **Signal Handling**: Added ctrlc crate for robust signal interception and handling
-- **Build System**: Maintained Makefile with proper privilege handling for system operations
+- Code is split into clearer modules (services, legion, display, and more).
+- Async tasks are tuned for smoother concurrent monitoring.
+- ctrlc crate handles signals cleanly across the app.
+- Makefile still handles privileged operations safely.
 
 ### What's New
 
-- **Interactive Service Manager**: Complete menu-driven interface for service management
-- **LEGION Daemon(DEMO)**: Full security monitoring daemon with active threat detection
-- **Enhanced Help System**: User-friendly help with navigation and troubleshooting guidance
-- **Main Orchestrator Pattern**: Single command (`make hardn`) to launch the primary interface
+- Full menu-driven service manager.
+- LEGION daemon (demo) with live security monitoring.
+- Friendlier help and troubleshooting flow.
+- One-command launch flow via `make hardn`.
 
 ### Security
 
-- **Enhanced Monitoring**: Improved security posture with continuous monitoring capabilities
-- **Threat Detection**: Added proactive threat intelligence and IOC processing
-- **Access Control**: Maintained proper privilege handling throughout the system
+- Continuous monitoring broadens the security coverage.
+- Added hooks for threat intel and IOC handling.
+- Privileged actions still follow least-privilege rules.
 
 ### Upcoming Features
 
-- **IOC Integration**: Complete Indicators of Compromise communication system
-- **Advanced Analytics**: Enhanced threat correlation and predictive analysis
-- **Web Interface**: Potential web-based management interface and local GTK App
-- **Plugin System**: Extensible architecture for additional security modules
+- Finish IOC data exchange end to end.
+- Expand analytics for deeper threat correlation.
+- Explore a web dashboard and richer GTK app.
+- Open the door for plug-in security modules.

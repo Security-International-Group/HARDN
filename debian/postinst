@@ -105,8 +105,7 @@ export HARDN_TOOL_PATH=\"${TOOL_DIR}:${LEGACY_TOOL_DIR}\"
             systemctl enable hardn.service || true
             systemctl enable legion-daemon.service || true
             systemctl enable hardn-api.service || true
-            # hardn-monitor is deprecated/optional - don't enable by default
-            # systemctl enable hardn-monitor.service || true
+            systemctl enable hardn-monitor.service || true
         else
             echo "systemctl not found, skipping service enablement."
         fi

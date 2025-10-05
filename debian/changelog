@@ -3,7 +3,7 @@ hardn (1.0.0-1) bookworm; urgency=medium
   * Initial public demo release
   * Core security hardening framework
   * Modular architecture with tools support
-  * Included tools: Lynis, AIDE, Legion, Fail2ban, Suricata
+  * Included tools: Lynis, AIDE, Legion, Fail2ban
   * Rust-based CLI interface
   * Debian packaging support
   * Basic system hardening capabilities
