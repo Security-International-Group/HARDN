@@ -384,6 +384,47 @@ def get_full_diagnostics(api_key: str = Depends(verify_ssh_key)):
     }
 
 
+@app.get("/grafana/systemd")
+def get_grafana_systemd(api_key: str = Depends(verify_ssh_key)):
+    """Return systemd service status in Grafana table format"""
+    services = [
+        ("hardn.service", "HARDN Orchestrator"),
+        ("legion-daemon.service", "Legion Daemon"),
+        ("hardn-api.service", "HARDN API"),
+        ("hardn-monitor.service", "HARDN Monitor"),
+        ("hardn-grafana.service", "Grafana Wrapper"),
+        ("grafana-server.service", "Grafana Server"),
+    ]
+
+    columns = [
+        {"text": "Unit", "type": "string"},
+        {"text": "Display", "type": "string"},
+        {"text": "Active", "type": "string"},
+        {"text": "Status", "type": "string"},
+        {"text": "ActiveState", "type": "string"},
+        {"text": "Description", "type": "string"},
+        {"text": "Checked", "type": "string"},
+    ]
+
+    rows = []
+    for unit, label in services:
+        info = get_service_status(unit)
+        details = info.get("details", {}) if isinstance(info, dict) else {}
+        rows.append(
+            [
+                unit,
+                label,
+                "yes" if info.get("active", False) else "no",
+                info.get("status", "unknown"),
+                details.get("activestate", "unknown"),
+                details.get("description", "-"),
+                info.get("timestamp", datetime.now().isoformat()),
+            ]
+        )
+
+    return {"columns": columns, "rows": rows}
+
+
 @app.get("/endpoints")
 def list_endpoints(api_key: str = Depends(verify_ssh_key)):
     """List available endpoints (currently just localhost)"""

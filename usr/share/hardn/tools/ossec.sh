@@ -1,5 +1,6 @@
 #!/bin/bash
 # HARDN OSSEC Setup Script
+### RESOURCE HEAVY ######
 set -euo pipefail
 
 source "$(cd "$(dirname "$0")" && pwd)/functions.sh"

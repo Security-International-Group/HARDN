@@ -1,5 +1,5 @@
 use chrono::Utc;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -7,6 +7,24 @@ use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
+use tiny_http::{Header, Method, Response, Server, StatusCode};
+
+static GRAFANA_BRIDGE_STARTED: OnceLock<()> = OnceLock::new();
+const GRAFANA_BRIDGE_DEFAULT_ADDR: &str = "127.0.0.1:8686";
+const STATUS_OK: StatusCode = StatusCode(200);
+const STATUS_NO_CONTENT: StatusCode = StatusCode(204);
+const STATUS_BAD_REQUEST: StatusCode = StatusCode(400);
+const STATUS_NOT_FOUND: StatusCode = StatusCode(404);
+const STATUS_METHOD_NOT_ALLOWED: StatusCode = StatusCode(405);
+const STATUS_INTERNAL_ERROR: StatusCode = StatusCode(500);
+const GRAFANA_SYSTEMD_SERVICES: &[(&str, &str)] = &[
+    ("hardn.service", "HARDN Orchestrator"),
+    ("hardn-monitor.service", "HARDN Monitor"),
+    ("legion-daemon.service", "Legion Daemon"),
+    ("hardn-api.service", "HARDN API"),
+    ("hardn-grafana.service", "Grafana Wrapper"),
+    ("grafana-server.service", "Grafana Server"),
+];
 
 fn log_message(level: &str, message: &str) {
     let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S");
@@ -110,6 +128,109 @@ fn service_active_state(service: &str) -> String {
         }
         _ => "unknown".to_string(),
     }
+}
+
+fn gather_systemd_details(service: &str) -> (bool, String, String, String) {
+    let mut active = false;
+    let mut status = "unknown".to_string();
+
+    if let Ok(output) = Command::new("systemctl")
+        .args(["is-active", service])
+        .output()
+    {
+        active = output.status.success();
+        let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if raw.is_empty() {
+            status = if active {
+                "active".into()
+            } else {
+                "inactive".into()
+            };
+        } else {
+            status = raw;
+        }
+    }
+
+    let mut active_state = "unknown".to_string();
+    let mut description = "-".to_string();
+
+    if let Ok(output) = Command::new("systemctl")
+        .args([
+            "show",
+            service,
+            "--property=ActiveState",
+            "--property=Description",
+        ])
+        .output()
+    {
+        if output.status.success() {
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                if let Some((key, value)) = line.split_once('=') {
+                    let trimmed = value.trim();
+                    match key {
+                        "ActiveState" if !trimmed.is_empty() => {
+                            active_state = trimmed.to_string();
+                        }
+                        "Description" if !trimmed.is_empty() => {
+                            description = trimmed.to_string();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    (active, status, active_state, description)
+}
+
+fn build_grafana_systemd_payload() -> Value {
+    let timestamp = Utc::now().to_rfc3339();
+    let rows: Vec<_> = GRAFANA_SYSTEMD_SERVICES
+        .iter()
+        .map(|(unit, label)| {
+            let present = service_exists(unit);
+            if present {
+                let (active, status, active_state, description) = gather_systemd_details(unit);
+                json!([
+                    unit,
+                    label,
+                    "yes",
+                    if active { "yes" } else { "no" },
+                    status,
+                    active_state,
+                    description,
+                    timestamp.clone(),
+                ])
+            } else {
+                json!([
+                    unit,
+                    label,
+                    "no",
+                    "no",
+                    "not-found",
+                    "not-found",
+                    "Unit not present on host",
+                    timestamp.clone(),
+                ])
+            }
+        })
+        .collect();
+
+    json!({
+        "columns": [
+            {"text": "Unit", "type": "string"},
+            {"text": "Display", "type": "string"},
+            {"text": "Present", "type": "string"},
+            {"text": "Active", "type": "string"},
+            {"text": "Status", "type": "string"},
+            {"text": "ActiveState", "type": "string"},
+            {"text": "Description", "type": "string"},
+            {"text": "Checked", "type": "string"},
+        ],
+        "rows": rows,
+    })
 }
 
 fn count_failed_units() -> Option<usize> {
@@ -543,6 +664,8 @@ fn log_metrics_from_api() {
 fn main() {
     log_message("INFO", "HARDN Centralized Monitor starting");
 
+    start_grafana_bridge();
+
     // Create necessary directories
     let _ = fs::create_dir_all("/var/log/hardn");
     let _ = fs::create_dir_all("/var/run");
@@ -579,4 +702,262 @@ fn main() {
         // Sleep for 30 seconds
         thread::sleep(Duration::from_secs(30));
     }
+}
+
+fn start_grafana_bridge() {
+    if GRAFANA_BRIDGE_STARTED.set(()).is_err() {
+        return;
+    }
+
+    let addr = env::var("HARDN_GRAFANA_BRIDGE_ADDR")
+        .unwrap_or_else(|_| GRAFANA_BRIDGE_DEFAULT_ADDR.to_string());
+
+    thread::spawn(move || {
+        if let Err(err) = run_grafana_bridge(addr) {
+            log_message("ERROR", &format!("Grafana bridge server stopped: {}", err));
+        }
+    });
+}
+
+fn run_grafana_bridge(addr: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let server = Server::http(&addr).map_err(|err| {
+        log_message(
+            "ERROR",
+            &format!("Unable to bind Grafana bridge at {}: {}", addr, err),
+        );
+        err
+    })?;
+
+    log_message("INFO", &format!("Grafana bridge listening on {}", addr));
+
+    for mut request in server.incoming_requests() {
+        let method = request.method().clone();
+        let url = request.url().split('?').next().unwrap_or("/").to_string();
+
+        match method {
+            Method::Get => match url.as_str() {
+                "/grafana/systemd" => {
+                    let payload = build_grafana_systemd_payload();
+                    match serde_json::to_string(&payload) {
+                        Ok(body) => {
+                            let response = Response::from_string(body)
+                                .with_status_code(STATUS_OK)
+                                .with_header(
+                                    Header::from_bytes(
+                                        b"Content-Type" as &[u8],
+                                        b"application/json",
+                                    )
+                                    .unwrap(),
+                                )
+                                .with_header(
+                                    Header::from_bytes(b"Access-Control-Allow-Origin", b"*")
+                                        .unwrap(),
+                                );
+                            if let Err(err) = request.respond(response) {
+                                log_message(
+                                    "WARN",
+                                    &format!("Grafana bridge response error: {}", err),
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            log_message(
+                                "ERROR",
+                                &format!(
+                                    "Failed to serialize Grafana payload for systemd status: {}",
+                                    err
+                                ),
+                            );
+                            let response = Response::from_string("{}")
+                                .with_status_code(STATUS_INTERNAL_ERROR)
+                                .with_header(
+                                    Header::from_bytes(b"Content-Type", b"application/json")
+                                        .unwrap(),
+                                )
+                                .with_header(
+                                    Header::from_bytes(b"Access-Control-Allow-Origin", b"*")
+                                        .unwrap(),
+                                );
+                            let _ = request.respond(response);
+                        }
+                    }
+                }
+                "/healthz" => {
+                    let response = Response::from_string("ok")
+                        .with_status_code(STATUS_OK)
+                        .with_header(Header::from_bytes(b"Content-Type", b"text/plain").unwrap())
+                        .with_header(
+                            Header::from_bytes(b"Access-Control-Allow-Origin", b"*").unwrap(),
+                        );
+                    if let Err(err) = request.respond(response) {
+                        log_message("WARN", &format!("Grafana bridge response error: {}", err));
+                    }
+                }
+                _ => {
+                    let response = Response::from_string("not found")
+                        .with_status_code(STATUS_NOT_FOUND)
+                        .with_header(Header::from_bytes(b"Content-Type", b"text/plain").unwrap())
+                        .with_header(
+                            Header::from_bytes(b"Access-Control-Allow-Origin", b"*").unwrap(),
+                        );
+                    let _ = request.respond(response);
+                }
+            },
+            Method::Post => {
+                let mut body = String::new();
+                let mut reader = request.as_reader();
+                if let Err(err) = std::io::Read::read_to_string(&mut reader, &mut body) {
+                    log_message(
+                        "ERROR",
+                        &format!("Failed to read Grafana bridge request body: {}", err),
+                    );
+                    let response = Response::from_string(
+                        json!({"error": "failed to read request body"}).to_string(),
+                    )
+                    .with_status_code(STATUS_INTERNAL_ERROR)
+                    .with_header(Header::from_bytes(b"Content-Type", b"application/json").unwrap())
+                    .with_header(Header::from_bytes(b"Access-Control-Allow-Origin", b"*").unwrap());
+                    let _ = request.respond(response);
+                    continue;
+                }
+
+                let parsed: Value = match serde_json::from_str(&body) {
+                    Ok(value) => value,
+                    Err(err) => {
+                        log_message(
+                            "WARN",
+                            &format!("Grafana bridge received invalid JSON payload: {}", err),
+                        );
+                        let response = Response::from_string(
+                            json!({"error": "invalid JSON payload"}).to_string(),
+                        )
+                        .with_status_code(STATUS_BAD_REQUEST)
+                        .with_header(
+                            Header::from_bytes(b"Content-Type", b"application/json").unwrap(),
+                        )
+                        .with_header(
+                            Header::from_bytes(b"Access-Control-Allow-Origin", b"*").unwrap(),
+                        );
+                        let _ = request.respond(response);
+                        continue;
+                    }
+                };
+
+                let targets = parsed
+                    .get("targets")
+                    .and_then(|value| value.as_array())
+                    .or_else(|| parsed.get("queries").and_then(|value| value.as_array()));
+
+                let Some(targets) = targets else {
+                    log_message(
+                        "WARN",
+                        &format!("Grafana bridge request missing targets: {}", body.trim()),
+                    );
+                    let response = Response::from_string(
+                        json!({"error": "missing targets in request"}).to_string(),
+                    )
+                    .with_status_code(STATUS_BAD_REQUEST)
+                    .with_header(Header::from_bytes(b"Content-Type", b"application/json").unwrap())
+                    .with_header(Header::from_bytes(b"Access-Control-Allow-Origin", b"*").unwrap());
+                    let _ = request.respond(response);
+                    continue;
+                };
+
+                let mut handled = false;
+                let mut results = serde_json::Map::new();
+
+                for target in targets {
+                    let ref_id = target
+                        .get("refId")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("A");
+                    let raw_path = target
+                        .get("path")
+                        .and_then(|value| value.as_str())
+                        .or_else(|| target.get("query").and_then(|value| value.as_str()))
+                        .unwrap_or_else(|| url.as_str());
+                    let normalized_path = if raw_path.starts_with('/') {
+                        raw_path.to_string()
+                    } else {
+                        format!("/{}", raw_path)
+                    };
+
+                    match normalized_path.as_str() {
+                        "/grafana/systemd" => {
+                            let payload = build_grafana_systemd_payload();
+                            let columns =
+                                payload.get("columns").cloned().unwrap_or_else(|| json!([]));
+                            let rows = payload.get("rows").cloned().unwrap_or_else(|| json!([]));
+
+                            results.insert(
+                                ref_id.to_string(),
+                                json!({
+                                    "refId": ref_id,
+                                    "tables": [{
+                                        "columns": columns,
+                                        "rows": rows
+                                    }]
+                                }),
+                            );
+                            handled = true;
+                        }
+                        other => {
+                            results.insert(
+                                ref_id.to_string(),
+                                json!({
+                                    "refId": ref_id,
+                                    "error": format!("Unknown path {}", other),
+                                    "status": 404
+                                }),
+                            );
+                        }
+                    }
+                }
+
+                if !handled {
+                    log_message(
+                        "WARN",
+                        &format!(
+                            "Grafana bridge received unsupported POST target: {}",
+                            body.trim()
+                        ),
+                    );
+                }
+
+                let response_body = json!({"results": results}).to_string();
+                let response = Response::from_string(response_body)
+                    .with_status_code(STATUS_OK)
+                    .with_header(Header::from_bytes(b"Content-Type", b"application/json").unwrap())
+                    .with_header(Header::from_bytes(b"Access-Control-Allow-Origin", b"*").unwrap());
+                if let Err(err) = request.respond(response) {
+                    log_message("WARN", &format!("Grafana bridge response error: {}", err));
+                }
+            }
+            Method::Options => {
+                let response = Response::empty(STATUS_NO_CONTENT)
+                    .with_header(Header::from_bytes(b"Access-Control-Allow-Origin", b"*").unwrap())
+                    .with_header(
+                        Header::from_bytes(b"Access-Control-Allow-Methods", b"GET, OPTIONS")
+                            .unwrap(),
+                    )
+                    .with_header(
+                        Header::from_bytes(
+                            b"Access-Control-Allow-Headers",
+                            b"Content-Type, Authorization",
+                        )
+                        .unwrap(),
+                    );
+                let _ = request.respond(response);
+            }
+            _ => {
+                let response = Response::from_string("method not allowed")
+                    .with_status_code(STATUS_METHOD_NOT_ALLOWED)
+                    .with_header(Header::from_bytes(b"Content-Type", b"text/plain").unwrap())
+                    .with_header(Header::from_bytes(b"Access-Control-Allow-Origin", b"*").unwrap());
+                let _ = request.respond(response);
+            }
+        }
+    }
+
+    Ok(())
 }

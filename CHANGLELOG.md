@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### What's Changed
+### What's Changed v0.4.27
 
 #### Service Manager Integration & Interactive Interface
 - New menu lets you manage every HARDN service from one screen.

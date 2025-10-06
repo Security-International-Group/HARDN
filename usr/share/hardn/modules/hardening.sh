@@ -41,12 +41,11 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # ==========================================
-#  AUTHENTICATION HARDENING (PAM DISABLED BY POLICY)
+#  AUTHENTICATION HARDENING 
 # ==========================================
-HARDN_STATUS "Skipping all PAM-related authentication hardening per HARDN policy"
+HARDN_STATUS "Applying authentication hardening"
 
 apt-get install -y libpam-pwquality libpwquality-tools 2>/dev/null || log_warning "libpam-pwquality installation failed, continuing..."
-# NOT ENFORCING: All PAM modifications (pwquality, pam_* modules, common-auth edits) are intentionally disabled. --- IGNORE ---
 
 # Configure login.defs for password aging (addresses AUTH-9286)
 if [ -f /etc/login.defs ]; then
@@ -66,9 +65,7 @@ if [ -f /etc/login.defs ]; then
     HARDN_STATUS "Login.defs configured for password aging and security"
 fi
 
-# Account lockout policy via PAM is disabled by policy to prevent unexpected lockouts
 
-# PAM-based su access restriction is disabled by policy
 
 # ==========================================
 #  SSH HARDENING (Comprehensive)
@@ -670,6 +667,20 @@ fi
 modprobe -r firewire-core 2>/dev/null || true
 
 HARDN_STATUS "Firewire support disabled"
+
+# ==========================================
+# sysstat
+# ==========================================
+HARDN_STATUS "Installing sysstat..."
+if timeout 120 apt-get install -y sysstat --no-install-recommends 2>/dev/null; then
+    HARDN_STATUS "sysstat installed successfully"
+    # Configure sysstat
+    sed -i 's|ENABLED="false"|ENABLED="true"|g' /etc/default/sysstat 2>/dev/null || true
+    systemctl enable sysstat 2>/dev/null || true
+    systemctl start sysstat 2>/dev/null || true
+else
+    log_warning "sysstat installation failed, continuing..."
+fi
 
 # ==========================================
 # unattended-upgrades

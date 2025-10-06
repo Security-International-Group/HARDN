@@ -2,9 +2,11 @@ use crate::core::config::{EXIT_FAILURE, EXIT_SUCCESS, EXIT_USAGE};
 use crate::core::{HardnError, HardnResult};
 use crate::utils::{log_message, LogLevel};
 use libc::geteuid;
+use serde_json::json;
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
+use std::os::unix::fs as unix_fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -19,7 +21,17 @@ const GRAFANA_LOG_DIR: &str = "/var/log/grafana";
 const GRAFANA_PLUGINS_DIR: &str = "/var/lib/grafana/plugins";
 const GRAFANA_SERVICE_NAME: &str = "hardn-grafana";
 const GRAFANA_SYSTEMD_UNIT: &str = "/etc/systemd/system/hardn-grafana.service";
+const GRAFANA_SYSTEMD_SYMLINK: &str =
+    "/etc/systemd/system/multi-user.target.wants/hardn-grafana.service";
 const GRAFANA_PORT: u16 = 3000;
+const GRAFANA_PROVISIONING_DIR: &str = "/etc/grafana/provisioning";
+const GRAFANA_DATASOURCES_DIR: &str = "/etc/grafana/provisioning/datasources";
+const GRAFANA_DASHBOARDS_DIR: &str = "/etc/grafana/provisioning/dashboards";
+const GRAFANA_DATASOURCE_FILE: &str = "/etc/grafana/provisioning/datasources/hardn.yml";
+const GRAFANA_DASHBOARD_PROVIDER_FILE: &str = "/etc/grafana/provisioning/dashboards/hardn.yml";
+const GRAFANA_DASHBOARD_ROOT: &str = "/var/lib/grafana/dashboards";
+const HARDN_DASHBOARD_DIR: &str = "/var/lib/grafana/dashboards/hardn";
+const HARDN_DASHBOARD_FILE: &str = "/var/lib/grafana/dashboards/hardn/system-overview.json";
 
 const UNIT_TEMPLATE: &str = r"[Unit]
 Description=HARDN Grafana Visualization Service
@@ -87,13 +99,24 @@ impl GrafanaManager {
             Some(&[("DEBIAN_FRONTEND", "noninteractive")]),
         )?;
 
+        log_message(
+            LogLevel::Info,
+            "Ensuring Grafana JSON API plugin (marcusolsson-json-datasource) is available",
+        );
+        self.optional_command(
+            "/usr/sbin/grafana-cli",
+            &["plugins", "install", "marcusolsson-json-datasource"],
+        );
+
         self.configure()?;
 
         log_message(LogLevel::Info, "Enabling Grafana service");
         run_command("systemctl", &["enable", GRAFANA_SERVICE_NAME])?;
+        self.ensure_systemd_symlink()?;
 
         log_message(LogLevel::Info, "Starting Grafana service");
         run_command("systemctl", &["start", GRAFANA_SERVICE_NAME])?;
+        self.verify_service_running()?;
 
         if let Err(err) = self.configure_firewall() {
             log_message(
@@ -115,6 +138,9 @@ impl GrafanaManager {
         self.ensure_directories()?;
         self.write_config()?;
         self.deploy_systemd_unit()?;
+        self.write_datasource_provisioning()?;
+        self.write_dashboard_provisioning()?;
+        self.write_system_dashboard()?;
         run_command("systemctl", &["daemon-reload"])?;
 
         Ok(())
@@ -122,7 +148,8 @@ impl GrafanaManager {
 
     pub fn start_service(&self) -> HardnResult<()> {
         require_root("start Grafana service")?;
-        run_command("systemctl", &["start", GRAFANA_SERVICE_NAME])
+        run_command("systemctl", &["start", GRAFANA_SERVICE_NAME])?;
+        self.verify_service_running()
     }
 
     pub fn stop_service(&self) -> HardnResult<()> {
@@ -132,12 +159,14 @@ impl GrafanaManager {
 
     pub fn restart_service(&self) -> HardnResult<()> {
         require_root("restart Grafana service")?;
-        run_command("systemctl", &["restart", GRAFANA_SERVICE_NAME])
+        run_command("systemctl", &["restart", GRAFANA_SERVICE_NAME])?;
+        self.verify_service_running()
     }
 
     pub fn enable_service(&self) -> HardnResult<()> {
         require_root("enable Grafana service")?;
-        run_command("systemctl", &["enable", GRAFANA_SERVICE_NAME])
+        run_command("systemctl", &["enable", GRAFANA_SERVICE_NAME])?;
+        self.ensure_systemd_symlink()
     }
 
     pub fn disable_service(&self) -> HardnResult<()> {
@@ -240,7 +269,16 @@ impl GrafanaManager {
     }
 
     fn ensure_directories(&self) -> HardnResult<()> {
-        for path in [GRAFANA_DATA_DIR, GRAFANA_LOG_DIR, GRAFANA_PLUGINS_DIR] {
+        for path in [
+            GRAFANA_DATA_DIR,
+            GRAFANA_LOG_DIR,
+            GRAFANA_PLUGINS_DIR,
+            GRAFANA_PROVISIONING_DIR,
+            GRAFANA_DATASOURCES_DIR,
+            GRAFANA_DASHBOARDS_DIR,
+            GRAFANA_DASHBOARD_ROOT,
+            HARDN_DASHBOARD_DIR,
+        ] {
             if !Path::new(path).exists() {
                 fs::create_dir_all(path)?;
                 log_message(LogLevel::Info, &format!("Created {}", path));
@@ -250,8 +288,194 @@ impl GrafanaManager {
         self.optional_command("chown", &["-R", "grafana:grafana", GRAFANA_DATA_DIR]);
         self.optional_command("chown", &["-R", "grafana:grafana", GRAFANA_LOG_DIR]);
         self.optional_command("chown", &["-R", "grafana:grafana", GRAFANA_PLUGINS_DIR]);
+        self.optional_command("chown", &["-R", "grafana:grafana", GRAFANA_DASHBOARD_ROOT]);
 
         Ok(())
+    }
+
+    fn write_datasource_provisioning(&self) -> HardnResult<()> {
+        let bridge_url = env::var("HARDN_GRAFANA_BRIDGE_URL")
+            .unwrap_or_else(|_| "http://127.0.0.1:8686".to_string());
+
+        let contents = format!(
+            r#"apiVersion: 1
+datasources:
+  - name: HARDN Monitor
+    uid: hardn-json-api
+    type: marcusolsson-json-datasource
+    access: proxy
+    url: {bridge_url}
+    jsonData:
+      httpMethod: GET
+      timeout: 5000
+"#,
+            bridge_url = bridge_url
+        );
+
+        log_message(
+            LogLevel::Info,
+            &format!("Provisioning Grafana datasource at {}", bridge_url),
+        );
+
+        let mut file = File::create(GRAFANA_DATASOURCE_FILE)?;
+        file.write_all(contents.as_bytes())?;
+        file.sync_all()?;
+        self.optional_command("chown", &["grafana:grafana", GRAFANA_DATASOURCE_FILE]);
+
+        Ok(())
+    }
+
+    fn write_dashboard_provisioning(&self) -> HardnResult<()> {
+        let contents = format!(
+            r#"apiVersion: 1
+providers:
+  - name: 'HARDN Dashboards'
+    orgId: 1
+    folder: 'HARDN'
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    options:
+      path: {}
+"#,
+            HARDN_DASHBOARD_DIR
+        );
+
+        let mut file = File::create(GRAFANA_DASHBOARD_PROVIDER_FILE)?;
+        file.write_all(contents.as_bytes())?;
+        file.sync_all()?;
+        self.optional_command(
+            "chown",
+            &["grafana:grafana", GRAFANA_DASHBOARD_PROVIDER_FILE],
+        );
+
+        Ok(())
+    }
+
+    fn write_system_dashboard(&self) -> HardnResult<()> {
+        let dashboard = json!({
+            "id": null,
+            "uid": "hardn-system-overview",
+            "title": "HARDN System Overview",
+            "tags": ["hardn", "systemd"],
+            "timezone": "browser",
+            "schemaVersion": 38,
+            "version": 1,
+            "refresh": "30s",
+            "time": {"from": "now-6h", "to": "now"},
+            "templating": {"list": []},
+            "annotations": {"list": []},
+            "panels": [
+                {
+                    "id": 1,
+                    "type": "stat",
+                    "title": "Service Coverage",
+                    "gridPos": {"h": 4, "w": 8, "x": 0, "y": 0},
+                    "datasource": {"type": "marcusolsson-json-datasource", "uid": "hardn-json-api"},
+                    "targets": [
+                        {
+                            "refId": "A",
+                            "format": "table",
+                            "datasource": {"type": "marcusolsson-json-datasource", "uid": "hardn-json-api"},
+                            "path": "/grafana/systemd"
+                        }
+                    ],
+                    "options": {
+                        "reduceOptions": {"calcs": ["count"], "fields": "Unit", "values": false},
+                        "orientation": "horizontal",
+                        "textMode": "value"
+                    }
+                },
+                {
+                    "id": 2,
+                    "type": "table",
+                    "title": "Systemd Service Status",
+                    "gridPos": {"h": 16, "w": 24, "x": 0, "y": 4},
+                    "datasource": {"type": "marcusolsson-json-datasource", "uid": "hardn-json-api"},
+                    "targets": [
+                        {
+                            "refId": "A",
+                            "format": "table",
+                            "datasource": {"type": "marcusolsson-json-datasource", "uid": "hardn-json-api"},
+                            "path": "/grafana/systemd"
+                        }
+                    ],
+                    "fieldConfig": {
+                        "defaults": {"custom": {"align": "auto"}},
+                        "overrides": []
+                    },
+                    "options": {
+                        "showHeader": true,
+                        "footer": {
+                            "show": false,
+                            "fields": "",
+                            "reducer": ["sum"]
+                        }
+                    }
+                }
+            ]
+        });
+
+        let dashboard_json = serde_json::to_string_pretty(&dashboard).map_err(|err| {
+            HardnError::ExecutionFailed(format!(
+                "Failed to serialize Grafana dashboard definition: {}",
+                err
+            ))
+        })?;
+
+        let mut file = File::create(HARDN_DASHBOARD_FILE)?;
+        file.write_all(dashboard_json.as_bytes())?;
+        file.sync_all()?;
+        self.optional_command("chown", &["grafana:grafana", HARDN_DASHBOARD_FILE]);
+
+        Ok(())
+    }
+
+    fn ensure_systemd_symlink(&self) -> HardnResult<()> {
+        let wants_dir = Path::new("/etc/systemd/system/multi-user.target.wants");
+        if !wants_dir.exists() {
+            fs::create_dir_all(wants_dir)?;
+        }
+
+        let link_path = Path::new(GRAFANA_SYSTEMD_SYMLINK);
+        if link_path.exists() {
+            if let Ok(target) = fs::read_link(link_path) {
+                if target == Path::new(GRAFANA_SYSTEMD_UNIT) {
+                    return Ok(());
+                }
+            }
+            fs::remove_file(link_path)?;
+        }
+
+        unix_fs::symlink(GRAFANA_SYSTEMD_UNIT, link_path)?;
+        log_message(
+            LogLevel::Info,
+            &format!(
+                "Created systemd symlink {} -> {}",
+                link_path.display(),
+                GRAFANA_SYSTEMD_UNIT
+            ),
+        );
+
+        Ok(())
+    }
+
+    fn verify_service_running(&self) -> HardnResult<()> {
+        let output = Command::new("systemctl")
+            .args(&["is-active", GRAFANA_SERVICE_NAME])
+            .output()?;
+
+        if output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "active" {
+            log_message(LogLevel::Pass, "Grafana service is active and running");
+            Ok(())
+        } else {
+            Err(HardnError::ExecutionFailed(format!(
+                "Grafana service failed to start (stdout: {}, stderr: {})",
+                String::from_utf8_lossy(&output.stdout).trim(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            )))
+        }
     }
 
     fn write_config(&self) -> HardnResult<()> {

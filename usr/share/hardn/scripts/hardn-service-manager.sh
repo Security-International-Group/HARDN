@@ -770,7 +770,7 @@ manage_services_menu() {
                 ;;
             7)
                 echo -e "\n${BOLD}╔═══════════════════════════════════════════════════════════════════════════╗${NC}"
-                echo -e "${BOLD}║                        HARDN Services Logs Viewer                        ║${NC}"
+                echo -e "${BOLD}║                        HARDN Services Logs Viewer                         ║${NC}"
                 echo -e "${BOLD}╚═══════════════════════════════════════════════════════════════════════════╝${NC}"
                 echo -e "\n${CYAN}Choose log viewing mode:${NC}"
                 echo "1) Live All Services (follow mode)"
@@ -942,7 +942,7 @@ main_menu() {
         echo "9) Run Everything (Modules + Tools)"
         echo "10) Advanced Operations"
         echo "11) Grafana Visualization Service"
-        echo "g) Launch HARDN SIEM"
+        echo "12) Launch HARDN SIEM"
         echo
         echo "a) About HARDN"
         echo "v) Show Version"
@@ -1018,7 +1018,7 @@ main_menu() {
             11)
                 run_grafana_menu
                 ;;
-            g|G)
+            12)
                 launch_gui
                 ;;
             a|A)

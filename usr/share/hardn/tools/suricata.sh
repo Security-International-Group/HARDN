@@ -4,7 +4,7 @@ source "$(cd "$(dirname "$0")" && pwd)/functions.sh"
 
 # HARDN Tool: suricata.sh
 # Purpose: Install and configure Suricata IDS/IPS
-# Location: /src/tools/suricata.sh
+#### RESOURCE HEAVY ######
 
 
 

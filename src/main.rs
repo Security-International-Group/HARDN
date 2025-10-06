@@ -4,7 +4,7 @@ mod cli;
 mod core;
 mod display;
 mod execution;
-mod graphana;
+mod grafana;
 mod legion;
 mod services;
 mod utils;
@@ -2355,6 +2355,8 @@ fn interactive_service_monitor() -> i32 {
                             "legion-daemon",
                             "-u",
                             "hardn-monitor",
+                            "-u",
+                            "hardn-grafana",
                             "--since",
                             "today",
                         ])
@@ -2958,8 +2960,8 @@ fn main() {
                     EXIT_SUCCESS
                 }
                 "services" => interactive_service_monitor(),
-                "grafana" | "graphana" => {
-                    crate::graphana::print_grafana_help();
+                "grafana" => {
+                    crate::grafana::print_grafana_help();
                     EXIT_SUCCESS
                 }
                 "--run-all-modules" | "run-all-modules" => run_all_modules(),
@@ -2984,7 +2986,7 @@ fn main() {
                 "service" => manage_service(&args[2]),
                 "run-module" => handle_run_module(&module_dirs, &args[2]),
                 "run-tool" => handle_run_tool(&tool_dirs, &args[2], &module_dirs),
-                "grafana" | "graphana" => crate::graphana::handle_grafana_command(&args[2..]),
+                "grafana" => crate::grafana::handle_grafana_command(&args[2..]),
                 _ => {
                     log_message(LogLevel::Error, &format!("Unknown command: {}", args[1]));
                     print_help();
