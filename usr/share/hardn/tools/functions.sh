@@ -52,11 +52,12 @@ log_to_hardn_journal() {
 # Usage: HARDN_STATUS "level" "message"
 # Levels: info, pass, warning, error
 HARDN_STATUS() {
-    local level="$1"
-    local message="$2"
+    # Robust to nounset: allow single-argument usage as INFO message
+    local level="${1:-info}"
+    local message="${2-}"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
-    if [ -z "$message" ]; then
+    if [ -z "${message}" ]; then
         message="$level"
         level="info"
     fi
