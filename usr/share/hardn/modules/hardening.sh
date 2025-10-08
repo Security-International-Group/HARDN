@@ -1044,7 +1044,20 @@ fi
 # ==========================================
 HARDN_STATUS "Restricting compiler access..."
 
-HARDN_COMPILER_GROUP="${HARDN_COMPILER_GROUP:-root}"
+HARDN_COMPILER_GROUP="${HARDN_COMPILER_GROUP:-hardncompilers}"
+HARDN_COMPILER_POLICY_FILE="${HARDN_COMPILER_POLICY_FILE:-/etc/hardn/compiler-policy.conf}"
+HARDN_COMPILER_ALLOWED_USERS="${HARDN_COMPILER_ALLOWED_USERS:-}"
+
+if [ -z "$HARDN_COMPILER_ALLOWED_USERS" ] && [ -n "${SUDO_USER:-}" ]; then
+    HARDN_COMPILER_ALLOWED_USERS="$SUDO_USER"
+fi
+
+if [ -z "${HARDN_COMPILER_POLICY:-}" ] && [ -f "$HARDN_COMPILER_POLICY_FILE" ]; then
+    HARDN_COMPILER_POLICY="$(awk 'NF && $0 !~ /^#/ {print tolower($0); exit}' "$HARDN_COMPILER_POLICY_FILE" 2>/dev/null || echo "")"
+fi
+
+HARDN_COMPILER_POLICY="${HARDN_COMPILER_POLICY:-restrict}"
+
 compiler_candidates=(
     "/usr/bin/gcc"
     "/usr/bin/g++"
@@ -1054,15 +1067,51 @@ compiler_candidates=(
     "/usr/bin/clang++"
 )
 
-for compiler in "${compiler_candidates[@]}"; do
-    if [ -e "$compiler" ] || [ -L "$compiler" ]; then
-        target_path="$(readlink -f "$compiler" 2>/dev/null || echo "$compiler")"
-        if [ -e "$target_path" ]; then
-            chown root:"$HARDN_COMPILER_GROUP" "$target_path" 2>/dev/null || true
-            chmod 0750 "$target_path" 2>/dev/null || true
+case "$HARDN_COMPILER_POLICY" in
+    allow|permissive)
+        HARDN_STATUS "Compiler restriction policy set to '$HARDN_COMPILER_POLICY'; ensuring toolchain executables are world-accessible."
+        for compiler in "${compiler_candidates[@]}"; do
+            if [ -e "$compiler" ] || [ -L "$compiler" ]; then
+                target_path="$(readlink -f "$compiler" 2>/dev/null || echo "$compiler")"
+                if [ -e "$target_path" ]; then
+                    chown root:root "$target_path" 2>/dev/null || true
+                    chmod 0755 "$target_path" 2>/dev/null || true
+                fi
+            fi
+        done
+        ;;
+    disable|off|none)
+        HARDN_STATUS "Compiler restriction policy disabled; no permission changes applied."
+        ;;
+    *)
+        HARDN_STATUS "Compiler restriction policy set to '$HARDN_COMPILER_POLICY'; limiting compiler execution to group '$HARDN_COMPILER_GROUP'."
+
+        if ! getent group "$HARDN_COMPILER_GROUP" >/dev/null 2>&1; then
+            log_update "Creating compiler access group '$HARDN_COMPILER_GROUP'"
+            groupadd "$HARDN_COMPILER_GROUP" 2>/dev/null || true
         fi
-    fi
-done
+
+        if [ -n "$HARDN_COMPILER_ALLOWED_USERS" ]; then
+            for user in $HARDN_COMPILER_ALLOWED_USERS; do
+                if id "$user" >/dev/null 2>&1; then
+                    usermod -a -G "$HARDN_COMPILER_GROUP" "$user" 2>/dev/null || log_warning "Failed adding $user to $HARDN_COMPILER_GROUP"
+                else
+                    log_warning "Requested compiler access for unknown user '$user'"
+                fi
+            done
+        fi
+
+        for compiler in "${compiler_candidates[@]}"; do
+            if [ -e "$compiler" ] || [ -L "$compiler" ]; then
+                target_path="$(readlink -f "$compiler" 2>/dev/null || echo "$compiler")"
+                if [ -e "$target_path" ]; then
+                    chown root:"$HARDN_COMPILER_GROUP" "$target_path" 2>/dev/null || true
+                    chmod 0750 "$target_path" 2>/dev/null || true
+                fi
+            fi
+        done
+        ;;
+esac
 
 # ==========================================
 # NETWORK PARAMETER TUNING
