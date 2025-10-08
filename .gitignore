@@ -31,8 +31,6 @@ build/
 # Added by cargo
 
 /target
-<<<<<<< HEAD
-<<<<<<< HEAD
 debian/hardn/
 
 # Ignore Debian build artifacts
@@ -40,10 +38,6 @@ debian/files
 debian/*.debhelper
 debian/*.substvars
 debian/debhelper-build-stamp
-debian/hardn/
-=======
-debian/files
->>>>>>> f1b4ec9 (2025-09-27 18:19:03 update)
-=======
-debian/files
->>>>>>> f1b4ec9 (2025-09-27 18:19:03 update)
+
+# TODO file copy
+TODO-my-copy.md

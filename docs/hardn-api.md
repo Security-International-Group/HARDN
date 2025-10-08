@@ -4,7 +4,7 @@
 
 The HARDN API provides comprehensive overwatch and health monitoring for endpoints in distributed environments. It integrates with HARDN security services and the Legion monitoring daemon to enable real-time system monitoring, diagnostics, and management. This API facilitates secure access to endpoint health data, service status, and system metrics for administrators and automated monitoring systems.
 
-This server does not replace the **Grafana** endpoint system or the **Wazuh** agent, but allows an Open Source tool for those intrested in hollistic monitoring within their own tool sets. 
+This server does not replace the **Grafana** endpoint system or the **Wazuh** agent, but provides an open-source option for those interested in holistic monitoring within their own toolsets. 
 
 ## Authentication
 

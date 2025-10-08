@@ -23,10 +23,6 @@ glob = "0.3.3"
 chrono = { version = "0.4", features = ["serde"] }
 tokio = { version = "1.0", features = ["full"] }
 reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
-linfa = "0.6"
-linfa-clustering = "0.6"
-ndarray = "0.15"
-smartcore = "0.3"
 csv = "1.1"
 uuid = { version = "1.0", features = ["v4"] }
 regex = "1.5"
