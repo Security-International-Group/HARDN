@@ -130,7 +130,7 @@ build-internal:
 			rustup default stable >/dev/null 2>&1; \
 		fi; \
 	}
-	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)Forge spinning up.$(COLOR_RESET)\n'
+	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)core spinning up.$(COLOR_RESET)\n'
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Compiling HARDN core$(COLOR_RESET)\n'
 	@BUILD_STATUS=0; \
 	{ \
@@ -167,7 +167,7 @@ build-internal:
 				printf '$(COLOR_WARN)   ⚠  %s$(COLOR_RESET)\n' "$$warn"; \
 			done; \
 		else \
-			printf '$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)Build logs clean.$(COLOR_RESET)\n'; \
+			printf '$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)Build logs Sanitized.$(COLOR_RESET)\n'; \
 		fi; \
 	else \
 		cat $$TMP_LOG; \

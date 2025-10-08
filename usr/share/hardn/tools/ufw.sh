@@ -14,6 +14,7 @@ if command -v ufw >/dev/null 2>&1; then
     
     # Allow SSH (rate limited)
     ufw limit ssh/tcp comment 'SSH rate limit'
+   
     
     # Allow DNS
     ufw allow out 53 comment 'DNS'

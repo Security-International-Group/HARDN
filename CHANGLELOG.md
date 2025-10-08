@@ -43,6 +43,7 @@ All notable changes to this project will be documented in this file.
 - LEGION daemon (demo) with live security monitoring.
 - Friendlier help and troubleshooting flow.
 - One-command launch flow via `make hardn`.
+- `grafana.sh` launches a grafana protection data manager. 
 
 ### Security
 

@@ -1,4 +1,4 @@
-x#!/bin/bash
+#!/bin/bash
 
 source "$(cd "$(dirname "$0")" && pwd)/functions.sh"
 
