@@ -36,6 +36,7 @@ This document provides a consolidated view of the security controls implemented 
 - **Risk Scoring Engine**: Component-level factors recorded for anomaly, threat intel, behavioral, network, process, file integrity, system health, and temporal trends. Reports render explanations alongside numeric scores for transparency.
 - **Domain-Aware Script Scoring**: Aggregates script results per domain, elevating anomaly scores when hardening checks emit warnings/failures.
 - **Security Platform Health**: Tracks Grafana, Wazuh, and other platform services—records warnings, inactive states, and time of last alert.
+- **HIDS Resilience**: OSSEC tooling now auto-falls back to Wazuh packages when the legacy `ossec-hids` feed is unavailable and sends status logs to stderr so automation can detect failures cleanly.
 
 ### Reporting & Response
 
@@ -50,6 +51,7 @@ This document provides a consolidated view of the security controls implemented 
 - **Dangerous Defaults Check**: Re-run `hardening.sh` after OS upgrades or golden-image refreshes to reapply file permissions and logging targets.
 - **Credential Rotation**: Align password aging with organizational policy; adjust `PASS_MAX_DAYS` and `remember=5` thresholds as requirements evolve.
 - **Baseline Updates**: Schedule baseline snapshots after legitimate infrastructure changes to avoid persistent drift alerts.
+- **Console Automation Controls**: The Makefile exposes `HARDN_AUTO_CONSOLE=1` to opt in to automatic console launch after builds and `HARDN_NO_CONSOLE=1` to suppress it entirely, preventing unattended installs from hanging.
 
 ## Security Posture Summary
 
