@@ -160,12 +160,24 @@ backup_file() {
 
 # APT helpers with lock timeout
 apt_update() {
-    apt-get -o DPkg::Lock::Timeout=600 update >/dev/null 2>&1
+    mkdir -p /var/log/hardn/apt 2>/dev/null || true
+    apt-get \
+        -o DPkg::Lock::Timeout=600 \
+        -o Dpkg::Use-Pty=0 \
+        -o Dpkg::Progress-Fancy=0 \
+        -o APT::Color=0 \
+        update >/dev/null 2>&1
 }
 
 apt_install_quiet() {
     # usage: apt_install_quiet pkg1 pkg2 ...
-    apt-get -o DPkg::Lock::Timeout=600 install -y "$@"
+    mkdir -p /var/log/hardn/apt 2>/dev/null || true
+    apt-get \
+        -o DPkg::Lock::Timeout=600 \
+        -o Dpkg::Use-Pty=0 \
+        -o Dpkg::Progress-Fancy=0 \
+        -o APT::Color=0 \
+        install -y "$@"
 }
 
 # Install package with error handling

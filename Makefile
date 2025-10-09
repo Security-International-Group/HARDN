@@ -223,13 +223,8 @@ hardn-internal:
 		printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)No hardening module found; skipping shell-based hardening phase.$(COLOR_RESET)\n'; \
 	fi
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Spawning the command console$(COLOR_RESET)\n'
-	@if [ "$$HARDN_NO_AUTO_GUI" = "1" ]; then \
-		if [ -e /dev/tty ] && [ -w /dev/tty ]; then \
-			hardn-service-manager < /dev/tty > /dev/tty 2>&1; \
-		else \
-			printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)No TTY detected; run sudo hardn-service-manager manually.$(COLOR_RESET)\n'; \
-		fi; \
-	else \
+	# Optionally launch GUI (unless disabled)
+	@if [ "$$HARDN_NO_AUTO_GUI" != "1" ]; then \
 		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Trying to pop the HARDN GUI (if present).$(COLOR_RESET)\n'; \
 		if command -v hardn-gui >/dev/null 2>&1; then \
 			if [ -n "$$SUDO_USER" ]; then \
@@ -238,10 +233,19 @@ hardn-internal:
 				nohup hardn-gui >/dev/null 2>&1 & \
 			fi; \
 		fi; \
-		if [ -e /dev/tty ] && [ -w /dev/tty ]; then \
-			hardn-service-manager < /dev/tty > /dev/tty 2>&1; \
+	fi
+	# Console is opt-in: HARDN_AUTO_CONSOLE=1; can be suppressed with HARDN_NO_CONSOLE=1
+	@if [ "$$HARDN_NO_CONSOLE" = "1" ]; then \
+		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Console launch suppressed (HARDN_NO_CONSOLE=1).$(COLOR_RESET)\n'; \
+	else \
+		if [ "$$HARDN_AUTO_CONSOLE" = "1" ]; then \
+			if [ -e /dev/tty ] && [ -w /dev/tty ]; then \
+				hardn-service-manager < /dev/tty > /dev/tty 2>&1; \
+			else \
+				printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)No TTY detected; run sudo hardn-service-manager manually.$(COLOR_RESET)\n'; \
+			fi; \
 		else \
-			printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)No TTY detected; run sudo hardn-service-manager manually.$(COLOR_RESET)\n'; \
+			printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Console not auto-launched. Run: sudo hardn-service-manager$(COLOR_RESET)\n'; \
 		fi; \
 	fi
 	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)HARDN deployment complete.$(COLOR_RESET)\n'

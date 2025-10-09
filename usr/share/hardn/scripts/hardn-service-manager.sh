@@ -8,6 +8,8 @@ set -euo pipefail
 
 # Set up signal handlers
 trap 'echo -e "\n\nInterrupted. Exiting..."; exit 130' INT TERM
+# Ensure terminal is restored on any exit
+trap 'stty sane; tput cnorm 2>/dev/null || true' EXIT
 
 # Color codes for better UI
 RED='\033[0;31m'
