@@ -148,7 +148,7 @@ generate_concise_report() {
 
     if ! command -v rg >/dev/null 2>&1; then
         HARDN_STATUS "warning" "ripgrep not available; attempting installation for concise reports"
-        if apt-get install -y ripgrep >/dev/null 2>&1; then
+if install_package ripgrep; then
             HARDN_STATUS "pass" "ripgrep installed for Lynis summaries"
         else
             HARDN_STATUS "warning" "Could not install ripgrep; concise report generation skipped"

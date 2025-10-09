@@ -33,8 +33,8 @@ ensure_grafana_repo() {
         HARDN_STATUS "warning" "curl or gpg not available; skipping repo key refresh"
     fi
 
-    echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" > /etc/apt/sources.list.d/grafana.list
-    apt-get update -y >/dev/null 2>&1 || true
+echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" > /etc/apt/sources.list.d/grafana.list
+    apt_update || true
 }
 
 HARDN_STATUS "info" "Ensuring Grafana package is installed"

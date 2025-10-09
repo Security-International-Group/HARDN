@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Ensure non-interactive APT operations for tools
+export DEBIAN_FRONTEND=noninteractive
+
 # HARDN Common Functions
 # This file provides common functions used across HARDN security tools
 
@@ -155,6 +158,16 @@ backup_file() {
     fi
 }
 
+# APT helpers with lock timeout
+apt_update() {
+    apt-get -o DPkg::Lock::Timeout=600 update >/dev/null 2>&1
+}
+
+apt_install_quiet() {
+    # usage: apt_install_quiet pkg1 pkg2 ...
+    apt-get -o DPkg::Lock::Timeout=600 install -y "$@"
+}
+
 # Install package with error handling
 install_package() {
     local package="$1"
@@ -165,7 +178,7 @@ install_package() {
     fi
     
     HARDN_STATUS "info" "Installing $package..."
-    if apt-get update >/dev/null 2>&1 && apt-get install -y "$package"; then
+    if apt_update && apt_install_quiet "$package"; then
         HARDN_STATUS "pass" "$package installed successfully"
         return 0
     else
@@ -241,6 +254,8 @@ export -f is_service_active
 export -f service_exists
 export -f check_root
 export -f backup_file
+export -f apt_update
+export -f apt_install_quiet
 export -f install_package
 export -f enable_service
 export -f command_exists

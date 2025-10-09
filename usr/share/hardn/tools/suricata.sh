@@ -1,12 +1,11 @@
 #!/bin/bash
+set -euo pipefail
 
 source "$(cd "$(dirname "$0")" && pwd)/functions.sh"
 
 # HARDN Tool: suricata.sh
 # Purpose: Install and configure Suricata IDS/IPS
 #### RESOURCE HEAVY ######
-
-
 
 check_root
 log_tool_execution "suricata.sh"
@@ -79,104 +78,117 @@ fix_suricata_configuration() {
 
 HARDN_STATUS "info" "Setting up Suricata IDS/IPS..."
 
+# Helper to check if a package has a repository candidate
+has_package_candidate() {
+    local pkg="$1"
+    local cand
+    cand=$(apt-cache policy "$pkg" 2>/dev/null | awk '/Candidate:/ {print $2}')
+    [ -n "${cand:-}" ] && [ "$cand" != "(none)" ]
+}
+
 # Try to install Suricata from package first
 if ! is_package_installed suricata; then
     HARDN_STATUS "info" "Installing Suricata from repository..."
     if install_package suricata; then
         HARDN_STATUS "pass" "Suricata installed from repository"
     else
-        HARDN_STATUS "warning" "Repository installation failed, attempting source installation..."
+        # Only attempt source build if there is no repo candidate
+        if has_package_candidate suricata; then
+            HARDN_STATUS "warning" "APT busy or failed; repository candidate exists, skipping source build"
+        else
+            HARDN_STATUS "warning" "Suricata not available in repository; attempting source installation..."
 
-        # Install build dependencies
-        HARDN_STATUS "info" "Installing Suricata build dependencies..."
-        local build_deps=(
-            build-essential libpcap-dev libnet1-dev libyaml-0-2 libyaml-dev
-            zlib1g zlib1g-dev libcap-ng-dev libmagic-dev libjansson-dev
-            libnss3-dev liblz4-dev libtool libnfnetlink-dev libevent-dev
-            pkg-config libhiredis-dev python3 python3-yaml python3-setuptools
-            python3-pip python3-dev rustc cargo wget
-        )
+            # Install build dependencies
+            HARDN_STATUS "info" "Installing Suricata build dependencies..."
+            build_deps=(
+                build-essential libpcap-dev libnet1-dev libyaml-0-2 libyaml-dev \
+                zlib1g zlib1g-dev libcap-ng-dev libmagic-dev libjansson-dev \
+                libnss3-dev liblz4-dev libtool libnfnetlink-dev libevent-dev \
+                pkg-config libhiredis-dev python3 python3-yaml python3-setuptools \
+                python3-pip python3-dev rustc cargo wget
+            )
 
-        apt-get update
-        for pkg in "${build_deps[@]}"; do
-            if ! install_package "$pkg"; then
-                HARDN_STATUS "warning" "Failed to install build dependency: $pkg"
-            fi
-        done
+            apt_update || true
+            for pkg in "${build_deps[@]}"; do
+                if ! install_package "$pkg"; then
+                    HARDN_STATUS "warning" "Failed to install build dependency: $pkg"
+                fi
+            done
 
-        local suricata_version="7.0.0"
-        local download_url="https://www.suricata-ids.org/download/releases/suricata-${suricata_version}.tar.gz"
-        local download_dir="/tmp/suricata_install"
-        local tar_file="$download_dir/suricata-${suricata_version}.tar.gz"
-        local extracted_dir="suricata-${suricata_version}"
+            suricata_version="7.0.0"
+            download_url="https://www.suricata-ids.org/download/releases/suricata-${suricata_version}.tar.gz"
+            download_dir="/tmp/suricata_install"
+            tar_file="$download_dir/suricata-${suricata_version}.tar.gz"
+            extracted_dir="suricata-${suricata_version}"
 
-        mkdir -p "$download_dir"
-        cd "$download_dir" || {
-            HARDN_STATUS "error" "Cannot change directory to $download_dir"
-            exit 1
-        }
+            mkdir -p "$download_dir"
+            cd "$download_dir" || {
+                HARDN_STATUS "error" "Cannot change directory to $download_dir"
+                exit 1
+            }
 
-        HARDN_STATUS "info" "Downloading Suricata source..."
-        if wget -q "$download_url" -O "$tar_file"; then
-            HARDN_STATUS "pass" "Download successful"
+            HARDN_STATUS "info" "Downloading Suricata source..."
+            if wget -q "$download_url" -O "$tar_file"; then
+                HARDN_STATUS "pass" "Download successful"
 
-            HARDN_STATUS "info" "Extracting source..."
-            if tar -xzf "$tar_file" -C "$download_dir"; then
-                HARDN_STATUS "pass" "Extraction successful"
+                HARDN_STATUS "info" "Extracting source..."
+                if tar -xzf "$tar_file" -C "$download_dir"; then
+                    HARDN_STATUS "pass" "Extraction successful"
 
-                if [[ -d "$download_dir/$extracted_dir" ]]; then
-                    cd "$download_dir/$extracted_dir" || {
-                        HARDN_STATUS "error" "Cannot change directory to extracted folder"
-                        exit 1
-                    }
+                    if [[ -d "$download_dir/$extracted_dir" ]]; then
+                        cd "$download_dir/$extracted_dir" || {
+                            HARDN_STATUS "error" "Cannot change directory to extracted folder"
+                            exit 1
+                        }
 
-                    HARDN_STATUS "info" "Configuring Suricata build..."
-                    if ./configure \
-                        --prefix=/usr \
-                        --sysconfdir=/etc \
-                        --localstatedir=/var \
-                        --disable-gccmarch-native \
-                        --enable-lua \
-                        --enable-geoip; then
-                        HARDN_STATUS "pass" "Configure successful"
+                        HARDN_STATUS "info" "Configuring Suricata build..."
+                        if ./configure \
+                            --prefix=/usr \
+                            --sysconfdir=/etc \
+                            --localstatedir=/var \
+                            --disable-gccmarch-native \
+                            --enable-lua \
+                            --enable-geoip; then
+                            HARDN_STATUS "pass" "Configure successful"
 
-                        HARDN_STATUS "info" "Building Suricata..."
-                        if make -j"$(nproc)"; then
-                            HARDN_STATUS "pass" "Build successful"
+                            HARDN_STATUS "info" "Building Suricata..."
+                            if make -j"$(nproc)"; then
+                                HARDN_STATUS "pass" "Build successful"
 
-                            HARDN_STATUS "info" "Installing Suricata..."
-                            if make install; then
-                                HARDN_STATUS "pass" "Suricata installed from source"
-                                ldconfig || true
+                                HARDN_STATUS "info" "Installing Suricata..."
+                                if make install; then
+                                    HARDN_STATUS "pass" "Suricata installed from source"
+                                    ldconfig || true
+                                else
+                                    HARDN_STATUS "error" "Installation failed"
+                                    exit 1
+                                fi
                             else
-                                HARDN_STATUS "error" "Installation failed"
+                                HARDN_STATUS "error" "Build failed"
                                 exit 1
                             fi
                         else
-                            HARDN_STATUS "error" "Build failed"
+                            HARDN_STATUS "error" "Configure failed"
                             exit 1
                         fi
                     else
-                        HARDN_STATUS "error" "Configure failed"
+                        HARDN_STATUS "error" "Extracted directory not found"
                         exit 1
                     fi
                 else
-                    HARDN_STATUS "error" "Extracted directory not found"
+                    HARDN_STATUS "error" "Extraction failed"
                     exit 1
                 fi
             else
-                HARDN_STATUS "error" "Extraction failed"
+                HARDN_STATUS "error" "Download failed"
                 exit 1
             fi
-        else
-            HARDN_STATUS "error" "Download failed"
-            exit 1
-        fi
 
-        # Cleanup
-        cd /
-        rm -rf "$download_dir"
-        HARDN_STATUS "info" "Source installation cleanup completed"
+            # Cleanup
+            cd /
+            rm -rf "$download_dir"
+            HARDN_STATUS "info" "Source installation cleanup completed"
+        fi
     fi
 else
     HARDN_STATUS "pass" "Suricata package already installed"
