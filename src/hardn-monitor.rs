@@ -8,7 +8,6 @@ use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
-
 fn log_message(level: &str, message: &str) {
     let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S");
     let log_entry = format!("[{}] [{}] {}\n", timestamp, level, message);
@@ -580,4 +579,3 @@ fn main() {
         thread::sleep(Duration::from_secs(30));
     }
 }
-

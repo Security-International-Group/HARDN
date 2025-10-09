@@ -361,7 +361,37 @@ run_legion_menu() {
                 echo -e "${YELLOW}WARNING: Automated response may take security actions automatically!${NC}"
                 read -p "Are you sure? [y/N]: " confirm || { echo; continue; }
                 if [[ "$confirm" =~ ^[Yy]$ ]]; then
-                    "$HARDN_BIN" legion --response-enabled --verbose
+                    echo -e "\nPress Ctrl+C to stop the session and return to this menu."
+                    local previous_int_trap previous_term_trap legion_interrupted session_status
+                    previous_int_trap=$(trap -p INT || true)
+                    previous_term_trap=$(trap -p TERM || true)
+                    legion_interrupted=0
+                    trap 'legion_interrupted=1' INT
+                    set +e
+                    (
+                        trap - INT TERM
+                        "$HARDN_BIN" legion --response-enabled --verbose
+                    )
+                    session_status=$?
+                    set -e
+                    if [[ -n "$previous_int_trap" ]]; then
+                        eval "$previous_int_trap"
+                    else
+                        trap - INT
+                    fi
+                    if [[ -n "$previous_term_trap" ]]; then
+                        eval "$previous_term_trap"
+                    else
+                        trap - TERM
+                    fi
+                    if [[ $session_status -eq 130 ]]; then
+                        legion_interrupted=1
+                    fi
+                    if [[ $legion_interrupted -eq 1 ]]; then
+                        echo -e "\nLEGION automated response session interrupted."
+                    else
+                        echo -e "\nLEGION automated response session ended."
+                    fi
                 fi
                 read -p $'\nPress Enter to continue...' || true
                 ;;

@@ -2871,6 +2871,12 @@ fn run_legion(args: &[String]) -> i32 {
     // Set up environment for legion
     std::env::set_var("RUST_BACKTRACE", "1");
 
+    // Ensure LEGION banner and colorized output are ready before checks begin
+    crate::legion::functions::enable_color(
+        atty::is(atty::Stream::Stdout) && std::env::var_os("NO_COLOR").is_none(),
+    );
+    crate::legion::banner::display_banner();
+
     // Create a tokio runtime for async legion execution
     let rt = tokio::runtime::Runtime::new().unwrap();
 

@@ -7,3 +7,8 @@
 - ensure dependacies are loaded
 - ensure we are not bloating Debian
 - Ensure system runtime is calm and not jittery
+
+
+## Permissions
+- I changed the compiler permssisons to a group becasue cargo couldnt build with the lynis rules. 
+- Ensure hardn grup policy is correct for user and services integration. 
