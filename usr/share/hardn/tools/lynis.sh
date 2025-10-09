@@ -148,7 +148,7 @@ generate_concise_report() {
 
     if ! command -v rg >/dev/null 2>&1; then
         HARDN_STATUS "warning" "ripgrep not available; attempting installation for concise reports"
-        if apt-get install -y ripgrep >/dev/null 2>&1; then
+if install_package ripgrep; then
             HARDN_STATUS "pass" "ripgrep installed for Lynis summaries"
         else
             HARDN_STATUS "warning" "Could not install ripgrep; concise report generation skipped"
@@ -168,18 +168,19 @@ generate_concise_report() {
 summarize_concise_report() {
     local concise_report="$1"
 
+    # Be tolerant of no matches under set -euo pipefail
     local hardening_index
-    hardening_index=$(grep -i "Hardening index" "$concise_report" | head -1)
+    hardening_index=$(grep -i -m1 "Hardening index" "$concise_report" || true)
     local unsafe_count
-    unsafe_count=$(grep -c "UNSAFE" "$concise_report")
+    unsafe_count=$(grep -ci "UNSAFE" "$concise_report" || echo 0)
     local not_found_count
-    not_found_count=$(grep -c "NOT FOUND" "$concise_report")
+    not_found_count=$(grep -ci "NOT FOUND" "$concise_report" || echo 0)
     local weak_count
-    weak_count=$(grep -c "WEAK" "$concise_report")
+    weak_count=$(grep -ci "WEAK" "$concise_report" || echo 0)
     local disabled_count
-    disabled_count=$(grep -c "DISABLED" "$concise_report")
+    disabled_count=$(grep -ci "DISABLED" "$concise_report" || echo 0)
     local suggestions_count
-    suggestions_count=$(grep -c "^Suggestion:" "$concise_report")
+    suggestions_count=$(grep -ci "^Suggestion:" "$concise_report" || echo 0)
 
     [ -n "$hardening_index" ] && HARDN_STATUS "info" "$hardening_index"
     HARDN_STATUS "info" "UNSAFE findings: $unsafe_count"

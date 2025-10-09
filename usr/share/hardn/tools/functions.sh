@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Ensure non-interactive APT operations for tools
+export DEBIAN_FRONTEND=noninteractive
+
 # HARDN Common Functions
 # This file provides common functions used across HARDN security tools
 
@@ -52,11 +55,12 @@ log_to_hardn_journal() {
 # Usage: HARDN_STATUS "level" "message"
 # Levels: info, pass, warning, error
 HARDN_STATUS() {
-    local level="$1"
-    local message="$2"
+    # Robust to nounset: allow single-argument usage as INFO message
+    local level="${1:-info}"
+    local message="${2-}"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
-    if [ -z "$message" ]; then
+    if [ -z "${message}" ]; then
         message="$level"
         level="info"
     fi
@@ -154,6 +158,28 @@ backup_file() {
     fi
 }
 
+# APT helpers with lock timeout
+apt_update() {
+    mkdir -p /var/log/hardn/apt 2>/dev/null || true
+    apt-get \
+        -o DPkg::Lock::Timeout=600 \
+        -o Dpkg::Use-Pty=0 \
+        -o Dpkg::Progress-Fancy=0 \
+        -o APT::Color=0 \
+        update >/dev/null 2>&1
+}
+
+apt_install_quiet() {
+    # usage: apt_install_quiet pkg1 pkg2 ...
+    mkdir -p /var/log/hardn/apt 2>/dev/null || true
+    apt-get \
+        -o DPkg::Lock::Timeout=600 \
+        -o Dpkg::Use-Pty=0 \
+        -o Dpkg::Progress-Fancy=0 \
+        -o APT::Color=0 \
+        install -y "$@"
+}
+
 # Install package with error handling
 install_package() {
     local package="$1"
@@ -164,7 +190,7 @@ install_package() {
     fi
     
     HARDN_STATUS "info" "Installing $package..."
-    if apt-get update >/dev/null 2>&1 && apt-get install -y "$package"; then
+    if apt_update && apt_install_quiet "$package"; then
         HARDN_STATUS "pass" "$package installed successfully"
         return 0
     else
@@ -240,6 +266,8 @@ export -f is_service_active
 export -f service_exists
 export -f check_root
 export -f backup_file
+export -f apt_update
+export -f apt_install_quiet
 export -f install_package
 export -f enable_service
 export -f command_exists

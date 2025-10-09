@@ -3,6 +3,8 @@ Description=HARDN Centralized Monitoring and Logging Service
 After=network.target
 Wants=network.target
 Before=hardn.service hardn-api.service legion-daemon.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -15,6 +17,9 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=hardn-monitor
+CPUAccounting=true
+IOAccounting=true
+MemoryAccounting=true
 
 # Security settings
 NoNewPrivileges=yes

@@ -11,6 +11,7 @@ use super::framework::{
 use super::framework_pipeline;
 use crate::core::config::{DEFAULT_LIB_DIR, DEFAULT_LOG_DIR};
 use crate::core::cron::CronOrchestrator;
+use crate::legion::functions;
 use crate::legion::modules::auth::auth as auth_mod;
 use crate::legion::modules::behavioral::{
     BehaviorClassification, BehavioralAnalyzer, ProcessBehavior,
@@ -29,8 +30,8 @@ use crate::legion::modules::permissions::permissions as permissions_mod;
 use crate::legion::modules::processes::processes as processes_mod;
 use crate::legion::modules::response::{Anomaly, ResponseAction, ResponseEngine};
 use crate::legion::modules::risk_scoring::{
-    RiskScore, RiskScoringManager, ScriptResult, ScriptStatus, SecurityPlatformStatus, SystemState,
-    ThreatIndicator as RiskThreatIndicator,
+    BaselineDriftSummary, RiskScore, RiskScoringManager, ScriptResult, ScriptStatus,
+    SecurityPlatformStatus, SystemState, ThreatIndicator as RiskThreatIndicator,
 };
 use crate::legion::modules::services::services as services_mod;
 use crate::legion::modules::threat_intel::{SecurityIndicator, Severity, ThreatIntelManager};
@@ -39,12 +40,13 @@ use crate::legion::modules::vulnerabilities::vulnerabilities as vulnerabilities_
 use chrono::{DateTime, Utc};
 use clap::{Arg, Command as ClapCommand};
 use comfy_table::{presets::UTF8_FULL_CONDENSED, Attribute, Cell, Color, Table};
+use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::{mpsc, RwLock};
@@ -88,6 +90,42 @@ const LEGION_MONITOR_STATE_PATH: &str = "/var/lib/hardn/monitor/legion_summary.j
 const CRON_SUMMARY_FILENAME: &str = "cron_summary.json";
 const CRON_LOG_SUBDIR: &str = "cron";
 
+const ENHANCED_LOOP_INTERVAL_SECS: u64 = 300;
+const FULL_SCAN_INTERVAL_CYCLES: u64 = 6;
+const PROCESS_SCAN_INTERVAL_SECS: u64 = 120;
+const MAX_PROCESS_ALERTS: usize = 12;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum ScanProfile {
+    Full,
+    Quick,
+}
+
+impl ScanProfile {
+    fn label(&self) -> &'static str {
+        match self {
+            ScanProfile::Full => "full",
+            ScanProfile::Quick => "quick",
+        }
+    }
+
+    fn is_full(&self) -> bool {
+        matches!(self, ScanProfile::Full)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ProcessAlertRecord {
+    pid: u32,
+    action: String,
+    details: String,
+    first_seen: DateTime<Utc>,
+    last_seen: DateTime<Utc>,
+    occurrences: u32,
+}
+
+static PROCESS_ALERTS: Lazy<Mutex<Vec<ProcessAlertRecord>>> = Lazy::new(|| Mutex::new(Vec::new()));
+
 #[derive(Debug, Serialize)]
 struct LegionMonitorSnapshot {
     timestamp: DateTime<Utc>,
@@ -95,6 +133,7 @@ struct LegionMonitorSnapshot {
     risk_level: String,
     confidence: f64,
     risk_components: BTreeMap<String, f64>,
+    component_factors: BTreeMap<String, Vec<String>>,
     metrics: LegionMonitorMetrics,
     threat_indicator_count: usize,
     threat_indicator_breakdown: BTreeMap<String, usize>,
@@ -102,6 +141,7 @@ struct LegionMonitorSnapshot {
     script_alerts: Vec<String>,
     baseline: Option<LegionBaselineSummary>,
     platform_health: Vec<LegionPlatformHealth>,
+    baseline_drift: Option<LegionBaselineDriftSnapshot>,
 }
 
 #[derive(Debug, Serialize)]
@@ -132,6 +172,14 @@ struct LegionPlatformHealth {
     last_warning: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+struct LegionBaselineDriftSnapshot {
+    new_processes: Vec<String>,
+    missing_processes: Vec<String>,
+    new_listening_ports: Vec<String>,
+    missing_listening_ports: Vec<String>,
+}
+
 impl LegionMonitorSnapshot {
     fn new(
         risk_score: &RiskScore,
@@ -143,6 +191,11 @@ impl LegionMonitorSnapshot {
         let mut risk_components = BTreeMap::new();
         for (component, value) in &risk_score.components {
             risk_components.insert(component.clone(), sanitize_metric(*value));
+        }
+
+        let mut component_factors = BTreeMap::new();
+        for (component, details) in &risk_score.component_factors {
+            component_factors.insert(component.clone(), details.clone());
         }
 
         let mut threat_indicator_breakdown = BTreeMap::new();
@@ -183,12 +236,24 @@ impl LegionMonitorSnapshot {
             })
             .collect();
 
+        let baseline_drift =
+            system_state
+                .baseline_drift
+                .as_ref()
+                .map(|drift| LegionBaselineDriftSnapshot {
+                    new_processes: drift.new_processes.clone(),
+                    missing_processes: drift.missing_processes.clone(),
+                    new_listening_ports: drift.new_listening_ports.clone(),
+                    missing_listening_ports: drift.missing_listening_ports.clone(),
+                });
+
         Self {
             timestamp: risk_score.timestamp.clone(),
             risk_score: sanitize_metric(risk_score.overall_score),
             risk_level: risk_score.risk_level.to_string(),
             confidence: sanitize_metric(risk_score.confidence),
             risk_components,
+            component_factors,
             metrics,
             threat_indicator_count: system_state.threat_indicators.len(),
             threat_indicator_breakdown,
@@ -196,6 +261,7 @@ impl LegionMonitorSnapshot {
             script_alerts,
             baseline: baseline_summary,
             platform_health,
+            baseline_drift,
         }
     }
 }
@@ -220,6 +286,256 @@ fn sanitize_metric(value: f64) -> f64 {
     } else {
         0.0
     }
+}
+
+fn normalize_key(text: &str) -> String {
+    text.trim().to_lowercase()
+}
+
+fn tidy_text(text: &str, max_len: usize) -> String {
+    let trimmed = text.trim();
+    if trimmed.chars().count() <= max_len {
+        return trimmed.to_string();
+    }
+
+    let mut shortened = String::new();
+    for (idx, ch) in trimmed.chars().enumerate() {
+        if idx + 1 >= max_len {
+            shortened.push('…');
+            break;
+        }
+        shortened.push(ch);
+    }
+    shortened
+}
+
+fn classify_contributing_factor(factor: &str) -> (&'static str, String) {
+    let normalized = factor.to_lowercase();
+    let mut category = "General";
+
+    if normalized.contains("baseline")
+        || normalized.contains("not in baseline")
+        || normalized.contains("drift")
+    {
+        category = "Baseline Drift";
+    } else if normalized.contains("suid") || normalized.contains("privilege") {
+        category = "Privilege Exposure";
+    } else if normalized.contains("wazuh") || normalized.contains("grafana") {
+        category = "Security Platform";
+    } else if normalized.contains("docker") || normalized.contains("podman") {
+        category = "Platform Coverage";
+    } else if normalized.contains("process") {
+        category = "Process Monitoring";
+    } else if normalized.contains("listening port") || normalized.contains("network") {
+        category = "Network Exposure";
+    }
+
+    let mut summary = factor.trim().to_string();
+
+    if normalized.contains("has suid/sgid bits") {
+        if let Some(path) = factor.split(" has ").next() {
+            summary = format!("SUID/SGID bit set on {}", path.trim());
+        }
+        category = "Privilege Exposure";
+    } else if normalized.starts_with("found ") && normalized.contains("suid/sgid") {
+        category = "Privilege Exposure";
+    } else if category == "Baseline Drift" {
+        if let Some((prefix, _)) = factor.split_once(':') {
+            summary = format!("{} (see Baseline Drift)", prefix.trim());
+        } else {
+            summary = "Baseline drift detected (see Baseline Drift)".to_string();
+        }
+    } else if normalized.contains("not installed") {
+        category = "Platform Coverage";
+    } else if normalized.contains("warning") || normalized.contains("not active") {
+        if normalized.contains("wazuh") || normalized.contains("grafana") {
+            category = "Security Platform";
+        }
+    }
+
+    (category, tidy_text(&summary, 140))
+}
+
+fn classify_detected_issue(issue: &str) -> (&'static str, Color) {
+    let normalized = issue.to_lowercase();
+
+    if normalized.contains("critical")
+        || normalized.contains("not active")
+        || normalized.contains("baseline")
+        || normalized.contains("suid")
+        || normalized.contains("failed")
+    {
+        ("High", Color::Red)
+    } else if normalized.contains("warning") || normalized.contains("not installed") {
+        ("Medium", Color::Yellow)
+    } else {
+        ("Info", Color::Blue)
+    }
+}
+
+fn format_multiline_preview(items: &[String], limit: usize, max_len: usize) -> String {
+    if items.is_empty() {
+        return "-".to_string();
+    }
+
+    let limit = limit.max(1);
+    let mut seen = HashSet::new();
+    let mut unique = Vec::new();
+    for item in items {
+        let key = normalize_key(item);
+        if seen.insert(key) {
+            unique.push(item.clone());
+        }
+    }
+
+    let mut preview = Vec::new();
+    for entry in unique.into_iter().take(limit) {
+        preview.push(format!("• {}", tidy_text(&entry, max_len)));
+    }
+
+    if items.len() > limit {
+        preview.push(format!("• +{} more", items.len() - limit));
+    }
+
+    preview.join("\n")
+}
+
+fn collect_current_process_commands() -> io::Result<HashMap<String, String>> {
+    let mut processes = HashMap::new();
+
+    for entry in fs::read_dir("/proc")? {
+        let entry = match entry {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let file_name = entry.file_name();
+        let pid: u32 = match file_name.to_string_lossy().parse() {
+            Ok(pid) => pid,
+            Err(_) => continue,
+        };
+
+        let cmdline_path = format!("/proc/{}/cmdline", pid);
+        let mut descriptor = fs::read_to_string(&cmdline_path)
+            .unwrap_or_default()
+            .replace('\0', " ")
+            .trim()
+            .to_string();
+
+        if descriptor.is_empty() {
+            let comm_path = format!("/proc/{}/comm", pid);
+            if let Ok(comm) = fs::read_to_string(&comm_path) {
+                descriptor = comm.trim().to_string();
+            }
+        }
+
+        if descriptor.is_empty() {
+            let status_path = format!("/proc/{}/status", pid);
+            if let Ok(status) = fs::read_to_string(&status_path) {
+                if let Some(name) = status
+                    .lines()
+                    .find(|line| line.starts_with("Name:"))
+                    .and_then(|line| line.split_whitespace().nth(1))
+                {
+                    descriptor = name.to_string();
+                }
+            }
+        }
+
+        if descriptor.is_empty() {
+            continue;
+        }
+
+        let key = normalize_key(&descriptor);
+        if key.is_empty() {
+            continue;
+        }
+
+        processes
+            .entry(key)
+            .or_insert_with(|| tidy_text(&descriptor, 160));
+    }
+
+    Ok(processes)
+}
+
+fn collect_current_listening_ports() -> io::Result<HashMap<String, String>> {
+    let mut ports = HashMap::new();
+
+    let ss_output = Command::new("ss").args(["-H", "-tulnp"]).output();
+    let output = match ss_output {
+        Ok(out) if out.status.success() => Some(out),
+        _ => match Command::new("netstat").args(["-tulnp"]).output() {
+            Ok(out) if out.status.success() => Some(out),
+            _ => None,
+        },
+    };
+
+    if let Some(output) = output {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for raw_line in stdout.lines() {
+            let line = raw_line.trim();
+            if line.is_empty() || line.starts_with("Proto") || line.starts_with("Netid") {
+                continue;
+            }
+
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 4 {
+                continue;
+            }
+
+            let looks_like_ss = parts
+                .get(1)
+                .map(|column| column.chars().all(|c| c.is_alphabetic()))
+                .unwrap_or(false);
+
+            let proto = parts.get(0).copied().unwrap_or("");
+            let local_addr = if looks_like_ss {
+                parts.get(4).copied().unwrap_or("")
+            } else {
+                parts.get(3).copied().unwrap_or("")
+            };
+
+            if local_addr.is_empty() {
+                continue;
+            }
+
+            let (_, port_segment) = match local_addr.rsplit_once(':') {
+                Some(value) => value,
+                None => continue,
+            };
+
+            let port_str = port_segment
+                .trim_matches(|c| c == '*' || c == ']' || c == '[')
+                .trim();
+
+            if port_str.is_empty() {
+                continue;
+            }
+
+            let port = match port_str.parse::<u16>() {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+
+            let key = format!("{}:{}", proto.to_lowercase(), port);
+
+            let process_hint = parts
+                .get(6)
+                .map(|value| (*value).to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "-".to_string());
+
+            let display = if process_hint == "-" {
+                format!("{} {}", proto.to_uppercase(), local_addr)
+            } else {
+                format!("{} {} {}", proto.to_uppercase(), local_addr, process_hint)
+            };
+
+            ports.entry(key).or_insert_with(|| tidy_text(&display, 160));
+        }
+    }
+
+    Ok(ports)
 }
 
 #[derive(Debug, Clone)]
@@ -359,6 +675,7 @@ pub struct Legion {
     predictive_enabled: bool,
     response_enabled: bool,
     detected_issues: Vec<String>,
+    loop_iteration: u64,
     // Active monitoring fields
     event_sender: Option<mpsc::UnboundedSender<SecurityEvent>>,
     monitoring_active: bool,
@@ -381,7 +698,7 @@ impl Legion {
             Ok(_) => ScriptStatus::Success,
             Err(err) => {
                 let message = err.to_string();
-                safe_println!("  ✗ {}::{} failed: {}", domain, name, message);
+                functions::error(format!("{}::{} failed: {}", domain, name, message));
                 details = Some(message);
                 ScriptStatus::Failed
             }
@@ -412,7 +729,7 @@ impl Legion {
             Ok(_) => ScriptStatus::Success,
             Err(err) => {
                 let message = err.to_string();
-                safe_println!("  ✗ {}::{} failed: {}", domain, name, message);
+                functions::error(format!("{}::{} failed: {}", domain, name, message));
                 details = Some(message);
                 ScriptStatus::Failed
             }
@@ -473,6 +790,7 @@ impl Legion {
             predictive_enabled,
             response_enabled,
             detected_issues: Vec::new(),
+            loop_iteration: 0,
             event_sender: None,
             monitoring_active: false,
         })
@@ -482,36 +800,40 @@ impl Legion {
         use std::{thread, time::Duration};
 
         if self.daemon {
-            safe_println!("LEGION - Advanced Daemon Mode");
-            safe_println!("============================");
-            safe_println!("Running as background monitoring daemon with enhanced capabilities...");
-            safe_println!("Press Ctrl+C to stop");
-            safe_println!();
+            functions::heading("LEGION - Advanced Daemon Mode");
+            functions::detail(
+                "Running as background monitoring daemon with enhanced capabilities...",
+            );
+            functions::detail("Press Ctrl+C to stop");
         } else {
-            safe_println!("LEGION - Advanced Heuristics Monitoring Script");
-            safe_println!("===============================================");
+            functions::heading("LEGION - Advanced Heuristics Monitoring Script");
+            functions::detail(
+                "Run once to perform a full security assessment with enriched heuristics.",
+            );
         }
+        functions::blank_line();
 
         // Privilege check
         self.check_privileges()?;
 
         // Load or create baseline
         if self.create_baseline {
-            safe_println!("Creating new baseline...");
+            functions::info("Creating new baseline...");
             self.create_baseline()?;
         } else {
-            safe_println!("Loading baseline for comparison...");
+            functions::info("Loading baseline for comparison...");
             self.load_baseline()?;
         }
+        functions::blank_line();
 
         if self.daemon {
             let cron_log_root = Path::new(DEFAULT_LOG_DIR).join(CRON_LOG_SUBDIR);
             if let Err(err) = fs::create_dir_all(&cron_log_root) {
-                safe_println!(
-                    "Warning: unable to prepare maintenance log directory {}: {}",
+                functions::warn(format!(
+                    "Unable to prepare maintenance log directory {}: {}",
                     cron_log_root.display(),
                     err
-                );
+                ));
             }
 
             let cron_state_path = Path::new(DEFAULT_LIB_DIR)
@@ -519,34 +841,48 @@ impl Legion {
                 .join(CRON_SUMMARY_FILENAME);
             if let Some(parent) = cron_state_path.parent() {
                 if let Err(err) = fs::create_dir_all(parent) {
-                    safe_println!(
-                        "Warning: unable to prepare maintenance state directory {}: {}",
+                    functions::warn(format!(
+                        "Unable to prepare maintenance state directory {}: {}",
                         parent.display(),
                         err
-                    );
+                    ));
                 }
             }
 
             let _cron_handle =
                 CronOrchestrator::standard_profile(&cron_log_root, &cron_state_path).start();
 
-            safe_println!(
+            functions::info(format!(
                 "Maintenance scheduler active (logs: {}, summary: {})",
                 cron_log_root.display(),
                 cron_state_path.display()
-            );
+            ));
 
-            // Enhanced daemon mode: run checks in a loop with full capabilities
+            // Enhanced daemon mode: run checks in a loop with adjustable intensity
             loop {
+                let profile = if self.loop_iteration % FULL_SCAN_INTERVAL_CYCLES == 0 {
+                    ScanProfile::Full
+                } else {
+                    ScanProfile::Quick
+                };
+
                 if self.verbose {
-                    safe_println!(
-                        "\n[{}] Running enhanced monitoring checks...",
-                        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
-                    );
+                    functions::blank_line();
+                    functions::info(format!(
+                        "[{}] Running {} monitoring checks...",
+                        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                        profile.label()
+                    ));
+                    if profile == ScanProfile::Quick {
+                        functions::detail(format!(
+                            "Quick profile: heavy filesystem and permission sweeps run every {} cycles.",
+                            FULL_SCAN_INTERVAL_CYCLES
+                        ));
+                    }
                 }
 
-                // Run comprehensive monitoring checks
-                let system_state = self.run_enhanced_checks().await?;
+                // Run monitoring checks tuned to the selected profile
+                let system_state = self.run_enhanced_checks(profile).await?;
 
                 // Calculate risk score
                 let risk_score = self.risk_scoring.calculate_risk(&system_state).await;
@@ -595,34 +931,37 @@ impl Legion {
                     format!(" platforms=[{}]", details)
                 };
 
-                safe_println!(
+                functions::info(format!(
                     "LEGION SUMMARY: risk={:.3} level={:?} indicators={} issues={}{}",
                     risk_score.overall_score,
                     risk_score.risk_level,
                     risk_score.contributing_factors.len(),
                     system_state.detected_issues.len(),
                     platform_summary
-                );
+                ));
+
+                self.loop_iteration = self.loop_iteration.saturating_add(1);
 
                 if self.verbose {
-                    safe_println!(
-                        "Enhanced monitoring cycle completed. Sleeping for 30 seconds..."
-                    );
+                    functions::detail(format!(
+                        "Monitoring cycle completed. Sleeping for {} seconds...",
+                        ENHANCED_LOOP_INTERVAL_SECS
+                    ));
                 }
 
-                // Sleep for 30 seconds (more frequent for enhanced monitoring)
-                thread::sleep(Duration::from_secs(30));
+                // Sleep before the next monitoring cycle
+                thread::sleep(Duration::from_secs(ENHANCED_LOOP_INTERVAL_SECS));
             }
         } else {
             // One-time enhanced mode: run checks once
-            let system_state = self.run_enhanced_checks().await?;
+            let system_state = self.run_enhanced_checks(ScanProfile::Full).await?;
             let risk_score = self.risk_scoring.calculate_risk(&system_state).await;
 
             // Generate enhanced report
             self.generate_enhanced_report(&system_state, &risk_score)
                 .await?;
 
-            safe_println!("LEGION enhanced monitoring completed successfully");
+            functions::success("LEGION enhanced monitoring completed successfully");
             if !system_state.security_platforms.is_empty() {
                 let details = system_state
                     .security_platforms
@@ -636,15 +975,14 @@ impl Legion {
                         )
                     })
                     .collect::<Vec<_>>()
-                    .join(" • ");
-                safe_println!("Security Platforms: {}", details);
+                    .join(" | ");
+                functions::info(format!("Security Platforms: {}", details));
             }
 
-            safe_println!(
+            functions::info(format!(
                 "Overall Risk Score: {:.3} ({:?})",
-                risk_score.overall_score,
-                risk_score.risk_level
-            );
+                risk_score.overall_score, risk_score.risk_level
+            ));
         }
 
         Ok(())
@@ -652,12 +990,25 @@ impl Legion {
 
     fn check_privileges(&self) -> Result<(), Box<dyn std::error::Error>> {
         let uid = unsafe { libc::getuid() };
-        if uid != 0 {
-            safe_println!("LEGION requires root privileges for comprehensive monitoring");
-            safe_println!("   Run with: sudo legion");
-            process::exit(1);
+        if uid == 0 {
+            return Ok(());
         }
-        Ok(())
+
+        if let Ok(output) = Command::new("id").args(["-Gn"]).output() {
+            let groups = String::from_utf8_lossy(&output.stdout);
+            if groups.split_whitespace().any(|group| group == "hardn") {
+                functions::warn(
+                    "Running with hardn group privileges; some deep system checks may be skipped.",
+                );
+                return Ok(());
+            }
+        }
+
+        functions::error(
+            "LEGION requires root privileges or membership in the 'hardn' group for comprehensive monitoring",
+        );
+        functions::detail("Run with: sudo legion");
+        process::exit(1);
     }
 
     fn create_baseline(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -666,14 +1017,14 @@ impl Legion {
         // Reload to refresh in-memory snapshot for the framework pipeline
         self.baseline.load()?;
         self.refresh_framework_baseline();
-        safe_println!("Baseline created and saved");
+        functions::success("Baseline created and saved");
         Ok(())
     }
 
     fn load_baseline(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.baseline.load()?;
         self.refresh_framework_baseline();
-        safe_println!("Baseline loaded");
+        functions::success("Baseline loaded");
         Ok(())
     }
 
@@ -929,7 +1280,7 @@ impl Legion {
                 ));
             } else {
                 safe_println!(
-                    "  ↳ Skipping {} (pid {}) per operator choice",
+                    "  -> Skipping {} (pid {}) per operator choice",
                     entry.process_name,
                     entry.pid
                 );
@@ -964,7 +1315,7 @@ impl Legion {
                     .await
                     .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
                 safe_println!(
-                    "  → Blocked process {} (pid {})",
+                    "  -> Blocked process {} (pid {})",
                     entry.process_name,
                     entry.pid
                 );
@@ -989,14 +1340,14 @@ impl Legion {
                         .await
                         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
                     safe_println!(
-                        "  → Quarantined binary {} for process {} (pid {})",
+                        "  -> Quarantined binary {} for process {} (pid {})",
                         path,
                         entry.process_name,
                         entry.pid
                     );
                 } else {
                     safe_println!(
-                        "  → Binary path unavailable; process terminated but quarantine skipped"
+                        "  -> Binary path unavailable; process terminated but quarantine skipped"
                     );
                 }
             }
@@ -1012,7 +1363,7 @@ impl Legion {
                     .await
                     .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
                 safe_println!(
-                    "  → Logged monitoring action for {} (pid {})",
+                    "  -> Logged monitoring action for {} (pid {})",
                     entry.process_name,
                     entry.pid
                 );
@@ -1032,13 +1383,13 @@ impl Legion {
     }
 
     fn run_inventory_checks(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        safe_println!("Running system inventory checks...");
+        functions::info("Running system inventory checks...");
         // Basic inventory checks - could be expanded
         Ok(())
     }
 
     fn run_auth_checks(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        safe_println!("Running authentication checks...");
+        functions::info("Running authentication checks...");
 
         // Check for recent SSH authentication failures
         let output = std::process::Command::new("journalctl")
@@ -1071,7 +1422,7 @@ impl Legion {
     }
 
     fn run_package_checks(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        safe_println!("Running package integrity checks...");
+        functions::info("Running package integrity checks...");
 
         // Check for debsums availability and run basic package check
         let debsums_result = std::process::Command::new("which")
@@ -1089,7 +1440,7 @@ impl Legion {
     }
 
     fn run_filesystem_checks(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        safe_println!("Running filesystem checks...");
+        functions::info("Running filesystem checks...");
 
         // Check for SUID/SGID files
         let output = std::process::Command::new("find")
@@ -1124,7 +1475,7 @@ impl Legion {
     }
 
     fn run_kernel_checks(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        safe_println!("Running kernel checks...");
+        functions::info("Running kernel checks...");
 
         // Check kernel modules
         let output = std::process::Command::new("lsmod").output()?;
@@ -1147,7 +1498,7 @@ impl Legion {
     }
 
     fn run_container_checks(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        safe_println!("Running container checks...");
+        functions::info("Running container checks...");
 
         // Check Docker
         let docker_result = std::process::Command::new("which").arg("docker").output()?;
@@ -1259,8 +1610,14 @@ impl Legion {
         Ok(used as f64 / total as f64)
     }
 
-    async fn run_enhanced_checks(&mut self) -> Result<SystemState, Box<dyn std::error::Error>> {
-        safe_println!("Running enhanced system checks...");
+    async fn run_enhanced_checks(
+        &mut self,
+        profile: ScanProfile,
+    ) -> Result<SystemState, Box<dyn std::error::Error>> {
+        functions::info(format!(
+            "Running {} enhanced system checks...",
+            profile.label()
+        ));
 
         // Clear previous issues
         self.detected_issues.clear();
@@ -1272,6 +1629,21 @@ impl Legion {
         let mut memory_usage_metric: Option<f64> = None;
 
         let mut script_results: Vec<ScriptResult> = Vec::new();
+        let skip_note = format!(
+            "Skipped during quick cycle; included in full scan every {} cycles.",
+            FULL_SCAN_INTERVAL_CYCLES
+        );
+        let push_skipped = |results: &mut Vec<ScriptResult>, domain: &str, name: &str| {
+            results.push(ScriptResult {
+                domain: domain.to_string(),
+                name: name.to_string(),
+                status: ScriptStatus::Warning,
+                duration_ms: 0,
+                details: Some(skip_note.clone()),
+            });
+        };
+
+        let include_heavy = profile.is_full();
         let mut security_platforms: Vec<SecurityPlatformStatus> = Vec::new();
 
         let framework_start = Instant::now();
@@ -1298,7 +1670,7 @@ impl Legion {
                     status: ScriptStatus::Success,
                     duration_ms: framework_start.elapsed().as_millis(),
                     details: Some(format!(
-                        "telemetry: {} • findings: {} • responses: {}",
+                        "telemetry: {} | findings: {} | responses: {}",
                         report.telemetry.len(),
                         report.findings.len(),
                         report.responses.len()
@@ -1330,18 +1702,27 @@ impl Legion {
             Some("SSH and sudo policy audit"),
             |legion| legion.run_auth_checks(),
         ));
-        script_results.push(self.run_self_script(
-            "Core",
-            "Package Checks",
-            Some("Package integrity verification"),
-            |legion| legion.run_package_checks(),
-        ));
-        script_results.push(self.run_self_script(
-            "Core",
-            "Filesystem Checks",
-            Some("Filesystem anomaly scan"),
-            |legion| legion.run_filesystem_checks(),
-        ));
+        if include_heavy {
+            script_results.push(self.run_self_script(
+                "Core",
+                "Package Checks",
+                Some("Package integrity verification"),
+                |legion| legion.run_package_checks(),
+            ));
+        } else {
+            push_skipped(&mut script_results, "Core", "Package Checks");
+        }
+
+        if include_heavy {
+            script_results.push(self.run_self_script(
+                "Core",
+                "Filesystem Checks",
+                Some("Filesystem anomaly scan"),
+                |legion| legion.run_filesystem_checks(),
+            ));
+        } else {
+            push_skipped(&mut script_results, "Core", "Filesystem Checks");
+        }
 
         {
             let start = Instant::now();
@@ -1351,7 +1732,7 @@ impl Legion {
                 Ok(_) => ScriptStatus::Success,
                 Err(err) => {
                     let message = err.to_string();
-                    safe_println!("  ✗ Core::Process Analysis failed: {}", message);
+                    safe_println!("  [!] Core::Process Analysis failed: {}", message);
                     details = Some(message);
                     ScriptStatus::Failed
                 }
@@ -1374,7 +1755,7 @@ impl Legion {
                 Ok(_) => ScriptStatus::Success,
                 Err(err) => {
                     let message = err.to_string();
-                    safe_println!("  ✗ Core::Network Analysis failed: {}", message);
+                    safe_println!("  [!] Core::Network Analysis failed: {}", message);
                     details = Some(message);
                     ScriptStatus::Failed
                 }
@@ -1395,12 +1776,16 @@ impl Legion {
             Some("Kernel module and sysctl review"),
             |legion| legion.run_kernel_checks(),
         ));
-        script_results.push(self.run_self_script(
-            "Core",
-            "Container Checks",
-            Some("Container and toolchain audit"),
-            |legion| legion.run_container_checks(),
-        ));
+        if include_heavy {
+            script_results.push(self.run_self_script(
+                "Core",
+                "Container Checks",
+                Some("Container and toolchain audit"),
+                |legion| legion.run_container_checks(),
+            ));
+        } else {
+            push_skipped(&mut script_results, "Core", "Container Checks");
+        }
 
         // Module scripts
         script_results.push(self.run_external_script(
@@ -1435,31 +1820,41 @@ impl Legion {
             inventory_mod::check_hardware_info,
         ));
 
-        script_results.push(self.run_external_script(
-            "Packages",
-            "Package Drift",
-            Some("Debsums drift analysis"),
-            packages_mod::check_package_drift,
-        ));
-        script_results.push(self.run_external_script(
-            "Packages",
-            "Binary Integrity",
-            Some("Critical binary permission check"),
-            packages_mod::check_binary_integrity,
-        ));
+        if include_heavy {
+            script_results.push(self.run_external_script(
+                "Packages",
+                "Package Drift",
+                Some("Debsums drift analysis"),
+                packages_mod::check_package_drift,
+            ));
+            script_results.push(self.run_external_script(
+                "Packages",
+                "Binary Integrity",
+                Some("Critical binary permission check"),
+                packages_mod::check_binary_integrity,
+            ));
+        } else {
+            push_skipped(&mut script_results, "Packages", "Package Drift");
+            push_skipped(&mut script_results, "Packages", "Binary Integrity");
+        }
 
-        script_results.push(self.run_external_script(
-            "Filesystem",
-            "SUID/SGID Files",
-            Some("SUID/SGID sweep"),
-            filesystem_mod::check_suid_sgid_files,
-        ));
-        script_results.push(self.run_external_script(
-            "Filesystem",
-            "Startup Persistence",
-            Some("Startup persistence audit"),
-            filesystem_mod::check_startup_persistence,
-        ));
+        if include_heavy {
+            script_results.push(self.run_external_script(
+                "Filesystem",
+                "SUID/SGID Files",
+                Some("SUID/SGID sweep"),
+                filesystem_mod::check_suid_sgid_files,
+            ));
+            script_results.push(self.run_external_script(
+                "Filesystem",
+                "Startup Persistence",
+                Some("Startup persistence audit"),
+                filesystem_mod::check_startup_persistence,
+            ));
+        } else {
+            push_skipped(&mut script_results, "Filesystem", "SUID/SGID Files");
+            push_skipped(&mut script_results, "Filesystem", "Startup Persistence");
+        }
 
         script_results.push(self.run_external_script(
             "Processes",
@@ -1487,36 +1882,44 @@ impl Legion {
             network_mod::check_firewall_rules,
         ));
 
-        script_results.push(self.run_external_script(
-            "Permissions",
-            "World-writable Files",
-            Some("World-writable audit"),
-            permissions_mod::check_world_writable_files,
-        ));
-        script_results.push(self.run_external_script(
-            "Permissions",
-            "SUID/SGID Permissions",
-            Some("SUID/SGID permission map"),
-            permissions_mod::check_suid_sgid_permissions,
-        ));
-        script_results.push(self.run_external_script(
-            "Permissions",
-            "File Ownership",
-            Some("Orphan ownership sweep"),
-            permissions_mod::check_file_ownership,
-        ));
-        script_results.push(self.run_external_script(
-            "Permissions",
-            "Directory Permissions",
-            Some("Critical directory permissions"),
-            permissions_mod::check_directory_permissions,
-        ));
-        script_results.push(self.run_external_script(
-            "Permissions",
-            "Permission Anomalies",
-            Some("Permission anomaly detection"),
-            permissions_mod::detect_permission_anomalies,
-        ));
+        if include_heavy {
+            script_results.push(self.run_external_script(
+                "Permissions",
+                "World-writable Files",
+                Some("World-writable audit"),
+                permissions_mod::check_world_writable_files,
+            ));
+            script_results.push(self.run_external_script(
+                "Permissions",
+                "SUID/SGID Permissions",
+                Some("SUID/SGID permission map"),
+                permissions_mod::check_suid_sgid_permissions,
+            ));
+            script_results.push(self.run_external_script(
+                "Permissions",
+                "File Ownership",
+                Some("Orphan ownership sweep"),
+                permissions_mod::check_file_ownership,
+            ));
+            script_results.push(self.run_external_script(
+                "Permissions",
+                "Directory Permissions",
+                Some("Critical directory permissions"),
+                permissions_mod::check_directory_permissions,
+            ));
+            script_results.push(self.run_external_script(
+                "Permissions",
+                "Permission Anomalies",
+                Some("Permission anomaly detection"),
+                permissions_mod::detect_permission_anomalies,
+            ));
+        } else {
+            push_skipped(&mut script_results, "Permissions", "World-writable Files");
+            push_skipped(&mut script_results, "Permissions", "SUID/SGID Permissions");
+            push_skipped(&mut script_results, "Permissions", "File Ownership");
+            push_skipped(&mut script_results, "Permissions", "Directory Permissions");
+            push_skipped(&mut script_results, "Permissions", "Permission Anomalies");
+        }
 
         script_results.push(self.run_external_script(
             "Services",
@@ -1566,7 +1969,7 @@ impl Legion {
                                 )
                             })
                             .collect::<Vec<_>>()
-                            .join(" • ");
+                            .join(" | ");
                         details = Some(summary);
                     }
                     security_platforms = statuses;
@@ -1757,7 +2160,7 @@ impl Legion {
             None => match Self::get_cpu_usage() {
                 Ok(usage) => usage,
                 Err(e) => {
-                    safe_println!("Warning: Failed to get CPU usage: {}", e);
+                    functions::warn(format!("Failed to get CPU usage: {}", e));
                     0.0
                 }
             },
@@ -1769,11 +2172,13 @@ impl Legion {
             None => match Self::get_memory_usage() {
                 Ok(usage) => usage,
                 Err(e) => {
-                    safe_println!("Warning: Failed to get memory usage: {}", e);
+                    functions::warn(format!("Failed to get memory usage: {}", e));
                     0.0
                 }
             },
         };
+
+        let baseline_drift = self.compute_baseline_drift();
 
         Ok(SystemState {
             timestamp: chrono::Utc::now(),
@@ -1788,11 +2193,136 @@ impl Legion {
             detected_issues: self.detected_issues.clone(),
             script_results,
             security_platforms,
+            baseline_drift,
         })
     }
 
+    fn compute_baseline_drift(&self) -> Option<BaselineDriftSummary> {
+        let baseline = self.baseline.get_current()?;
+
+        let baseline_processes: HashMap<String, String> = baseline
+            .processes
+            .iter()
+            .filter_map(|process| {
+                let descriptor = if process.cmdline.trim().is_empty() {
+                    process.name.trim()
+                } else {
+                    process.cmdline.trim()
+                };
+
+                if descriptor.is_empty() {
+                    return None;
+                }
+
+                let key = normalize_key(descriptor);
+                if key.is_empty() {
+                    return None;
+                }
+
+                Some((key, tidy_text(descriptor, 160)))
+            })
+            .collect();
+
+        let baseline_ports: HashMap<String, String> = baseline
+            .network
+            .listening_ports
+            .iter()
+            .map(|port| {
+                let key = format!("{}:{}", port.protocol.to_lowercase(), port.port);
+                let process = port.process.trim();
+                let display = if process.is_empty() {
+                    format!("{} {}", port.protocol.to_uppercase(), port.port)
+                } else {
+                    format!("{} {} {}", port.protocol.to_uppercase(), port.port, process)
+                };
+                (key, tidy_text(&display, 160))
+            })
+            .collect();
+
+        let current_processes = match collect_current_process_commands() {
+            Ok(snapshot) => snapshot,
+            Err(err) => {
+                if self.verbose {
+                    functions::warn(format!(
+                        "Unable to collect current process inventory for drift summary: {}",
+                        err
+                    ));
+                }
+                return None;
+            }
+        };
+
+        let current_ports = match collect_current_listening_ports() {
+            Ok(snapshot) => snapshot,
+            Err(err) => {
+                if self.verbose {
+                    functions::warn(format!(
+                        "Unable to collect current listening ports for drift summary: {}",
+                        err
+                    ));
+                }
+                return None;
+            }
+        };
+
+        const DRIFT_LIST_LIMIT: usize = 40;
+
+        let mut new_processes: Vec<String> = current_processes
+            .iter()
+            .filter(|(key, _)| !baseline_processes.contains_key(*key))
+            .map(|(_, value)| value.clone())
+            .collect();
+        new_processes.sort();
+        if new_processes.len() > DRIFT_LIST_LIMIT {
+            new_processes.truncate(DRIFT_LIST_LIMIT);
+        }
+
+        let mut missing_processes: Vec<String> = baseline_processes
+            .iter()
+            .filter(|(key, _)| !current_processes.contains_key(*key))
+            .map(|(_, value)| value.clone())
+            .collect();
+        missing_processes.sort();
+        if missing_processes.len() > DRIFT_LIST_LIMIT {
+            missing_processes.truncate(DRIFT_LIST_LIMIT);
+        }
+
+        let mut new_listening_ports: Vec<String> = current_ports
+            .iter()
+            .filter(|(key, _)| !baseline_ports.contains_key(*key))
+            .map(|(_, value)| value.clone())
+            .collect();
+        new_listening_ports.sort();
+        if new_listening_ports.len() > DRIFT_LIST_LIMIT {
+            new_listening_ports.truncate(DRIFT_LIST_LIMIT);
+        }
+
+        let mut missing_listening_ports: Vec<String> = baseline_ports
+            .iter()
+            .filter(|(key, _)| !current_ports.contains_key(*key))
+            .map(|(_, value)| value.clone())
+            .collect();
+        missing_listening_ports.sort();
+        if missing_listening_ports.len() > DRIFT_LIST_LIMIT {
+            missing_listening_ports.truncate(DRIFT_LIST_LIMIT);
+        }
+
+        let summary = BaselineDriftSummary {
+            new_processes,
+            missing_processes,
+            new_listening_ports,
+            missing_listening_ports,
+        };
+
+        if summary.is_empty() {
+            None
+        } else {
+            Some(summary)
+        }
+    }
+
     async fn run_enhanced_process_checks(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        safe_println!("Running enhanced process checks with behavioral analysis...");
+        functions::info("Running enhanced process checks with behavioral analysis...");
 
         // Get process list
         let output = tokio::process::Command::new("ps")
@@ -1825,7 +2355,7 @@ impl Legion {
     }
 
     async fn run_enhanced_network_checks(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        safe_println!("Running enhanced network checks with threat intelligence...");
+        functions::info("Running enhanced network checks with threat intelligence...");
 
         // Get network connections
         let output = tokio::process::Command::new("netstat")
@@ -2056,10 +2586,44 @@ impl Legion {
             sanitize_metric(sanitized_system_state.system_health_score);
         sanitized_system_state.memory_usage = sanitize_metric(sanitized_system_state.memory_usage);
 
+        let mut factor_rows: Vec<(String, String, String)> = Vec::new();
+        let mut factor_keys = HashSet::new();
+        for factor in &risk_score.contributing_factors {
+            let trimmed = factor.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let key = normalize_key(trimmed);
+            if factor_keys.insert(key.clone()) {
+                let (category, summary) = classify_contributing_factor(trimmed);
+                factor_rows.push((category.to_string(), summary, trimmed.to_string()));
+            }
+        }
+
+        let factor_key_set: HashSet<String> = factor_rows
+            .iter()
+            .map(|(_, _, original)| normalize_key(original))
+            .collect();
+
+        let contributing_factor_breakdown: Vec<_> = factor_rows
+            .iter()
+            .map(|(category, summary, _)| {
+                serde_json::json!({
+                    "category": category,
+                    "summary": summary,
+                })
+            })
+            .collect();
+
         if self.json_output {
             let mut risk_components = BTreeMap::new();
             for (component, value) in &risk_score.components {
                 risk_components.insert(component.clone(), sanitize_metric(*value));
+            }
+
+            let mut component_factors = BTreeMap::new();
+            for (component, factors) in &risk_score.component_factors {
+                component_factors.insert(component.clone(), factors.clone());
             }
 
             let report = serde_json::json!({
@@ -2068,21 +2632,24 @@ impl Legion {
                 "risk_level": risk_score.risk_level,
                 "confidence": sanitize_metric(risk_score.confidence),
                 "contributing_factors": risk_score.contributing_factors,
+                "contributing_factor_breakdown": contributing_factor_breakdown,
                 "risk_components": risk_components,
-                "system_state": sanitized_system_state,
+                "component_factors": component_factors,
+                "baseline_drift": sanitized_system_state.baseline_drift.clone(),
+                "system_state": sanitized_system_state.clone(),
             });
             safe_println!("{}", serde_json::to_string_pretty(&report)?);
         } else {
             safe_println!("=== LEGION MONITORING REPORT ===");
             safe_println!("Timestamp: {}", risk_score.timestamp);
             safe_println!(
-                "Risk Score: {:.3} ({})  •  Confidence: {:.3}",
+                "Risk Score: {:.3} ({})  |  Confidence: {:.3}",
                 sanitize_metric(risk_score.overall_score),
                 risk_score.risk_level,
                 sanitize_metric(risk_score.confidence)
             );
             safe_println!(
-                "System Health → CPU: {:.1}% | Memory: {:.1}% | Behavioral: {:.3} | Anomaly: {:.3}",
+                "System Health -> CPU: {:.1}% | Memory: {:.1}% | Behavioral: {:.3} | Anomaly: {:.3}",
                 sanitized_system_state.system_health_score * 100.0,
                 sanitized_system_state.memory_usage * 100.0,
                 sanitized_system_state.behavioral_score,
@@ -2135,14 +2702,15 @@ impl Legion {
             safe_println!("{}", script_table);
             safe_println!();
 
-            if !risk_score.contributing_factors.is_empty() {
+            if !factor_rows.is_empty() {
                 let mut factor_table = Table::new();
                 factor_table.load_preset(UTF8_FULL_CONDENSED);
-                factor_table.set_header(vec!["#", "Factor"]);
-                for (idx, factor) in risk_score.contributing_factors.iter().enumerate() {
+                factor_table.set_header(vec!["#", "Category", "Summary"]);
+                for (idx, (category, summary, _)) in factor_rows.iter().enumerate() {
                     factor_table.add_row(vec![
                         Cell::new(format!("{}", idx + 1)),
-                        Cell::new(factor.as_str()),
+                        Cell::new(category.as_str()).fg(Color::Magenta),
+                        Cell::new(summary.as_str()),
                     ]);
                 }
                 safe_println!("Contributing Factors:");
@@ -2150,18 +2718,88 @@ impl Legion {
                 safe_println!();
             }
 
-            if !sanitized_system_state.detected_issues.is_empty() {
+            if !risk_score.component_factors.is_empty() {
+                let mut detail_table = Table::new();
+                detail_table.load_preset(UTF8_FULL_CONDENSED);
+                detail_table.set_header(vec!["Component", "Signals", "Key Drivers"]);
+                let mut component_keys: Vec<_> = risk_score.component_factors.keys().collect();
+                component_keys.sort();
+                for key in component_keys {
+                    let signals = risk_score
+                        .component_factors
+                        .get(key)
+                        .cloned()
+                        .unwrap_or_default();
+                    let total = signals.len();
+                    let cell_text = format_multiline_preview(&signals, 3, 110);
+                    detail_table.add_row(vec![
+                        Cell::new(key.as_str()).fg(Color::Magenta),
+                        Cell::new(format!("{}", total)),
+                        Cell::new(cell_text),
+                    ]);
+                }
+                safe_println!("Component Factor Details:");
+                safe_println!("{}", detail_table);
+                safe_println!();
+            }
+
+            let mut unique_detected_issues = Vec::new();
+            let mut seen_issues = HashSet::new();
+            for issue in &sanitized_system_state.detected_issues {
+                let key = normalize_key(issue);
+                if factor_key_set.contains(&key) {
+                    continue;
+                }
+                if seen_issues.insert(key) {
+                    unique_detected_issues.push(issue.clone());
+                }
+            }
+
+            if !unique_detected_issues.is_empty() {
                 let mut issue_table = Table::new();
                 issue_table.load_preset(UTF8_FULL_CONDENSED);
-                issue_table.set_header(vec!["#", "Detected Issue"]);
-                for (idx, issue) in sanitized_system_state.detected_issues.iter().enumerate() {
+                issue_table.set_header(vec!["#", "Severity", "Detected Issue"]);
+                for (idx, issue) in unique_detected_issues.iter().enumerate() {
+                    let (severity, color) = classify_detected_issue(issue);
                     issue_table.add_row(vec![
                         Cell::new(format!("{}", idx + 1)).fg(Color::Yellow),
+                        Cell::new(severity).fg(color).add_attribute(Attribute::Bold),
                         Cell::new(issue.as_str()),
                     ]);
                 }
                 safe_println!("Detected Issues:");
                 safe_println!("{}", issue_table);
+                safe_println!();
+            }
+
+            if let Some(drift) = &sanitized_system_state.baseline_drift {
+                let mut drift_table = Table::new();
+                drift_table.load_preset(UTF8_FULL_CONDENSED);
+                drift_table.set_header(vec!["Category", "Count", "Sample"]);
+
+                let mut add_row = |label: &str, items: &Vec<String>| {
+                    let count = items.len();
+                    let color = if count > 0 {
+                        Color::Yellow
+                    } else {
+                        Color::Green
+                    };
+                    let sample = format_multiline_preview(items, 5, 70);
+                    drift_table.add_row(vec![
+                        Cell::new(label).fg(color),
+                        Cell::new(format!("{}", count)).fg(color),
+                        Cell::new(sample),
+                    ]);
+                };
+
+                add_row("New Processes", &drift.new_processes);
+                add_row("Missing Processes", &drift.missing_processes);
+                add_row("New Listening Ports", &drift.new_listening_ports);
+                add_row("Missing Listening Ports", &drift.missing_listening_ports);
+
+                safe_println!("Baseline Drift Details:");
+                safe_println!("{}", drift_table);
+                safe_println!();
             }
 
             if !self.daemon {
@@ -2425,7 +3063,7 @@ impl Legion {
                 }
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(PROCESS_SCAN_INTERVAL_SECS)).await;
         }
     }
 
@@ -2439,7 +3077,7 @@ impl Legion {
             } => {
                 if level == "CRITICAL" || level == "ALERT" || message.contains("attack") {
                     safe_println!(
-                        "🚨 CRITICAL SYSLOG EVENT [{}]: {} - {}",
+                        "[CRITICAL] SYSLOG EVENT [{}]: {} - {}",
                         timestamp,
                         level,
                         message
@@ -2454,7 +3092,7 @@ impl Legion {
             } => {
                 if message.contains("failed") || message.contains("denied") {
                     safe_println!(
-                        "⚠️  SECURITY JOURNAL EVENT [{}@{}]: {}",
+                        "[WARNING] JOURNAL EVENT [{}@{}]: {}",
                         timestamp,
                         unit,
                         message
@@ -2467,7 +3105,7 @@ impl Legion {
                 severity,
             } => {
                 safe_println!(
-                    "🌐 NETWORK ALERT [{}] from {}: {}",
+                    "[NETWORK ALERT] severity={} source={} signature={}",
                     severity,
                     source,
                     signature
@@ -2481,18 +3119,80 @@ impl Legion {
                 action,
                 details,
             } => {
-                safe_println!("🔍 SUSPICIOUS PROCESS {} [{}]: {}", pid, action, details);
-                // Kill process, quarantine, alert
+                let now = chrono::Utc::now();
+                let mut alerts = PROCESS_ALERTS.lock().expect("process alert mutex poisoned");
+
+                if let Some(entry) = alerts.iter_mut().find(|entry| entry.details == details) {
+                    entry.pid = pid;
+                    entry.action = action.clone();
+                    entry.last_seen = now;
+                    entry.occurrences = entry.occurrences.saturating_add(1);
+                } else {
+                    if alerts.len() >= MAX_PROCESS_ALERTS {
+                        if let Some(oldest_index) = alerts
+                            .iter()
+                            .enumerate()
+                            .min_by_key(|(_, entry)| entry.last_seen)
+                            .map(|(idx, _)| idx)
+                        {
+                            alerts.remove(oldest_index);
+                        }
+                    }
+
+                    alerts.push(ProcessAlertRecord {
+                        pid,
+                        action: action.clone(),
+                        details: details.clone(),
+                        first_seen: now,
+                        last_seen: now,
+                        occurrences: 1,
+                    });
+                }
+
+                let mut snapshot = alerts.clone();
+                drop(alerts);
+
+                snapshot.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
+
+                let total_alerts = snapshot.len();
+
+                let mut table = Table::new();
+                table.load_preset(UTF8_FULL_CONDENSED);
+                table.set_header(vec![
+                    "PID",
+                    "Action",
+                    "Hits",
+                    "First Seen",
+                    "Last Seen",
+                    "Command",
+                ]);
+
+                for entry in snapshot.into_iter() {
+                    let action_cell = Cell::new(entry.action.to_uppercase())
+                        .add_attribute(Attribute::Bold)
+                        .fg(Color::Yellow);
+                    table.add_row(vec![
+                        Cell::new(format!("{}", entry.pid)).fg(Color::Cyan),
+                        action_cell,
+                        Cell::new(format!("{}", entry.occurrences)).fg(Color::Magenta),
+                        Cell::new(entry.first_seen.format("%H:%M:%S").to_string()),
+                        Cell::new(entry.last_seen.format("%H:%M:%S").to_string()),
+                        Cell::new(truncate_for_table(&entry.details, 80)),
+                    ]);
+                }
+
+                safe_println!("\nSuspicious process watchlist ({} entries):", total_alerts);
+                safe_println!("{}", table);
             }
             SecurityEvent::FileEvent {
                 path,
                 action,
                 details,
             } => {
-                safe_println!("📁 FILE EVENT {} on {}: {}", action, path, details);
+                safe_println!("[FILE EVENT] {} on {}: {}", action, path, details);
             }
             SecurityEvent::SystemEvent { category, details } => {
-                safe_println!("⚙️  SYSTEM EVENT [{}]: {:?}", category, details);
+                safe_println!("[SYSTEM EVENT] {} => {:?}", category, details);
             }
         }
     }

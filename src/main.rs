@@ -4,7 +4,6 @@ mod cli;
 mod core;
 mod display;
 mod execution;
-mod graphana;
 mod legion;
 mod services;
 mod utils;
@@ -1830,12 +1829,6 @@ fn get_security_tools() -> Vec<SecurityToolInfo> {
             description: "Host-based Intrusion Detection System",
         },
         SecurityToolInfo {
-            name: "Grafana",
-            service_name: "hardn-grafana",
-            process_name: "grafana-server",
-            description: "Visualization dashboards for HARDN telemetry",
-        },
-        SecurityToolInfo {
             name: "Lynis",
             service_name: "lynis",
             process_name: "lynis",
@@ -1987,7 +1980,7 @@ fn manage_service(action: &str) -> i32 {
     // List of manageable HARDN services (in dependency order)
     // Note: hardn-monitor is optional and may not be present
     let services = vec!["hardn", "hardn-api", "legion-daemon"];
-    let optional_services = vec!["hardn-monitor", "hardn-grafana"];
+    let optional_services = vec!["hardn-monitor"];
 
     match action {
         "enable" => {
@@ -2253,7 +2246,6 @@ fn interactive_service_monitor() -> i32 {
         "hardn-api.service",
         "legion-daemon.service",
         "hardn-monitor.service",
-        "hardn-grafana.service",
     ];
 
     loop {
@@ -2611,7 +2603,7 @@ fn show_status() {
 
     // Check HARDN Services
     println!("HARDN SERVICES:");
-    let hardn_services = vec!["hardn", "hardn-api", "legion-daemon", "hardn-grafana"];
+    let hardn_services = vec!["hardn", "hardn-api", "legion-daemon"];
     let mut any_active = false;
 
     for service_name in &hardn_services {
@@ -2879,6 +2871,12 @@ fn run_legion(args: &[String]) -> i32 {
     // Set up environment for legion
     std::env::set_var("RUST_BACKTRACE", "1");
 
+    // Ensure LEGION banner and colorized output are ready before checks begin
+    crate::legion::functions::enable_color(
+        atty::is(atty::Stream::Stdout) && std::env::var_os("NO_COLOR").is_none(),
+    );
+    crate::legion::banner::display_banner();
+
     // Create a tokio runtime for async legion execution
     let rt = tokio::runtime::Runtime::new().unwrap();
 
@@ -2958,10 +2956,6 @@ fn main() {
                     EXIT_SUCCESS
                 }
                 "services" => interactive_service_monitor(),
-                "grafana" | "graphana" => {
-                    crate::graphana::print_grafana_help();
-                    EXIT_SUCCESS
-                }
                 "--run-all-modules" | "run-all-modules" => run_all_modules(),
                 "--run-all-tools" | "run-all-tools" => run_all_tools(),
                 "--run-everything" | "run-everything" => run_everything(),
@@ -2984,7 +2978,6 @@ fn main() {
                 "service" => manage_service(&args[2]),
                 "run-module" => handle_run_module(&module_dirs, &args[2]),
                 "run-tool" => handle_run_tool(&tool_dirs, &args[2], &module_dirs),
-                "grafana" | "graphana" => crate::graphana::handle_grafana_command(&args[2..]),
                 _ => {
                     log_message(LogLevel::Error, &format!("Unknown command: {}", args[1]));
                     print_help();

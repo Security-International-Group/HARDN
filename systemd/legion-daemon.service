@@ -2,6 +2,8 @@
 Description=HARDN LEGION Security Monitoring Daemon
 After=network.target hardn-monitor.service
 Wants=network.target hardn-monitor.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -16,6 +18,9 @@ RestartSec=10
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=legion-daemon
+CPUAccounting=true
+IOAccounting=true
+MemoryAccounting=true
 # Set environment to use correct binary
 Environment="PATH=/usr/bin:/bin:/usr/sbin:/sbin"
 

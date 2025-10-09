@@ -8,6 +8,8 @@ set -euo pipefail
 
 # Set up signal handlers
 trap 'echo -e "\n\nInterrupted. Exiting..."; exit 130' INT TERM
+# Ensure terminal is restored on any exit
+trap 'stty sane; tput cnorm 2>/dev/null || true' EXIT
 
 # Color codes for better UI
 RED='\033[0;31m'
@@ -21,9 +23,9 @@ BOLD='\033[1m'
 
 # Configuration
 readonly LOG_DIR="/var/log/hardn"
-readonly HARDN_SERVICES="hardn.service hardn-api.service legion-daemon.service hardn-monitor.service hardn-grafana.service"
+readonly HARDN_SERVICES="hardn.service hardn-api.service legion-daemon.service hardn-monitor.service"
 readonly DEFAULT_TOOL_PATHS="/usr/share/hardn/tools:/usr/lib/hardn/src/setup/tools"
-declare -ar DEFAULT_TOOL_COMMANDS=(aide apparmor auditd clamv fail2ban lynis ossec suricata ufw)
+declare -ar DEFAULT_TOOL_COMMANDS=(aide apparmor auditd clamv fail2ban lynis ossec suricata ufw grafana)
 HARDN_BIN="${HARDN_BINARY:-}"
 
 print_colored() {
@@ -67,6 +69,9 @@ format_tool_display() {
             ;;
         ufw)
             echo "UFW Firewall"
+            ;;
+        grafana)
+            echo "Grafana Endpoint Monitoring"
             ;;
         *)
             local human=${name//[_-]/ }
@@ -358,7 +363,37 @@ run_legion_menu() {
                 echo -e "${YELLOW}WARNING: Automated response may take security actions automatically!${NC}"
                 read -p "Are you sure? [y/N]: " confirm || { echo; continue; }
                 if [[ "$confirm" =~ ^[Yy]$ ]]; then
-                    "$HARDN_BIN" legion --response-enabled --verbose
+                    echo -e "\nPress Ctrl+C to stop the session and return to this menu."
+                    local previous_int_trap previous_term_trap legion_interrupted session_status
+                    previous_int_trap=$(trap -p INT || true)
+                    previous_term_trap=$(trap -p TERM || true)
+                    legion_interrupted=0
+                    trap 'legion_interrupted=1' INT
+                    set +e
+                    (
+                        trap - INT TERM
+                        "$HARDN_BIN" legion --response-enabled --verbose
+                    )
+                    session_status=$?
+                    set -e
+                    if [[ -n "$previous_int_trap" ]]; then
+                        eval "$previous_int_trap"
+                    else
+                        trap - INT
+                    fi
+                    if [[ -n "$previous_term_trap" ]]; then
+                        eval "$previous_term_trap"
+                    else
+                        trap - TERM
+                    fi
+                    if [[ $session_status -eq 130 ]]; then
+                        legion_interrupted=1
+                    fi
+                    if [[ $legion_interrupted -eq 1 ]]; then
+                        echo -e "\nLEGION automated response session interrupted."
+                    else
+                        echo -e "\nLEGION automated response session ended."
+                    fi
                 fi
                 read -p $'\nPress Enter to continue...' || true
                 ;;
@@ -577,82 +612,6 @@ run_tools_menu() {
     done
 }
 
-run_grafana_menu() {
-    while true; do
-        display_header
-        echo -e "${BOLD}Grafana Visualization Service:${NC}"
-        echo -e "─────────────────────────────────────────────────"
-        echo
-        echo "1) Install or Upgrade Grafana"
-        echo "2) Reapply HARDN Grafana configuration"
-        echo "3) Start Grafana service"
-        echo "4) Stop Grafana service"
-        echo "5) Restart Grafana service"
-        echo "6) Enable Grafana on boot"
-        echo "7) Disable Grafana on boot"
-        echo "8) Show Grafana status"
-        echo "9) View Grafana service logs"
-        echo
-        echo "0) Back to Main Menu"
-        echo
-        read -p "Select option [0-9]: " grafana_choice || { echo; return; }
-
-        case $grafana_choice in
-            1)
-                echo -e "\n${BOLD}Installing or upgrading Grafana...${NC}"
-                "$HARDN_BIN" grafana install
-                read -p $'\nPress Enter to continue...' || true
-                ;;
-            2)
-                echo -e "\n${BOLD}Reapplying HARDN Grafana configuration...${NC}"
-                "$HARDN_BIN" grafana configure
-                read -p $'\nPress Enter to continue...' || true
-                ;;
-            3)
-                echo -e "\n${BOLD}Starting Grafana service...${NC}"
-                manage_service "hardn-grafana.service" "start"
-                read -p $'\nPress Enter to continue...' || true
-                ;;
-            4)
-                echo -e "\n${BOLD}Stopping Grafana service...${NC}"
-                manage_service "hardn-grafana.service" "stop"
-                read -p $'\nPress Enter to continue...' || true
-                ;;
-            5)
-                echo -e "\n${BOLD}Restarting Grafana service...${NC}"
-                manage_service "hardn-grafana.service" "restart"
-                read -p $'\nPress Enter to continue...' || true
-                ;;
-            6)
-                echo -e "\n${BOLD}Enabling Grafana service on boot...${NC}"
-                manage_service "hardn-grafana.service" "enable"
-                read -p $'\nPress Enter to continue...' || true
-                ;;
-            7)
-                echo -e "\n${BOLD}Disabling Grafana service on boot...${NC}"
-                manage_service "hardn-grafana.service" "disable"
-                read -p $'\nPress Enter to continue...' || true
-                ;;
-            8)
-                echo -e "\n${BOLD}Grafana service status:${NC}"
-                "$HARDN_BIN" grafana status
-                read -p $'\nPress Enter to continue...' || true
-                ;;
-            9)
-                echo -e "\n${BOLD}Recent Grafana service logs:${NC}"
-                journalctl -u hardn-grafana.service -n 100 --no-pager -o short-iso
-                read -p $'\nPress Enter to continue...' || true
-                ;;
-            0)
-                return
-                ;;
-            *)
-                print_colored "$RED" "Invalid option!"
-                sleep 1
-                ;;
-        esac
-    done
-}
 
 manage_services_menu() {
     while true; do
@@ -728,16 +687,14 @@ manage_services_menu() {
                 echo "1) hardn.service"
                 echo "2) hardn-api.service"
                 echo "3) legion-daemon.service"
-                echo "4) hardn-grafana.service"
-                read -p "Select [1-4]: " svc_num || { echo; continue; }
-                
+                read -p "Select [1-3]: " svc_num || { echo; continue; }
+
                 local selected_service=""
                 case $svc_num in
                     1) selected_service="hardn.service" ;;
                     2) selected_service="hardn-api.service" ;;
                     3) selected_service="legion-daemon.service" ;;
-                    4) selected_service="hardn-grafana.service" ;;
-                    *) 
+                *) 
                         print_colored "$RED" "Invalid selection!"
                         sleep 1
                         continue
@@ -770,7 +727,7 @@ manage_services_menu() {
                 ;;
             7)
                 echo -e "\n${BOLD}╔═══════════════════════════════════════════════════════════════════════════╗${NC}"
-                echo -e "${BOLD}║                        HARDN Services Logs Viewer                        ║${NC}"
+                echo -e "${BOLD}║                        HARDN Services Logs Viewer                         ║${NC}"
                 echo -e "${BOLD}╚═══════════════════════════════════════════════════════════════════════════╝${NC}"
                 echo -e "\n${CYAN}Choose log viewing mode:${NC}"
                 echo "1) Live All Services (follow mode)"
@@ -785,14 +742,14 @@ manage_services_menu() {
                 case $log_choice in
                     1)
                         echo -e "\n${BOLD}${GREEN}LIVE MODE: Following all HARDN service logs...${NC}"
-                        echo -e "${CYAN}Showing real-time logs from: hardn.service, hardn-api.service, legion-daemon.service, hardn-monitor.service, hardn-grafana.service${NC}"
+                        echo -e "${CYAN}Showing real-time logs from: hardn.service, hardn-api.service, legion-daemon.service, hardn-monitor.service${NC}"
                         echo -e "${YELLOW}Press Ctrl+C to stop following${NC}\n"
-                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -u hardn-grafana.service -f --no-pager
+                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -f --no-pager
                         ;;
                     2)
                         echo -e "\n${BOLD}Recent Logs from All HARDN Services${NC}"
                         echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -u hardn-grafana.service -n 50 --no-pager -o short-iso
+                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -n 50 --no-pager -o short-iso
                         ;;
                     3)
                         echo -e "\n${BOLD}Select individual service:${NC}"
@@ -800,8 +757,7 @@ manage_services_menu() {
                         echo "2) hardn-api.service (REST API Server)"
                         echo "3) legion-daemon.service (LEGION Monitoring Daemon)"
                         echo "4) hardn-monitor.service (Centralized Monitoring)"
-                        echo "5) hardn-grafana.service (Grafana Visualization)"
-                        read -p "Select [1-5]: " service_choice || { echo; continue; }
+                        read -p "Select [1-4]: " service_choice || { echo; continue; }
                         
                         case $service_choice in
                             1) 
@@ -820,22 +776,18 @@ manage_services_menu() {
                                 echo -e "\n${BOLD}HARDN Monitor Service Logs${NC}"
                                 journalctl -u hardn-monitor.service -n 100 --no-pager -o short-iso
                                 ;;
-                            5)
-                                echo -e "\n${BOLD}Grafana Visualization Service Logs${NC}"
-                                journalctl -u hardn-grafana.service -n 100 --no-pager -o short-iso
-                                ;;
                             *) print_colored "$RED" "Invalid service selection!" ;;
                         esac
                         ;;
                     4)
                         echo -e "\n${BOLD}Critical Errors from All HARDN Services${NC}"
                         echo -e "${RED}Showing only ERROR, CRITICAL, and ALERT priority logs${NC}\n"
-                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -u hardn-grafana.service -p err -n 50 --no-pager -o short-iso
+                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -u err -n 50 --no-pager -o short-iso
                         ;;
                     5)
                         echo -e "\n${BOLD}HARDN Service Performance Metrics${NC}"
                         echo -e "${CYAN}Service Status Summary:${NC}"
-                        for service in hardn.service hardn-api.service legion-daemon.service hardn-monitor.service hardn-grafana.service; do
+                        for service in hardn.service hardn-api.service legion-daemon.service hardn-monitor.service; do
                             status=$(systemctl is-active "$service" 2>/dev/null || echo "unknown")
                             if [ "$status" = "active" ]; then
                                 echo -e "  [ACTIVE] $service: ${GREEN}RUNNING${NC}"
@@ -844,7 +796,7 @@ manage_services_menu() {
                             fi
                         done
                         echo -e "\n${CYAN}Recent Performance Logs:${NC}"
-                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -u hardn-grafana.service -g "CPU|Memory|load" -n 20 --no-pager -o short-iso
+                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -u "CPU|Memory|load" -n 20 --no-pager -o short-iso
                         ;;
                     6)
                         echo -e "\n${BOLD}Custom journalctl command${NC}"
@@ -876,7 +828,7 @@ manage_services_menu() {
 dangerous_operations_menu() {
     while true; do
         display_header
-        echo -e "${BOLD}${RED}DANGEROUS OPERATIONS - USE WITH EXTREME CAUTION${NC}"
+        echo -e "${BOLD}${RED}ADVANCED OPERATIONS - USE WITH CAUTION${NC}"
         echo -e "${RED}These operations are for advanced security needs and could damage your system if not performed correctly!${NC}"
         echo -e "─────────────────────────────────────────────────"
         echo
@@ -941,8 +893,7 @@ main_menu() {
         echo "8) Sandbox Mode (Network Isolation)"
         echo "9) Run Everything (Modules + Tools)"
         echo "10) Advanced Operations"
-        echo "11) Grafana Visualization Service"
-        echo "g) Launch HARDN SIEM"
+        echo "11) Launch HARDN SIEM"
         echo
         echo "a) About HARDN"
         echo "v) Show Version"
@@ -1016,9 +967,6 @@ main_menu() {
                 dangerous_operations_menu
                 ;;
             11)
-                run_grafana_menu
-                ;;
-            g|G)
                 launch_gui
                 ;;
             a|A)

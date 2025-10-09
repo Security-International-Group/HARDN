@@ -2,6 +2,8 @@
 Description=HARDN Security Monitoring and Response Service
 After=network.target hardn-monitor.service
 Wants=network.target hardn-monitor.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -13,6 +15,9 @@ RestartSec=10
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=hardn
+CPUAccounting=true
+IOAccounting=true
+MemoryAccounting=true
 
 # Security settings
 NoNewPrivileges=yes

@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### What's Changed
+### What's Changed v0.4.27
 
 #### Service Manager Integration & Interactive Interface
 - New menu lets you manage every HARDN service from one screen.
@@ -43,6 +43,7 @@ All notable changes to this project will be documented in this file.
 - LEGION daemon (demo) with live security monitoring.
 - Friendlier help and troubleshooting flow.
 - One-command launch flow via `make hardn`.
+- `grafana.sh` launches a grafana protection data manager. 
 
 ### Security
 

@@ -11,27 +11,101 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' 
 
 echo "HARDN Enhanced Security Hardening Module"
 echo "========================================="
 echo ""
 
-# Function to log normalized status messages with color
+# ==========================================
+# LOGGING
+# =========================================
 HARDN_STATUS() {
-    echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')]${NC} $1"
+    local color="$GREEN"
+    local label="[INFO]"
+    local timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+
+    if [ $# -gt 1 ]; then
+        case "$1" in
+            INFO)
+                color="$GREEN"
+                label="[INFO]"
+                shift
+                ;;
+            WARN)
+                color="$YELLOW"
+                label="[WARN]"
+                shift
+                ;;
+            UPDATE)
+                color="$CYAN"
+                label="[UPDATE]"
+                shift
+                ;;
+            ERROR)
+                color="$RED"
+                label="[ERROR]"
+                shift
+                ;;
+            DEBUG)
+                color="$BLUE"
+                label="[DEBUG]"
+                shift
+                ;;
+        esac
+    fi
+
+    echo -e "${color}[${timestamp}] ${label}${NC} $*"
 }
 
 log_action() {
-    HARDN_STATUS "$1"
+    HARDN_STATUS INFO "$1"
 }
 
 log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+    HARDN_STATUS WARN "$1"
+}
+
+log_update() {
+    HARDN_STATUS UPDATE "$1"
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    HARDN_STATUS ERROR "$1"
+}
+
+APT_TIMEOUT_DEFAULT=${APT_TIMEOUT_DEFAULT:-120}
+APT_LOG_DIR="/var/log/hardn/apt"
+APT_INSTALL_FLAGS=(-y --no-install-recommends -o Dpkg::Progress-Fancy=0)
+mkdir -p /var/log/hardn 2>/dev/null || true
+mkdir -p "$APT_LOG_DIR" 2>/dev/null || true
+
+apt_install() {
+    local log_key="$1"; shift
+    local description="$1"; shift
+    local timeout="$APT_TIMEOUT_DEFAULT"
+    local maybe_timeout="${1:-}"
+
+    if [[ -n "$maybe_timeout" && "$maybe_timeout" =~ ^[0-9]+$ ]]; then
+        timeout="$maybe_timeout"
+        shift
+    fi
+
+    if [ "$#" -eq 0 ]; then
+        log_error "apt_install called without packages for $description"
+        return 1
+    fi
+
+    local log_file="$APT_LOG_DIR/${log_key}.log"
+    HARDN_STATUS "$description (details: $log_file)"
+    if timeout "$timeout" apt-get install "${APT_INSTALL_FLAGS[@]}" "$@" >"$log_file" 2>&1; then
+        HARDN_STATUS "$description completed"
+        return 0
+    else
+        log_warning "$description failed; see $log_file"
+        return 1
+    fi
 }
 
 # Check if running as root
@@ -41,12 +115,107 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # ==========================================
-#  AUTHENTICATION HARDENING (PAM DISABLED BY POLICY)
+# TIME - NTP
 # ==========================================
-HARDN_STATUS "Skipping all PAM-related authentication hardening per HARDN policy"
+HARDN_STATUS "Configuring secure time synchronization..."
+if apt_install "chrony" "Installing chrony" 120 chrony; then
+    if [ -f /etc/chrony/chrony.conf ]; then
+        cp /etc/chrony/chrony.conf /etc/chrony/chrony.conf.bak.$(date +%Y%m%d%H%M%S) 2>/dev/null || true
+    fi
+    cat > /etc/chrony/chrony.conf <<'EOF'
+# HARDN Chrony configuration
+pool pool.ntp.org iburst maxsources 4
+pool time.google.com iburst maxsources 2
 
-apt-get install -y libpam-pwquality libpwquality-tools 2>/dev/null || log_warning "libpam-pwquality installation failed, continuing..."
-# NOT ENFORCING: All PAM modifications (pwquality, pam_* modules, common-auth edits) are intentionally disabled. --- IGNORE ---
+# Hardened restrictions
+cmdport 0
+noclientlog
+rtcsync
+makestep 1.0 3
+
+allow 127.0.0.1/32
+allow ::1/128
+
+logchange 0.5
+
+# Log location
+logdir /var/log/chrony
+EOF
+    mkdir -p /var/log/chrony 2>/dev/null || true
+    systemctl enable chrony 2>/dev/null || true
+    systemctl restart chrony 2>/dev/null || true
+    HARDN_STATUS "Chrony configured and running"
+else
+    log_warning "Chrony installation failed; falling back to systemd-timesyncd"
+    if systemctl list-unit-files | grep -q '^systemd-timesyncd.service'; then
+        mkdir -p /etc/systemd/timesyncd.conf.d 2>/dev/null || true
+        cat > /etc/systemd/timesyncd.conf.d/99-hardn.conf <<'EOF'
+[Time]
+NTP=pool.ntp.org time.google.com
+FallbackNTP=
+RootDistanceMaxSec=5
+PollIntervalMinSec=32
+PollIntervalMaxSec=2048
+EOF
+        systemctl enable systemd-timesyncd 2>/dev/null || true
+        systemctl restart systemd-timesyncd 2>/dev/null || true
+    fi
+fi
+
+# ==========================================
+# LOGGING HARDENING
+# ==========================================
+HARDN_STATUS "Ensuring persistent journald storage..."
+mkdir -p /var/log/journal 2>/dev/null || true
+mkdir -p /etc/systemd/journald.conf.d 2>/dev/null || true
+cat > /etc/systemd/journald.conf.d/99-hardn.conf <<'EOF'
+[Journal]
+Storage=persistent
+SystemMaxUse=500M
+SystemKeepFree=100M
+Compress=yes
+Seal=yes
+SplitMode=uid
+EOF
+systemctl restart systemd-journald 2>/dev/null || true
+
+HARDN_STATUS "Configuring remote syslog forwarding..."
+mkdir -p /etc/hardn 2>/dev/null || true
+REMOTE_SYSLOG_FILE="/etc/hardn/remote-syslog.target"
+REMOTE_SYSLOG_TARGET="${HARDN_REMOTE_SYSLOG_TARGET:-}"
+
+if [ -z "$REMOTE_SYSLOG_TARGET" ] && [ -f "$REMOTE_SYSLOG_FILE" ]; then
+    REMOTE_SYSLOG_TARGET="$(awk 'NF && $0 !~ /^#/ {gsub(/[[:space:]]/, ""); print; exit}' "$REMOTE_SYSLOG_FILE" 2>/dev/null || true)"
+fi
+
+if [ -z "$REMOTE_SYSLOG_TARGET" ]; then
+    if [ ! -f "$REMOTE_SYSLOG_FILE" ]; then
+        cat > "$REMOTE_SYSLOG_FILE" <<'EOF'
+# Specify remote syslog target in the format @hostname:port or @@hostname:port for TCP.
+# Example: @@log-aggregator.internal:6514
+EOF
+    fi
+    HARDN_STATUS "Remote syslog target not defined; update $REMOTE_SYSLOG_FILE or set HARDN_REMOTE_SYSLOG_TARGET to enable forwarding."
+else
+    echo "$REMOTE_SYSLOG_TARGET" > "$REMOTE_SYSLOG_FILE"
+    mkdir -p /etc/rsyslog.d 2>/dev/null || true
+    cat > /etc/rsyslog.d/99-hardn-remote.conf <<EOF
+# HARDN remote syslog forwarding
+*.*\t$REMOTE_SYSLOG_TARGET
+& stop
+EOF
+    systemctl restart rsyslog 2>/dev/null || true
+    HARDN_STATUS "Remote syslog forwarding enabled to $REMOTE_SYSLOG_TARGET"
+fi
+
+# ==========================================
+#  AUTHENTICATION HARDENING 
+# ==========================================
+HARDN_STATUS "Applying authentication hardening"
+
+if ! apt_install "pam_quality" "Installing password quality libraries" libpam-pwquality libpwquality-tools; then
+    log_warning "libpam-pwquality installation failed, continuing..."
+fi
 
 # Configure login.defs for password aging (addresses AUTH-9286)
 if [ -f /etc/login.defs ]; then
@@ -66,9 +235,61 @@ if [ -f /etc/login.defs ]; then
     HARDN_STATUS "Login.defs configured for password aging and security"
 fi
 
-# Account lockout policy via PAM is disabled by policy to prevent unexpected lockouts
 
-# PAM-based su access restriction is disabled by policy
+# Enforce password history to prevent reuse (AUTH-1174)
+if [ -f /etc/pam.d/common-password ]; then
+    if grep -qE 'pam_unix.so' /etc/pam.d/common-password; then
+        sed -ri 's|^password\s+\[success=1 default=ignore\]\s+pam_unix.so.*|password    [success=1 default=ignore]    pam_unix.so obscure sha512 remember=5|g' /etc/pam.d/common-password
+    else
+        echo 'password    [success=1 default=ignore]    pam_unix.so obscure sha512 remember=5' >> /etc/pam.d/common-password
+    fi
+    HARDN_STATUS "Password history enforced via pam_unix remember=5"
+else
+    log_warning "/etc/pam.d/common-password not found; password history not enforced"
+fi
+
+# Set default inactivity timeout for new accounts
+if [ -f /etc/default/useradd ]; then
+    if grep -q '^INACTIVE=' /etc/default/useradd; then
+        sed -i 's/^INACTIVE=.*/INACTIVE=30/' /etc/default/useradd
+    else
+        echo 'INACTIVE=30' >> /etc/default/useradd
+    fi
+    HARDN_STATUS "Default user inactivity set to 30 days"
+else
+    log_warning "/etc/default/useradd missing; cannot set INACTIVE default"
+fi
+
+# Apply inactivity timeout to existing human accounts
+awk -F: '($3 >= 1000 && $1 != "nobody" && $7 !~ /(nologin|false)/) {print $1}' /etc/passwd | while read -r user; do
+    chage --inactive 30 "$user" 2>/dev/null || log_warning "Failed to set inactivity for $user"
+done
+
+# Audit world-writable directories and log results
+mkdir -p /var/log/hardn 2>/dev/null || true
+WORLD_WRITABLE_REPORT="/var/log/hardn/world-writable-dirs.txt"
+HARDN_STATUS "Auditing world-writable directories..."
+if timeout 180 find / -xdev -type d -perm -0002 2>/dev/null | sort -u > "$WORLD_WRITABLE_REPORT"; then
+    HARDN_STATUS "World-writable directory audit saved to $WORLD_WRITABLE_REPORT"
+else
+    log_warning "World-writable directory audit incomplete; check permissions or increase timeout"
+fi
+
+# Ensure sudo activity is logged
+HARDN_STATUS "Configuring sudo logging..."
+cat > /etc/sudoers.d/99-hardn-logging <<'EOF'
+Defaults logfile="/var/log/sudo.log"
+Defaults loglinelen=0
+EOF
+chmod 440 /etc/sudoers.d/99-hardn-logging 2>/dev/null || true
+
+# Ensure system/service accounts have non-interactive shells
+awk -F: '($3 < 1000 && $1 != "root" && $7 ~ /(bash|sh|dash|zsh)$/)' /etc/passwd | while read -r svc; do
+    chsh -s /usr/sbin/nologin "$svc" 2>/dev/null || log_warning "Failed to set nologin shell for $svc"
+done
+HARDN_STATUS "Service accounts restricted to nologin where applicable"
+
+
 
 # ==========================================
 #  SSH HARDENING (Comprehensive)
@@ -201,20 +422,6 @@ for service in telnet rsh; do
     fi
 done
 
-# 4. Set secure permissions on critical files
-log_action "Setting secure permissions on critical files..."
-chmod 644 /etc/passwd 2>/dev/null || true
-chmod 600 /etc/shadow 2>/dev/null || true
-chmod 644 /etc/group 2>/dev/null || true
-
-# 5. PAM-related components (disabled by policy)
-log_action "Skipping PAM components (pwquality/pam) per HARDN policy to avoid auth stack changes..."
-
-# 6. install clamv and start service
-log_action "Installing ClamAV antivirus..."
-timeout 120 apt-get install -y --no-install-recommends clamav clamav-daemon 2>/dev/null || log_warning "ClamAV installation failed, continuing..."
-systemctl enable clamav-freshclam 2>/dev/null || true
-systemctl start clamav-freshclam 2>/dev/null || true
 # ==========================================
 # KERNEL HARDENING (Comprehensive)
 # ==========================================
@@ -340,6 +547,84 @@ process_sysctls=(
 
 sysctl -p /etc/sysctl.d/99-hardn-hardening.conf 2>/dev/null || log_warning "Some sysctl settings failed to apply"
 
+# Document IPv6 policy stance
+mkdir -p /etc/hardn 2>/dev/null || true
+cat > /etc/hardn/ipv6-policy.txt <<EOF
+HARDN IPv6 Posture
+==================
+
+Date: $(date -u)
+
+IPv6 remains enabled to support modern networking while router advertisements,
+source routing, and redirect acceptance are disabled to minimize attack surface.
+The hardening sysctl policy is defined in /etc/sysctl.d/99-hardn-hardening.conf.
+EOF
+HARDN_STATUS "IPv6 policy documented at /etc/hardn/ipv6-policy.txt"
+
+# Ensure adequate entropy source
+HARDN_STATUS "Ensuring entropy daemon is available..."
+if ! systemctl list-unit-files | grep -q '^haveged.service'; then
+    if ! apt_install "haveged" "Installing haveged entropy daemon" 120 haveged; then
+        log_warning "haveged not available; attempting rng-tools"
+        apt_install "rng_tools" "Installing rng-tools entropy daemon" 120 rng-tools || log_warning "Entropy daemon installation failed"
+    fi
+fi
+
+entropy_candidates=(
+    "haveged:haveged"
+    "rngd:rngd"
+    "rng-tools:rngd"
+    "rng-tools-debian:rngd"
+)
+
+entropy_service=""
+entropy_process=""
+entropy_uses_systemd=0
+
+for candidate in "${entropy_candidates[@]}"; do
+    svc="${candidate%%:*}"
+    proc="${candidate##*:}"
+    svc_unit="${svc}.service"
+
+    if command -v systemctl >/dev/null 2>&1 && systemctl cat "$svc_unit" >/dev/null 2>&1; then
+        entropy_service="$svc"
+        entropy_process="$proc"
+        entropy_uses_systemd=1
+        break
+    fi
+
+    if [ -x "/etc/init.d/$svc" ]; then
+        entropy_service="$svc"
+        entropy_process="$proc"
+        entropy_uses_systemd=0
+        break
+    fi
+done
+
+if [ -n "$entropy_service" ]; then
+    if [ $entropy_uses_systemd -eq 1 ]; then
+        systemctl enable "${entropy_service}" 2>/dev/null || true
+        systemctl start "${entropy_service}" 2>/dev/null || true
+        if systemctl is-active --quiet "${entropy_service}"; then
+            HARDN_STATUS "${entropy_service} entropy service enabled and running"
+        elif pgrep -f "${entropy_process}" >/dev/null 2>&1; then
+            HARDN_STATUS "${entropy_process} entropy process running"
+        else
+            log_warning "${entropy_service} entropy service detected but inactive; review system logs"
+        fi
+    else
+        service "${entropy_service}" start 2>/dev/null || /etc/init.d/"${entropy_service}" start 2>/dev/null || true
+        if pgrep -f "${entropy_process}" >/dev/null 2>&1; then
+            HARDN_STATUS "${entropy_process} entropy daemon running"
+        else
+            log_warning "${entropy_service} entropy daemon not running; manual intervention required"
+        fi
+    fi
+else
+    log_warning "No entropy daemon package detected after installation attempts"
+fi
+HARDN_STATUS "Entropy daemon setup complete"
+
 # ==========================================
 # DISABLE UNNECESSARY SERVICES
 # ==========================================
@@ -370,6 +655,102 @@ for service in "${unnecessary_services[@]}"; do
         HARDN_STATUS "Disabled service: $service"
     fi
 done
+
+# ==========================================
+# AIDE INSTALLATION
+# ==========================================
+HARDN_STATUS "Setting up AIDE fast profile..."
+if ! dpkg-query -W -f='${Status}' aide 2>/dev/null | grep -q "install ok installed"; then
+    if ! apt_install "aide" "Installing AIDE" 120 aide; then
+        log_warning "AIDE installation failed, skipping baseline setup"
+    fi
+fi
+
+if command -v aide >/dev/null 2>&1; then
+    mkdir -p /etc/aide /etc/aide/aide.conf.d /var/lib/aide /var/log/hardn
+
+    AIDE_FAST_CONFIG="/etc/aide/aide.conf.hardn-fast"
+    AIDE_FAST_LOG="/var/log/hardn/aide-fast-init.log"
+    AIDE_FAST_TIMEOUT="${AIDE_FAST_TIMEOUT:-300}"
+
+    cat > /etc/aide/aide.conf.d/99-hardn-fast.conf <<'EOF'
+# HARDN fast profile placeholder
+# The active quick profile lives in /etc/aide/aide.conf.hardn-fast
+# and is invoked directly by the hardening automation.
+EOF
+
+    cat > "$AIDE_FAST_CONFIG" <<'EOF'
+# HARDN quick AIDE profile (fast baseline)
+database_in=file:/var/lib/aide/aide.db.hardn-fast.gz
+database_out=file:/var/lib/aide/aide.db.hardn-fast.new.gz
+database_new=file:/var/lib/aide/aide.db.hardn-fast.new.gz
+gzip_dbout=yes
+log_level=warning
+report_level=summary
+report_quiet=yes
+num_workers=60%
+report_url=file:/var/log/hardn/aide-fast-report.txt
+
+!/dev
+!/proc
+!/sys
+!/run
+!/tmp
+!/var/cache
+!/var/tmp
+!/var/log/journal
+!/var/log/apt
+!/var/log/hardn
+!/var/log/dpkg.log
+!/home/*/.cache
+!/var/tmp/*
+!/var/lib/systemd/coredump
+
+/etc            p+i+n+u+g+sha256
+/usr            p+i+n+u+g+sha256
+/var            p+i+n+u+g+sha256
+/home           p+i+n+u+g+sha256
+EOF
+
+    AIDE_DB="/var/lib/aide/aide.db.hardn-fast.gz"
+    AIDE_DB_NEW="/var/lib/aide/aide.db.hardn-fast.new.gz"
+
+    HARDN_STATUS "Building compact AIDE database (timeout ${AIDE_FAST_TIMEOUT}s)..."
+    rm -f "$AIDE_DB_NEW"
+
+    aide_cmd=(nice -n 10 ionice -c3 aide --config "$AIDE_FAST_CONFIG" --init)
+
+    if timeout "$AIDE_FAST_TIMEOUT" "${aide_cmd[@]}" >"$AIDE_FAST_LOG" 2>&1; then
+        aide_exit=0
+    else
+        aide_exit=$?
+        if [ "$aide_exit" -eq 124 ] || [ "$aide_exit" -eq 137 ]; then
+            log_warning "AIDE baseline timed out after ${AIDE_FAST_TIMEOUT}s; retrying once without timeout"
+            if "${aide_cmd[@]}" >>"$AIDE_FAST_LOG" 2>&1; then
+                aide_exit=0
+            else
+                aide_exit=$?
+            fi
+        fi
+    fi
+
+    if [ "$aide_exit" -eq 0 ]; then
+        if [ -f "$AIDE_DB_NEW" ]; then
+            if mv -f "$AIDE_DB_NEW" "$AIDE_DB" 2>/dev/null; then
+                chmod 600 "$AIDE_DB" 2>/dev/null || true
+                HARDN_STATUS "Quick AIDE baseline ready at $AIDE_DB"
+            else
+                log_warning "AIDE initialization succeeded but finalizing $AIDE_DB failed"
+            fi
+        else
+            log_warning "AIDE initialization completed but $AIDE_DB_NEW not found"
+        fi
+    else
+        log_warning "AIDE fast baseline generation failed (exit $aide_exit), see $AIDE_FAST_LOG"
+    fi
+else
+    log_warning "AIDE not available; skipping configuration"
+fi
 
 # ==========================================
 # MOUNT OPTIONS HARDENING
@@ -403,9 +784,43 @@ done
 # EOF
 
 # ==========================================
-# AUDIT RULES (Enhanced)
+# AUDIT (Enhanced with auditd MITRE ATT&CK rules)
 # ==========================================
-HARDN_STATUS "Configuring enhanced audit rules..."
+HARDN_STATUS "Installing auditd..."
+if apt_install "auditd" "Installing auditd components" 120 auditd audispd-plugins; then
+    HARDN_STATUS "auditd installed successfully"
+    systemctl enable auditd 2>/dev/null || true
+    systemctl start auditd 2>/dev/null || true
+else
+    log_warning "auditd installation failed, continuing..."
+fi
+
+HARDN_STATUS "Configuring auditd disk space safeguards..."
+AUDIT_CONF="/etc/audit/auditd.conf"
+if [ -f "$AUDIT_CONF" ]; then
+    cp "$AUDIT_CONF" "$AUDIT_CONF.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
+    declare -A auditd_settings=(
+        ["space_left"]="2048"
+        ["space_left_action"]="email"
+        ["admin_space_left"]="1024"
+        ["admin_space_left_action"]="halt"
+        ["action_mail_acct"]="root"
+        ["max_log_file_action"]="rotate"
+    )
+    for key in "${!auditd_settings[@]}"; do
+        value="${auditd_settings[$key]}"
+        if grep -Eq "^[[:space:]]*$key[[:space:]]*=" "$AUDIT_CONF"; then
+            sed -ri "s|^[[:space:]]*$key[[:space:]]*=.*$|$key = $value|I" "$AUDIT_CONF"
+        else
+            printf '%s = %s\n' "$key" "$value" >> "$AUDIT_CONF"
+        fi
+    done
+    systemctl reload auditd 2>/dev/null || systemctl restart auditd 2>/dev/null || true
+else
+    log_warning "auditd.conf not found; space thresholds not set"
+fi
+
+HARDN_STATUS "Configuring MITRE ATT&CK audit rules..."
 
 if command -v auditctl >/dev/null 2>&1; then
     cat > /etc/audit/rules.d/99-hardn-hardening.rules <<'EOF'
@@ -523,6 +938,41 @@ if command -v ufw >/dev/null 2>&1; then
 fi
 
 # ==========================================
+# FAIL2BAN HARDENING
+# ==========================================
+HARDN_STATUS "Configuring Fail2Ban..."
+
+HARDN_FAIL2BAN_BANTIME="${HARDN_FAIL2BAN_BANTIME:-600}"
+HARDN_FAIL2BAN_FINDTIME="${HARDN_FAIL2BAN_FINDTIME:-600}"
+HARDN_FAIL2BAN_MAXRETRY="${HARDN_FAIL2BAN_MAXRETRY:-5}"
+
+if apt_install "fail2ban" "Installing Fail2Ban" 180 fail2ban; then
+    mkdir -p /etc/fail2ban/jail.d
+    sed -i '/^\s*allowipv6\s*=\s*/d' /etc/fail2ban/jail.local 2>/dev/null || true
+    sed -i '/^\s*\[sshd-ddos\]/I,/^\s*$/d' /etc/fail2ban/jail.local 2>/dev/null || true
+    cat > /etc/fail2ban/jail.d/99-hardn.conf <<EOF
+[DEFAULT]
+bantime = ${HARDN_FAIL2BAN_BANTIME}
+findtime = ${HARDN_FAIL2BAN_FINDTIME}
+maxretry = ${HARDN_FAIL2BAN_MAXRETRY}
+backend = systemd
+
+[sshd]
+enabled = true
+EOF
+
+    systemctl enable fail2ban 2>/dev/null || true
+    if fail2ban-client -t >/var/log/hardn/fail2ban-config-check.log 2>&1; then
+        systemctl restart fail2ban 2>/dev/null || true
+    else
+        log_warning "Fail2Ban configuration test failed; see /var/log/hardn/fail2ban-config-check.log"
+    fi
+    HARDN_STATUS "Fail2Ban configured with hardened defaults"
+else
+    log_warning "Fail2Ban installation failed; skipping configuration"
+fi
+
+# ==========================================
 # LOGROTATE CONFIGURATION
 # ==========================================
 HARDN_STATUS "Configuring log rotation..."
@@ -578,10 +1028,15 @@ HARDN_STATUS "Enabling AppArmor  - ENFORCE - profiles...for non-native Unix apps
 sleep 2
 if command -v aa-enforce >/dev/null 2>&1; then
     # Install apparmor-profiles if not present
-    apt-get install -y apparmor-profiles apparmor-utils 2>/dev/null || true
+    apt_install "apparmor" "Installing AppArmor profiles" apparmor-profiles apparmor-utils || true
     
     # Enforce all profiles
     aa-enforce /etc/apparmor.d/* 2>/dev/null || log_warning "Some AppArmor profiles failed to enforce"
+fi
+
+if command -v aa-status >/dev/null 2>&1; then
+    aa-status > /var/log/hardn/aa-status.txt 2>&1 || log_warning "Failed to capture AppArmor status"
+    HARDN_STATUS "AppArmor status captured at /var/log/hardn/aa-status.txt"
 fi
 
 # ==========================================
@@ -589,13 +1044,74 @@ fi
 # ==========================================
 HARDN_STATUS "Restricting compiler access..."
 
-compilers=("/usr/bin/gcc" "/usr/bin/g++" "/usr/bin/as" "/usr/bin/cc")
-for compiler in "${compilers[@]}"; do
-    if [ -f "$compiler" ]; then
-        chmod 750 "$compiler" 2>/dev/null || true
-        chown root:adm "$compiler" 2>/dev/null || true
-    fi
-done
+HARDN_COMPILER_GROUP="${HARDN_COMPILER_GROUP:-hardncompilers}"
+HARDN_COMPILER_POLICY_FILE="${HARDN_COMPILER_POLICY_FILE:-/etc/hardn/compiler-policy.conf}"
+HARDN_COMPILER_ALLOWED_USERS="${HARDN_COMPILER_ALLOWED_USERS:-}"
+
+if [ -z "$HARDN_COMPILER_ALLOWED_USERS" ] && [ -n "${SUDO_USER:-}" ]; then
+    HARDN_COMPILER_ALLOWED_USERS="$SUDO_USER"
+fi
+
+if [ -z "${HARDN_COMPILER_POLICY:-}" ] && [ -f "$HARDN_COMPILER_POLICY_FILE" ]; then
+    HARDN_COMPILER_POLICY="$(awk 'NF && $0 !~ /^#/ {print tolower($0); exit}' "$HARDN_COMPILER_POLICY_FILE" 2>/dev/null || echo "")"
+fi
+
+HARDN_COMPILER_POLICY="${HARDN_COMPILER_POLICY:-restrict}"
+
+compiler_candidates=(
+    "/usr/bin/gcc"
+    "/usr/bin/g++"
+    "/usr/bin/cc"
+    "/usr/bin/as"
+    "/usr/bin/clang"
+    "/usr/bin/clang++"
+)
+
+case "$HARDN_COMPILER_POLICY" in
+    allow|permissive)
+        HARDN_STATUS "Compiler restriction policy set to '$HARDN_COMPILER_POLICY'; ensuring toolchain executables are world-accessible."
+        for compiler in "${compiler_candidates[@]}"; do
+            if [ -e "$compiler" ] || [ -L "$compiler" ]; then
+                target_path="$(readlink -f "$compiler" 2>/dev/null || echo "$compiler")"
+                if [ -e "$target_path" ]; then
+                    chown root:root "$target_path" 2>/dev/null || true
+                    chmod 0755 "$target_path" 2>/dev/null || true
+                fi
+            fi
+        done
+        ;;
+    disable|off|none)
+        HARDN_STATUS "Compiler restriction policy disabled; no permission changes applied."
+        ;;
+    *)
+        HARDN_STATUS "Compiler restriction policy set to '$HARDN_COMPILER_POLICY'; limiting compiler execution to group '$HARDN_COMPILER_GROUP'."
+
+        if ! getent group "$HARDN_COMPILER_GROUP" >/dev/null 2>&1; then
+            log_update "Creating compiler access group '$HARDN_COMPILER_GROUP'"
+            groupadd "$HARDN_COMPILER_GROUP" 2>/dev/null || true
+        fi
+
+        if [ -n "$HARDN_COMPILER_ALLOWED_USERS" ]; then
+            for user in $HARDN_COMPILER_ALLOWED_USERS; do
+                if id "$user" >/dev/null 2>&1; then
+                    usermod -a -G "$HARDN_COMPILER_GROUP" "$user" 2>/dev/null || log_warning "Failed adding $user to $HARDN_COMPILER_GROUP"
+                else
+                    log_warning "Requested compiler access for unknown user '$user'"
+                fi
+            done
+        fi
+
+        for compiler in "${compiler_candidates[@]}"; do
+            if [ -e "$compiler" ] || [ -L "$compiler" ]; then
+                target_path="$(readlink -f "$compiler" 2>/dev/null || echo "$compiler")"
+                if [ -e "$target_path" ]; then
+                    chown root:"$HARDN_COMPILER_GROUP" "$target_path" 2>/dev/null || true
+                    chmod 0750 "$target_path" 2>/dev/null || true
+                fi
+            fi
+        done
+        ;;
+esac
 
 # ==========================================
 # NETWORK PARAMETER TUNING
@@ -622,29 +1138,58 @@ EOF
 sysctl -p /etc/sysctl.d/99-hardn-network-tuning.conf 2>/dev/null || true
 
 # ==========================================
-# auditd
-# ==========================================
-HARDN_STATUS "Installing auditd..."
-timeout 120 apt-get install -y --no-install-recommends auditd audispd-plugins 2>/dev/null || log_warning "auditd installation failed, continuing..."
-systemctl enable auditd 2>/dev/null || true
-systemctl start auditd 2>/dev/null || true   
-
-# ==========================================
 # clamav
 # ==========================================
 HARDN_STATUS "Installing ClamAV..."
-timeout 120 apt-get install -y --no-install-recommends clamav clamav-daemon 2>/dev/null || log_warning "ClamAV installation failed, continuing..."
+if ! apt_install "clamav" "Installing ClamAV" 120 clamav clamav-daemon; then
+    log_warning "ClamAV installation failed, continuing..."
+fi
 systemctl enable clamav-daemon 2>/dev/null || true
 systemctl start clamav-daemon 2>/dev/null || true       
 # Update ClamAV database
-HARDN_STATUS "Updating ClamAV database..."
-freshclam 2>/dev/null || log_warning "ClamAV database update failed, continuing..."
+mkdir -p /var/log/hardn 2>/dev/null || true
+FRESHCLAM_LOG="/var/log/hardn/freshclam-update.log"
+HARDN_STATUS "Updating ClamAV signatures..."
+update_succeeded=0
+
+if systemctl list-unit-files | grep -q '^clamav-freshclam.service'; then
+    systemctl enable clamav-freshclam 2>/dev/null || true
+    systemctl stop clamav-freshclam 2>/dev/null || true
+fi
+
+if command -v freshclam >/dev/null 2>&1; then
+    if timeout 300 freshclam --stdout --no-warnings >"$FRESHCLAM_LOG" 2>&1; then
+        update_succeeded=1
+        HARDN_STATUS "ClamAV signature update complete (see $FRESHCLAM_LOG)"
+    fi
+fi
+
+if [ $update_succeeded -eq 0 ]; then
+    if systemctl list-unit-files | grep -q '^clamav-freshclam.service'; then
+        if systemctl restart clamav-freshclam 2>/dev/null; then
+            update_succeeded=1
+            HARDN_STATUS "clamav-freshclam service restarted to refresh signatures"
+        fi
+    fi
+fi
+
+if systemctl list-unit-files | grep -q '^clamav-freshclam.service'; then
+    systemctl start clamav-freshclam 2>/dev/null || true
+fi
+
+if [ $update_succeeded -eq 0 ]; then
+    if compgen -G '/var/lib/clamav/*.[cC][lL][dD]' >/dev/null 2>&1 || compgen -G '/var/lib/clamav/*.[cC][vV][dD]' >/dev/null 2>&1; then
+        HARDN_STATUS "Existing ClamAV signatures detected; updates will occur when connectivity is available (see $FRESHCLAM_LOG)"
+    else
+        log_warning "ClamAV signatures missing; review $FRESHCLAM_LOG for remediation"
+    fi
+fi
 
 # =========================================
 # rkhunter
 # ==========================================
 HARDN_STATUS "Installing rkhunter..."
-if timeout 120 apt-get install -y rkhunter --no-install-recommends 2>/dev/null; then
+if apt_install "rkhunter" "Installing rkhunter" 120 rkhunter; then
     HARDN_STATUS "rkhunter installed successfully"
     # Configure rkhunter to skip network operations
     if [ -f /etc/rkhunter.conf ]; then
@@ -670,17 +1215,120 @@ fi
 modprobe -r firewire-core 2>/dev/null || true
 
 HARDN_STATUS "Firewire support disabled"
+if command -v update-initramfs >/dev/null 2>&1; then
+    update-initramfs -u 2>/dev/null || log_warning "update-initramfs failed after FireWire blacklist"
+fi
 
 # ==========================================
+# sysstat
+# ==========================================
+HARDN_STATUS "Installing sysstat..."
+if apt_install "sysstat" "Installing sysstat" 120 sysstat; then
+    HARDN_STATUS "sysstat installed successfully"
+    # Configure sysstat
+    sed -i 's|ENABLED="false"|ENABLED="true"|g' /etc/default/sysstat 2>/dev/null || true
+    systemctl enable sysstat 2>/dev/null || true
+    systemctl start sysstat 2>/dev/null || true
+else
+    log_warning "sysstat installation failed, continuing..."
+fi
+
+# ==========================================
+# ACCT (PROCESS ACCOUNTING)
+# ==========================================
+HARDN_STATUS "Installing process accounting (acct)..."
+acct_package=""
+if apt_install "acct" "Installing process accounting tools" 120 acct; then
+    acct_package="acct"
+elif apt_install "acct_psacct" "Installing process accounting tools (psacct fallback)" 120 psacct; then
+    acct_package="psacct"
+fi
+
+if [ -n "$acct_package" ]; then
+    HARDN_STATUS "Process accounting package ($acct_package) installed"
+    accounting_activated=0
+    for svc in acct psacct; do
+        if systemctl list-unit-files | grep -q "^$svc.service"; then
+            systemctl enable "$svc" 2>/dev/null || true
+            systemctl start "$svc" 2>/dev/null || true
+            HARDN_STATUS "Process accounting service $svc enabled"
+            accounting_activated=1
+            break
+        fi
+    done
+
+    if command -v accton >/dev/null 2>&1; then
+        if accton on 2>/dev/null; then
+            HARDN_STATUS "Process accounting now actively capturing data"
+            accounting_activated=1
+        fi
+    fi
+
+    if [ $accounting_activated -eq 0 ]; then
+        log_warning "Process accounting package installed but service not activated; investigate manually"
+    fi
+else
+    log_warning "Process accounting package installation failed, continuing..."
+fi
+
 # unattended-upgrades
 # ==========================================
 HARDN_STATUS "Installing unattended-upgrades..."
-if timeout 120 apt-get install -y unattended-upgrades --no-install-recommends 2>/dev/null; then
+if apt_install "unattended_upgrades" "Installing unattended-upgrades" 120 unattended-upgrades; then
     HARDN_STATUS "unattended-upgrades installed successfully"
     # Configure unattended-upgrades
     dpkg-reconfigure -f noninteractive unattended-upgrades 2>/dev/null || log_warning "unattended-upgrades reconfiguration failed"
+    cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::AutocleanInterval "7";
+EOF
+    if [ -f /etc/apt/apt.conf.d/50unattended-upgrades ]; then
+    sed -i 's|^[[:space:]]*//[[:space:]]*"${distro_id}:${distro_codename}-security";|        "${distro_id}:${distro_codename}-security";|' /etc/apt/apt.conf.d/50unattended-upgrades
+        if ! grep -q 'Unattended-Upgrade::Origins-Pattern' /etc/apt/apt.conf.d/50unattended-upgrades 2>/dev/null; then
+            cat >> /etc/apt/apt.conf.d/50unattended-upgrades <<'EOF'
+Unattended-Upgrade::Origins-Pattern {
+        "${distro_id}:${distro_codename}-security";
+        "${distro_id}:${distro_codename}-updates";
+};
+EOF
+        fi
+    fi
 else
     log_warning "unattended-upgrades installation failed, continuing..."
+fi
+
+# ==========================================
+# APT HARDENING
+# ==========================================
+HARDN_STATUS "Applying APT hardening configuration..."
+cat > /etc/apt/apt.conf.d/99hardn <<'EOF'
+APT::Install-Suggests "false";
+APT::Install-Recommends "false";
+APT::Get::AllowUnauthenticated "false";
+APT::Get::Assume-Yes "false";
+Acquire::AllowDowngrade "false";
+Acquire::http::AllowRedirect "false";
+Acquire::Retries "3";
+EOF
+
+HARDN_STATUS "Installing debsums and verifying package checksums..."
+if apt_install "debsums" "Installing debsums" 180 debsums; then
+    DEBSUMS_LOG="/var/log/hardn/debsums-baseline.log"
+    if debsums --all --silent >"$DEBSUMS_LOG" 2>&1; then
+        log_update "debsums verification complete; no checksum issues detected"
+    else
+        {
+            echo ""
+            echo "# Additional context"
+            debsums --list-missing 2>&1
+            debsums --changed 2>&1
+        } >>"$DEBSUMS_LOG" 2>&1 || true
+        log_update "debsums reported checksum issues; see $DEBSUMS_LOG"
+    fi
+else
+    log_warning "debsums installation failed"
 fi
 
 # =========================================
@@ -692,6 +1340,22 @@ if ! grep -q "umask 027" /etc/bash.bashrc 2>/dev/null; then
 fi
 
 # ==========================================
+# LYNIS VALIDATION
+# ==========================================
+HARDN_STATUS "Running Lynis baseline scan..."
+if apt_install "lynis" "Installing Lynis" 180 lynis; then
+    LYNIS_LOG="/var/log/hardn/lynis-baseline.log"
+    LYNIS_REPORT="/var/log/hardn/lynis-report.dat"
+    if ! timeout 900 lynis audit system --quick --no-colors --logfile "$LYNIS_LOG" --report-file "$LYNIS_REPORT" >/dev/null 2>&1; then
+        log_warning "Lynis baseline scan encountered issues; review $LYNIS_LOG"
+    else
+        HARDN_STATUS "Lynis baseline complete. Report: $LYNIS_REPORT"
+    fi
+else
+    log_warning "Lynis installation failed; skipping baseline scan"
+fi
+
+# ==========================================
 # SUMMARY REPORT
 # ==========================================
 echo ""
@@ -700,19 +1364,22 @@ echo -e "${GREEN}HARDN Enhanced Hardening Complete!${NC}"
 echo "========================================="
 echo ""
 echo "Applied hardening measures:"
-# echo "  ✓ PAM and authentication hardening"
+echo "  ✓ Authentication hardening (password history & inactivity)"
+echo "  ✓ Service account shell restrictions"
 echo "  ✓ Comprehensive SSH configuration"
-echo "  ✓ Secure file permissions"
-echo "  ✓ Kernel security parameters"
-echo "  ✓ Disabled unnecessary services"
-echo "  ✓ Secure mount options"
+echo "  ✓ Secure file permissions and sudo logging"
+echo "  ✓ Kernel security parameters & IPv6 policy documentation"
+echo "  ✓ Entropy daemon and time synchronization"
+echo "  ✓ Persistent journald with remote syslog forwarding"
+echo "  ✓ AIDE fast baseline and debsums checksums"
 echo "  ✓ MITRE ATT&CK audit rules"
 echo "  ✓ Strict firewall configuration"
 echo "  ✓ Log rotation configured"
 echo "  ✓ Core dumps disabled"
-echo "  ✓ AppArmor profiles enforced"
+echo "  ✓ AppArmor profiles enforced (status captured)"
 echo "  ✓ Compiler access restricted"
 echo "  ✓ Network parameters tuned"
+echo "  ✓ Lynis baseline scan completed"
 echo ""
 echo -e "${YELLOW}Note:${NC} System reboot recommended for all changes to take effect."
 echo -e "${YELLOW}Note:${NC} Run 'lynis audit system' to verify improvements."

@@ -289,7 +289,6 @@ fn monitor_services() {
         ("hardn.service", "hardn"),
         ("hardn-api.service", "hardn-api"),
         ("legion-daemon.service", "legion"),
-        ("hardn-grafana.service", "hardn-grafana"),
     ];
 
     let mut status_messages = Vec::new();
