@@ -1,0 +1,168 @@
+name: ci
+
+on:
+  push:
+    branches: ['main']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  actions: read
+
+env:
+  CARGO_TERM_COLOR: always
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  build:
+    name: Build Debian Package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libssl-dev ca-certificates \
+            fakeroot debhelper devscripts jq curl file \
+            libgtk-4-dev libglib2.0-dev
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921
+        with:
+          toolchain: stable
+
+      - name: Cargo build (release)
+        run: cargo build --release
+
+      - name: Cargo test
+        run: cargo test --all --all-features --verbose
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --locked
+
+      - name: Build .deb package
+        id: deb
+        run: |
+          cargo deb --no-strip
+          mkdir -p dist
+          DEB=$(ls target/debian/*.deb | head -n1)
+          test -f "$DEB" || { echo "No .deb produced"; exit 1; }
+          VER=$(dpkg-deb -f "$DEB" Version | sed 's/~/-/g')
+          OUT="dist/hardn_${VER}_amd64.deb"
+          cp -f "$DEB" "$OUT"
+          echo "Built: $OUT"
+          echo "deb_path=$OUT" >> $GITHUB_OUTPUT
+          echo "deb_name=$(basename "$OUT")" >> $GITHUB_OUTPUT
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
+        with:
+          name: hardn-deb
+          path: dist/*.deb
+
+  release:
+    name: Create Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+
+      - name: Download .deb artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
+        with:
+          name: hardn-deb
+          path: release_assets
+
+      - name: Ensure tags are present
+        run: |
+          git fetch --tags --force --prune
+
+      - name: Get version for semantic tagging
+        id: version
+        run: |
+          DEB_FILE=$(ls release_assets/*.deb | head -n1)
+          VERSION=$(dpkg-deb -f "$DEB_FILE" Version | sed 's/~/-/g')
+          DEB_NAME=$(basename "$DEB_FILE")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "deb_name=$DEB_NAME" >> $GITHUB_OUTPUT
+          echo "Version extracted: $VERSION"
+
+      - name: Create semantic version tag
+        id: tag
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if git tag --list | grep -q "^v"; then
+            LATEST_TAG=$(git tag --list "v*" | sort -V | tail -n1)
+            if [ -n "$LATEST_TAG" ]; then
+              NEW_TAG=$(echo "$LATEST_TAG" | awk -F. '{print $1"."$2"."($3+1)}')
+            else
+              NEW_TAG="v${VERSION}"
+            fi
+          else
+            NEW_TAG="v${VERSION}"
+          fi
+          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+          echo "Creating tag: $NEW_TAG"
+
+      - name: Push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.tag.outputs.new_tag }}"
+          git push origin "${{ steps.tag.outputs.new_tag }}"
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          TAG="${{ steps.tag.outputs.new_tag }}"
+          REPO="${{ github.repository }}"
+          DEB_NAME="${{ steps.version.outputs.deb_name }}"
+          cat > RELEASE_NOTES.md <<EOF
+          ![HARDN Logo](docs/IMG_1233.jpeg)
+
+          # HARDN ${TAG}
+
+          Latest release of HARDN.
+
+          ## What's Included
+          - ${DEB_NAME} — Debian package
+          - Systemd service integration
+          - Security monitoring features
+
+          _Note: Source archives are generated automatically by GitHub._
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191
+        with:
+          tag_name: ${{ steps.tag.outputs.new_tag }}     
+          target_commitish: ${{ github.sha }}
+          name: HARDN ${{ steps.tag.outputs.new_tag }}
+          body_path: RELEASE_NOTES.md
+          files: release_assets/*.deb
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

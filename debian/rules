@@ -1,0 +1,44 @@
+#!/usr/bin/make -f
+
+# Override binary target to not use makefile buildsystem
+binary:
+	dh binary --buildsystem=none
+
+override_dh_auto_install:
+	# Install the main binary
+	install -D -m 755 target/release/hardn debian/hardn/usr/bin/hardn
+	# Install the monitor binary
+	install -D -m 755 target/release/hardn-monitor debian/hardn/usr/bin/hardn-monitor
+	# Install the GUI binary (read-only viewer)
+	install -D -m 755 target/release/hardn-gui debian/hardn/usr/bin/hardn-gui
+	# Install modules
+	install -d debian/hardn/usr/share/hardn/modules
+	@if ls usr/share/hardn/modules/*.sh >/dev/null 2>&1; then \
+		install -m 755 usr/share/hardn/modules/*.sh debian/hardn/usr/share/hardn/modules/; \
+	else \
+		echo "Skipping module install; no shell modules found"; \
+	fi
+	# Install tools
+	install -d debian/hardn/usr/share/hardn/tools
+	install -m 755 usr/share/hardn/tools/*.sh debian/hardn/usr/share/hardn/tools/ 2>/dev/null || true
+	# Install API
+	install -d debian/hardn/usr/share/hardn/src
+	install -m 644 src/hardn-api.py debian/hardn/usr/share/hardn/src/
+	# Install service manager
+	install -m 755 usr/share/hardn/scripts/hardn-service-manager.sh debian/hardn/usr/bin/hardn-service-manager
+	# Install config
+	install -d debian/hardn/etc/aide
+	install -m 644 etc/aide/aide.conf debian/hardn/etc/aide/ 2>/dev/null || true
+	# Install systemd services
+	install -d debian/hardn/lib/systemd/system
+	install -m 644 systemd/*.service debian/hardn/lib/systemd/system/ 2>/dev/null || true
+	# Install desktop launcher
+	install -d debian/hardn/usr/share/applications
+	install -m 644 usr/share/applications/hardn-gui.desktop debian/hardn/usr/share/applications/ 2>/dev/null || true
+
+override_dh_dwz:
+	@echo "Skipping dwz pass; Rust release binaries are already stripped"
+	@true
+
+%:
+	dh $@ --buildsystem=makefile

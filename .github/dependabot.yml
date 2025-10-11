@@ -1,0 +1,41 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    assignees:
+      - "OpenSource-For-Freedom"
+    commit-message:
+      prefix: "github-actions"
+      include: "scope"
+
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "python"
+    assignees:
+      - "OpenSource-For-Freedom"
+    commit-message:
+      prefix: "pip"
+      include: "scope"
+
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "rust"
+    assignees:
+      - "OpenSource-For-Freedom"
+    commit-message:
+      prefix: "cargo"
+      include: "scope"

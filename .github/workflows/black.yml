@@ -1,0 +1,37 @@
+name: Black
+
+on:
+  push:
+    branches: ['main','gui']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  actions: read
+
+jobs:
+  format-python:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Black
+        run: pip install black
+
+      - name: Run Black Formatter
+        run: black .
+
+      - name: Commit formatted code
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add .
+          git diff --cached --quiet || git commit -m "Autoformat Python code with Black"
+          git push

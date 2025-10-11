@@ -1,0 +1,275 @@
+#!/bin/bash
+
+# Ensure non-interactive APT operations for tools
+export DEBIAN_FRONTEND=noninteractive
+
+# HARDN Common Functions
+# This file provides common functions used across HARDN security tools
+
+# Colors for status output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+NC='\033[0m' # No Color
+
+# HARDN log destinations
+HARDN_LOG_FILE="/var/log/hardn/hardn-tools.log"
+HARDN_JOURNAL_UNIT="hardn.service"
+HARDN_JOURNAL_TAG="HARDN"
+
+# Map HARDN levels to syslog priorities
+hardn_journal_priority() {
+    local level="$1"
+    case "$level" in
+        pass)
+            printf 'notice'
+            ;;
+        warning)
+            printf 'warning'
+            ;;
+        error)
+            printf 'err'
+            ;;
+        *)
+            printf 'info'
+            ;;
+    esac
+}
+
+log_to_hardn_journal() {
+    local level="$1"
+    local message="$2"
+    local priority="$(hardn_journal_priority "$level")"
+
+    if command -v systemd-cat >/dev/null 2>&1; then
+        printf '%s\n' "$message" | systemd-cat -u "$HARDN_JOURNAL_UNIT" -t "$HARDN_JOURNAL_TAG" -p "$priority" 2>/dev/null || true
+    elif command -v logger >/dev/null 2>&1; then
+        logger -t "$HARDN_JOURNAL_TAG" -p "user.$priority" -- "$message" 2>/dev/null || true
+    fi
+}
+
+# HARDN status function for consistent logging and output
+# Usage: HARDN_STATUS "level" "message"
+# Levels: info, pass, warning, error
+HARDN_STATUS() {
+    # Robust to nounset: allow single-argument usage as INFO message
+    local level="${1:-info}"
+    local message="${2-}"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+
+    if [ -z "${message}" ]; then
+        message="$level"
+        level="info"
+    fi
+    
+    # Ensure log directory exists
+    mkdir -p "$(dirname "$HARDN_LOG_FILE")" 2>/dev/null || true
+    
+    case "$level" in
+        "info")
+            printf "${BLUE}[INFO]${NC} %s\n" "$message"
+            echo "[$timestamp] [INFO] $message" >> "$HARDN_LOG_FILE" 2>/dev/null || true
+            ;;
+        "pass")
+            printf "${GREEN}[PASS]${NC} %s\n" "$message"
+            echo "[$timestamp] [PASS] $message" >> "$HARDN_LOG_FILE" 2>/dev/null || true
+            ;;
+        "warning")
+            printf "${YELLOW}[WARNING]${NC} %s\n" "$message"
+            echo "[$timestamp] [WARNING] $message" >> "$HARDN_LOG_FILE" 2>/dev/null || true
+            ;;
+        "error")
+            printf "${RED}[ERROR]${NC} %s\n" "$message"
+            echo "[$timestamp] [ERROR] $message" >> "$HARDN_LOG_FILE" 2>/dev/null || true
+            ;;
+        *)
+            printf "${WHITE}[UNKNOWN]${NC} %s\n" "$message"
+            echo "[$timestamp] [UNKNOWN] $message" >> "$HARDN_LOG_FILE" 2>/dev/null || true
+            ;;
+    esac
+
+    log_to_hardn_journal "$level" "$message"
+}
+
+# Additional helper functions for HARDN tools
+
+# Check if a package is installed
+is_package_installed() {
+    local package="$1"
+    dpkg -s "$package" >/dev/null 2>&1
+}
+
+# Check if a service is active
+is_service_active() {
+    local service="$1"
+    systemctl is-active --quiet "$service" 2>/dev/null
+}
+
+# Check if a service exists
+service_exists() {
+    local service="$1"
+    systemctl list-unit-files --type=service | grep -q "^${service}\.service"
+}
+
+# Check if running as root
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        HARDN_STATUS "error" "This script must be run as root (use sudo)"
+        exit 1
+    fi
+}
+
+# Create backup of a file
+backup_file() {
+    local file="$1"
+    local backup_suffix="${2:-$(date +%Y%m%d_%H%M%S)}"
+    
+    if [[ -f "$file" ]]; then
+        # Special handling for sensitive directories where backup files cause issues
+        local backup_file
+        local file_dir="$(dirname "$file")"
+        local file_name="$(basename "$file")"
+        
+        case "$file_dir" in
+            "/etc/apt/apt.conf.d")
+                # For APT config files, store backups in /var/lib/hardn/backups/apt/
+                backup_file="/var/lib/hardn/backups/apt/${file_name}.bak.${backup_suffix}"
+                mkdir -p "/var/lib/hardn/backups/apt"
+                ;;
+            *)
+                # Default: create backup in same directory
+                backup_file="${file}.bak.${backup_suffix}"
+                ;;
+        esac
+        
+        if cp "$file" "$backup_file"; then
+            HARDN_STATUS "info" "Backed up $file to $backup_file"
+            return 0
+        else
+            HARDN_STATUS "warning" "Failed to backup $file"
+            return 1
+        fi
+    else
+        HARDN_STATUS "warning" "File $file does not exist, no backup needed"
+        return 1
+    fi
+}
+
+# APT helpers with lock timeout
+apt_update() {
+    mkdir -p /var/log/hardn/apt 2>/dev/null || true
+    apt-get \
+        -o DPkg::Lock::Timeout=600 \
+        -o Dpkg::Use-Pty=0 \
+        -o Dpkg::Progress-Fancy=0 \
+        -o APT::Color=0 \
+        update >/dev/null 2>&1
+}
+
+apt_install_quiet() {
+    # usage: apt_install_quiet pkg1 pkg2 ...
+    mkdir -p /var/log/hardn/apt 2>/dev/null || true
+    apt-get \
+        -o DPkg::Lock::Timeout=600 \
+        -o Dpkg::Use-Pty=0 \
+        -o Dpkg::Progress-Fancy=0 \
+        -o APT::Color=0 \
+        install -y "$@"
+}
+
+# Install package with error handling
+install_package() {
+    local package="$1"
+    
+    if is_package_installed "$package"; then
+        HARDN_STATUS "pass" "$package is already installed"
+        return 0
+    fi
+    
+    HARDN_STATUS "info" "Installing $package..."
+    if apt_update && apt_install_quiet "$package"; then
+        HARDN_STATUS "pass" "$package installed successfully"
+        return 0
+    else
+        HARDN_STATUS "error" "Failed to install $package"
+        return 1
+    fi
+}
+
+# Enable and start a service
+enable_service() {
+    local service="$1"
+    
+    if ! service_exists "$service"; then
+        HARDN_STATUS "warning" "Service $service does not exist"
+        return 1
+    fi
+    
+    if is_service_active "$service"; then
+        HARDN_STATUS "pass" "$service is already active"
+        return 0
+    fi
+    
+    HARDN_STATUS "info" "Enabling and starting $service..."
+    if systemctl enable --now "$service" >/dev/null 2>&1; then
+        HARDN_STATUS "pass" "$service enabled and started successfully"
+        return 0
+    else
+        HARDN_STATUS "error" "Failed to enable/start $service"
+        return 1
+    fi
+}
+
+# Check if command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Log execution completion
+log_tool_execution() {
+    local tool_name="$1"
+    local message="[HARDN] $tool_name executed at $(date)"
+
+    mkdir -p "$(dirname "$HARDN_LOG_FILE")" 2>/dev/null || true
+    printf '%s\n' "$message" | tee -a "$HARDN_LOG_FILE" 2>/dev/null || true
+    log_to_hardn_journal "info" "$message"
+}
+
+# Source the tool configuration checker if it exists
+if [ -f "$(dirname "$0")/check_tool_config.sh" ]; then
+    source "$(dirname "$0")/check_tool_config.sh"
+fi
+
+# Check if a tool is already configured (wrapper function)
+tool_is_configured() {
+    local tool_name="$1"
+    
+    # If check_tool_configured function exists, use it
+    if command -v check_tool_configured >/dev/null 2>&1; then
+        check_tool_configured "$tool_name"
+        return $?
+    fi
+    
+    # Fallback: assume not configured
+    return 1
+}
+
+# Export functions so they're available to sourcing scripts
+export -f HARDN_STATUS
+export -f hardn_journal_priority
+export -f log_to_hardn_journal
+export -f is_package_installed
+export -f is_service_active
+export -f service_exists
+export -f check_root
+export -f backup_file
+export -f apt_update
+export -f apt_install_quiet
+export -f install_package
+export -f enable_service
+export -f command_exists
+export -f log_tool_execution
+export -f tool_is_configured

@@ -1,0 +1,31 @@
+[Unit]
+Description=HARDN API Server
+After=network.target
+Wants=network.target hardn.service hardn-monitor.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=hardn
+Group=hardn
+WorkingDirectory=/usr/share/hardn
+ExecStart=/usr/bin/python3 /usr/share/hardn/src/hardn-api.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hardn-api
+CPUAccounting=true
+IOAccounting=true
+MemoryAccounting=true
+
+# Security settings
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/log/hardn
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

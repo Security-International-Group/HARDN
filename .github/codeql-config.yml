@@ -1,0 +1,12 @@
+disable-default-queries: false
+queries:
+  - uses: security-extended
+  - exclude:
+      problem.severity:
+        - warning
+        - recommendation
+paths-ignore:
+  - "**/test/**"
+  - "**/tests/**"
+  - "**/*.test.*"
+  - "**/*.spec.*"
