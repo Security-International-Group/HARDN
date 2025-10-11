@@ -19,7 +19,6 @@ Build-Depends: debhelper-compat (= 13),
         libglib2.0-dev,
         libvte-2.91-gtk4-dev,
         libssl-dev,
-        mk-build-deps,
         cargo,
         rustc
 Standards-Version: 4.6.2
