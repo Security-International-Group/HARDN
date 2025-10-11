@@ -31,7 +31,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config libssl-dev ca-certificates \
             fakeroot debhelper devscripts jq curl file \
-            libgtk-4-dev libglib2.0-dev
+            libgtk-4-dev libglib2.0-dev libvte-2.91-dev
+            echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
 
       - name: Cache cargo
         uses: actions/cache@v4
