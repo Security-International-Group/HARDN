@@ -4,6 +4,8 @@
 
 The HARDN API provides comprehensive overwatch and health monitoring for endpoints in distributed environments. It integrates with HARDN security services and the Legion monitoring daemon to enable real-time system monitoring, diagnostics, and management. This API facilitates secure access to endpoint health data, service status, and system metrics for administrators and automated monitoring systems.
 
+This server does not replace the **Grafana** endpoint system or the **Wazuh** agent, but provides an open-source option for those interested in holistic monitoring within their own toolsets. 
+
 ## Authentication
 
 All API requests require authentication using SSH key-based Bearer tokens. Generate an SSH key pair locally and use the public key value in the Authorization header.
@@ -17,7 +19,9 @@ ssh-keygen -t rsa -b 4096 -C "hardn-api-key" -f ~/.ssh/hardn_api_key
 # Or generate Ed25519 key (more secure, but check compatibility)
 ssh-keygen -t ed25519 -C "hardn-api-key" -f ~/.ssh/hardn_api_key
 ```
-- PLEASE store that in a secure place as well. 
+
+**Note:** Store the private key securely and never share it.
+
 ### Extract Public Key for API Authentication
 
 ```bash
@@ -47,7 +51,7 @@ ssh-keygen -t rsa -b 4096 -C "hardn-api-key" -f ~/.ssh/hardn_api_key
 SSH_KEY=$(cat ~/.ssh/hardn_api_key.pub)
 echo $SSH_KEY
 
-# Example output: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDhkn08fVebPZo4dNFlP5x8siPv01i44CYPdeFgh/ROntK3774wGKp7UXeQbBgZoLOyzEGkrF686z6byQfvhBLqIWwDyED8XKKNtIDTJ6YrBKOoFoW9kGI4W6P+mT/ydhCzrDN0xe1anjKgGij8FWe4jtmsYqzE7cQy3GCe3VkDAAMHikeoXjXZgtMF+CNzMOfxXaZyUUjUMO68s3dZzu55zzZuRfJ0UQOdvE55bT3tmpykWICkdGfnyEKFqHE4OS0tsFfDRMZR2Zk/Uxn/qxm5k8kcQYnJTbGy3jX5AbI3m5ng70e35q5w8akzyc5VL6Lt65Z8vVzvXwpb37++rq6v hardn-test-key
+# Example output: ssh-rsa <YOUR_API_KEY_HERE> hardn-test-key
 
 # 3. Use in curl command
 curl -H "Authorization: Bearer $SSH_KEY" http://localhost:8000/health
@@ -61,25 +65,30 @@ curl -H "Authorization: Bearer $SSH_KEY" http://localhost:8000/overwatch/system 
 ## API Endpoints
 
 ### Health Check
-- `GET /health` - Basic API health check
+- `GET /health` - Basic API health check (no authentication required)
 
 ### Overwatch Monitoring
 - `GET /overwatch/system` - Complete system health metrics (CPU, memory, disk, network)
 - `GET /overwatch/services` - Status of all monitored services
 
 ### Endpoint Management
-- `GET /endpoints` - List all available endpoints
+- `GET /endpoints` - List all available endpoints (currently localhost only)
 - `GET /endpoints/{endpoint_id}/health` - Health data for specific endpoint
 
 ### Service Status
 - `GET /hardn/status` - HARDN service status
 - `GET /legion/status` - Legion daemon status
 
-### Diagnostics
-- `GET /diagnostics/full` - Full system diagnostics and information
+### LEGION Operations
+- `POST /legion/scan` - Run Legion security scan with options
+- `POST /legion/baseline` - Create new Legion system baseline
+- `GET /legion/logs` - Get recent Legion daemon logs
 
 ### Command Execution
-- `POST /hardn/execute` - Execute HARDN commands (admin only)
+- `POST /hardn/execute` - Execute limited HARDN commands (admin only)
+
+### Diagnostics
+- `GET /diagnostics/full` - Full system diagnostics and information
 
 ## Usage for Remote Servers
 
@@ -93,7 +102,7 @@ curl -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" http://your-server:8000/over
 curl -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" http://your-server:8000/overwatch/services
 
 # Monitor specific endpoint
-curl -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" http://your-server:8000/endpoints/endpoint-name/health
+curl -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" http://your-server:8000/endpoints/localhost/health
 ```
 
 ### Python Integration
@@ -121,8 +130,8 @@ services = response.json()
 ### Local System Monitoring
 
 ```bash
-# Quick health check
-curl -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" http://localhost:8000/health
+# Quick health check (no auth required)
+curl http://localhost:8000/health
 
 # Full system diagnostics
 curl -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" http://localhost:8000/diagnostics/full | jq
@@ -131,7 +140,25 @@ curl -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" http://localhost:8000/diagno
 curl -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" http://localhost:8000/overwatch/services | jq '.services'
 
 # Monitor CPU/memory usage
-curl -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" http://localhost:8000/overwatch/system | jq '.cpu_percent, .memory_percent'
+curl -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" http://localhost:8000/overwatch/system | jq '.system_health.cpu_percent, .system_health.memory.percent'
+```
+
+### LEGION Operations
+
+```bash
+# Run Legion security scan
+curl -X POST -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"verbose": true, "json": true}' \
+  http://localhost:8000/legion/scan
+
+# Create Legion baseline
+curl -X POST -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" \
+  http://localhost:8000/legion/baseline
+
+# Get Legion logs
+curl -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" \
+  "http://localhost:8000/legion/logs?lines=100"
 ```
 
 ### Service Management
@@ -143,12 +170,8 @@ curl -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" http://localhost:8000/hardn/
 # Check Legion daemon status
 curl -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" http://localhost:8000/legion/status
 
-# Execute HARDN command (admin only)
+# Execute HARDN command (limited commands only)
 curl -X POST -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"command": "status"}' \
-  http://localhost:8000/hardn/execute
-```
   -H "Content-Type: application/json" \
   -d '{"command": "status"}' \
   http://localhost:8000/hardn/execute
@@ -166,13 +189,41 @@ Access the interactive API documentation at:
 ```json
 {
   "endpoint_id": "server-name",
-  "timestamp": "2025-09-24T18:11:19.498045",
-  "cpu_percent": 13.0,
-  "memory_percent": 8.1,
-  "disk_percent": 16.1,
-  "network": {...},
-  "load_average": [0.5, 0.3, 0.2],
-  "uptime": 70788.83
+  "system_health": {
+    "cpu_percent": 13.0,
+    "memory": {
+      "total": 17179869184,
+      "available": 14343278592,
+      "percent": 16.4
+    },
+    "disk": {
+      "total": 1000204886016,
+      "free": 838414909440,
+      "percent": 16.1
+    },
+    "network": {
+      "connections": 45,
+      "bytes_sent": 1523456789,
+      "bytes_recv": 2345678901
+    },
+    "load_average": [0.5, 0.3, 0.2],
+    "uptime": 70788.83,
+    "timestamp": "2025-09-24T18:11:19.498045"
+  },
+  "services": {
+    "hardn": {
+      "service": "hardn.service",
+      "active": true,
+      "status": "active",
+      "details": {
+        "activestate": "active",
+        "substate": "running",
+        "description": "HARDN Security Service"
+      },
+      "timestamp": "2025-09-24T18:11:19.498045"
+    }
+  },
+  "timestamp": "2025-09-24T18:11:19.498045"
 }
 ```
 
@@ -181,17 +232,43 @@ Access the interactive API documentation at:
 {
   "endpoint_id": "server-name",
   "services": {
-    "hardn.service": {"active": true, "status": "active"},
-    "legion-daemon.service": {"active": true, "status": "active"},
-    "hardn-api.service": {"active": true, "status": "active"}
+    "hardn.service": {
+      "service": "hardn.service",
+      "active": true,
+      "status": "active",
+      "details": {
+        "activestate": "active",
+        "substate": "running"
+      },
+      "timestamp": "2025-09-24T18:11:19.676798"
+    },
+    "legion-daemon.service": {
+      "service": "legion-daemon.service",
+      "active": true,
+      "status": "active",
+      "timestamp": "2025-09-24T18:11:19.676798"
+    }
   },
   "timestamp": "2025-09-24T18:11:19.676798"
+}
+```
+
+### LEGION Scan Response
+```json
+{
+  "command": "sudo hardn legion",
+  "return_code": 0,
+  "stdout": "LEGION security scan completed successfully...",
+  "stderr": "",
+  "success": true,
+  "timestamp": "2025-09-24T18:15:30.123456"
 }
 ```
 
 ## Security Notes
 
 - Always use HTTPS in production environments
-- Rotate API keys regularly
+- Rotate SSH keys regularly
 - Implement rate limiting for production deployments
 - Monitor API access logs for security incidents
+- The `/health` endpoint is the only one that doesn't require authentication

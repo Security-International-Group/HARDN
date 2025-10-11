@@ -1,8 +1,8 @@
+use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::collections::HashSet;
 
 use crate::core::HardnResult;
 
@@ -10,14 +10,8 @@ use crate::core::HardnResult;
 /// Supports colon-separated paths like Unix PATH variable
 pub fn env_or_defaults(var: &str, defaults: &[&str]) -> Vec<PathBuf> {
     match env::var(var) {
-        Ok(value) if !value.trim().is_empty() => {
-            parse_path_list(&value)
-        }
-        _ => {
-            defaults.iter()
-                .map(|&s| PathBuf::from(s))
-                .collect()
-        }
+        Ok(value) if !value.trim().is_empty() => parse_path_list(&value),
+        _ => defaults.iter().map(|&s| PathBuf::from(s)).collect(),
     }
 }
 
@@ -38,7 +32,7 @@ pub fn parse_path_list(path_str: &str) -> Vec<PathBuf> {
 pub fn find_script(dirs: &[PathBuf], name: &str) -> Option<PathBuf> {
     // Build list of possible filenames to search for
     let candidates = build_script_candidates(name);
-    
+
     // Search through directories and candidates
     dirs.iter()
         .filter(|dir| dir.is_dir())
@@ -65,17 +59,17 @@ fn is_valid_script_file(path: &Path) -> bool {
             if !metadata.is_file() {
                 return false;
             }
-            
+
             // On Unix, check if file has read permission
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
                 let mode = metadata.permissions().mode();
-                (mode & 0o444) != 0  // Check if any read bit is set
+                (mode & 0o444) != 0 // Check if any read bit is set
             }
             #[cfg(not(unix))]
             {
-                true  // On non-Unix, just check if it's a file
+                true // On non-Unix, just check if it's a file
             }
         }
         Err(_) => false,
@@ -88,14 +82,14 @@ fn is_valid_script_file(path: &Path) -> bool {
 pub fn list_modules(dirs: &[PathBuf]) -> HardnResult<Vec<String>> {
     // Use HashSet for automatic deduplication
     let mut module_names: HashSet<String> = HashSet::new();
-    
+
     // Process each directory
     for dir in dirs {
         // Skip non-existent directories
         if !dir.is_dir() {
             continue;
         }
-        
+
         // Read directory and handle errors gracefully
         let entries = match fs::read_dir(dir) {
             Ok(entries) => entries,
@@ -105,7 +99,7 @@ pub fn list_modules(dirs: &[PathBuf]) -> HardnResult<Vec<String>> {
                 continue;
             }
         };
-        
+
         // Process each entry in the directory
         for entry in entries {
             // Extract the module name if valid
@@ -114,11 +108,11 @@ pub fn list_modules(dirs: &[PathBuf]) -> HardnResult<Vec<String>> {
             }
         }
     }
-    
+
     // Convert to sorted vector
     let mut sorted_names: Vec<String> = module_names.into_iter().collect();
     sorted_names.sort();
-    
+
     Ok(sorted_names)
 }
 
@@ -128,16 +122,16 @@ fn extract_module_name(entry: io::Result<fs::DirEntry>) -> Option<String> {
     // Handle potential I/O error for the entry
     let entry = entry.ok()?;
     let path = entry.path();
-    
+
     // Check if it's a .sh file
     let extension = path.extension()?.to_str()?;
     if extension != "sh" {
         return None;
     }
-    
+
     // Extract the filename without extension
     let stem = path.file_stem()?.to_str()?;
-    
+
     // Additional validation: ensure it's a regular file (not directory or symlink to directory)
     match entry.metadata() {
         Ok(metadata) if metadata.is_file() => Some(stem.to_string()),

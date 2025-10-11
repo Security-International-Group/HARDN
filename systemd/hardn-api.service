@@ -1,7 +1,9 @@
 [Unit]
 Description=HARDN API Server
 After=network.target
-Wants=network.target hardn.service legion-daemon.service
+Wants=network.target hardn.service hardn-monitor.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -14,6 +16,9 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=hardn-api
+CPUAccounting=true
+IOAccounting=true
+MemoryAccounting=true
 
 # Security settings
 NoNewPrivileges=yes

@@ -1,18 +1,23 @@
 [Unit]
-Description=HARDN Security Hardening Service
-After=network.target
-Wants=network.target
+Description=HARDN Security Monitoring and Response Service
+After=network.target hardn-monitor.service
+Wants=network.target hardn-monitor.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
-Type=oneshot
+Type=simple
 User=root
 Group=root
-ExecStart=/usr/local/bin/hardn --run-all-modules
-RemainAfterExit=no
+ExecStart=/bin/bash -c 'if [ ! -d /var/lib/hardn/legion ] || [ -z "$(ls -A /var/lib/hardn/legion/baseline_*.json 2>/dev/null)" ]; then echo "Creating LEGION baseline..."; /usr/bin/hardn legion --create-baseline --json; fi; exec /usr/bin/hardn legion --daemon --response-enabled --verbose'
+Restart=always
+RestartSec=10
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=hardn
-SuccessExitStatus=0 1  # Accept exit codes 0 (success) and 1 (module failures)
+CPUAccounting=true
+IOAccounting=true
+MemoryAccounting=true
 
 # Security settings
 NoNewPrivileges=yes

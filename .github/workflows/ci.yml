@@ -30,7 +30,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config libssl-dev ca-certificates \
-            fakeroot debhelper devscripts jq curl file
+            fakeroot debhelper devscripts jq curl file \
+            libgtk-4-dev libglib2.0-dev
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: Set up Rust (stable)
         uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921
@@ -154,3 +166,29 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Discord notify
+        if: always()
+        shell: bash
+        env:
+          WEBHOOK: ${{ secrets. DEV_UPDATES_DISCORD_WEBHOOK }}
+        run: |
+          STATUS="${{ job.status }}"
+          MSG="Install Test: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
+          if command -v hardn-discord.sh >/dev/null 2>&1; then
+            if [[ "$STATUS" == "success" ]]; then
+              hardn-discord.sh "OK" "$MSG" || true
+            else
+              hardn-discord.sh "FAILED" "$MSG" || true
+            fi
+          elif [[ -n "${WEBHOOK:-}" ]]; then
+            COLOR=15105570
+            [[ "$STATUS" == "success" ]] && COLOR=3066993 || true
+            [[ "$STATUS" == "failure" ]] && COLOR=15158332 || true
+            curl -H "Content-Type: application/json" -X POST "$WEBHOOK" \
+              -d "{"embeds":[{"title":"Install Test • ${{ github.repository }}","description":"Status: **${{ job.status }}** on \\`${{ github.ref }}\\`","color":$COLOR,"url":"$MSG"}]}" || true
+          else
+            echo "[INFO] No Discord webhook configured; skipping notification."
+          fi
+

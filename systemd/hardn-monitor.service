@@ -1,0 +1,36 @@
+[Unit]
+Description=HARDN Centralized Monitoring and Logging Service
+After=network.target
+Wants=network.target
+Before=hardn.service hardn-api.service legion-daemon.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/usr/share/hardn
+ExecStart=/usr/bin/hardn-monitor
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hardn-monitor
+CPUAccounting=true
+IOAccounting=true
+MemoryAccounting=true
+
+# Security settings
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hardn /var/log/hardn
+PrivateTmp=yes
+
+# Resource limits
+MemoryMax=256M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

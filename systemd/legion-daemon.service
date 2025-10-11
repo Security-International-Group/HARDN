@@ -1,24 +1,34 @@
 [Unit]
 Description=HARDN LEGION Security Monitoring Daemon
-After=network.target
-Wants=network.target
+After=network.target hardn-monitor.service
+Wants=network.target hardn-monitor.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
 User=root
 Group=root
-ExecStart=/usr/local/bin/hardn legion --daemon --verbose
+# Create necessary directories before starting
+ExecStartPre=/bin/bash -c 'mkdir -p /var/lib/hardn/legion /var/log/hardn && chmod 755 /var/lib/hardn /var/lib/hardn/legion'
+# Use the correct binary path and create baseline if needed
+ExecStart=/bin/bash -c 'if [ ! -d /var/lib/hardn/legion ] || [ -z "$(ls -A /var/lib/hardn/legion/baseline_*.json 2>/dev/null)" ]; then echo "Creating LEGION baseline..."; /usr/bin/hardn legion --create-baseline --json; fi; exec /usr/bin/hardn legion --daemon --verbose'
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=legion-daemon
+CPUAccounting=true
+IOAccounting=true
+MemoryAccounting=true
+# Set environment to use correct binary
+Environment="PATH=/usr/bin:/bin:/usr/sbin:/sbin"
 
-# Security settings
+# Security settings - adjusted to avoid namespace issues
 NoNewPrivileges=yes
 ProtectHome=yes
 ProtectSystem=strict
-ReadWritePaths=/var/lib/hardn/legion /var/log/hardn
+ReadWritePaths=/var/lib/hardn /var/log/hardn
 PrivateTmp=yes
 
 # Resource limits

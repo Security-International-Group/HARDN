@@ -79,6 +79,7 @@ case "$1" in
         # Ensure scripts are executable
         chmod +x "${MODULE_DIR}"/*.sh 2>/dev/null || true
         chmod +x "${TOOL_DIR}"/*.sh 2>/dev/null || true
+        chmod +x /usr/bin/hardn-service-manager 2>/dev/null || true
 
         # Create global env vars for module/tool search paths
         echo "#!/bin/sh
@@ -104,8 +105,7 @@ export HARDN_TOOL_PATH=\"${TOOL_DIR}:${LEGACY_TOOL_DIR}\"
             systemctl enable hardn.service || true
             systemctl enable legion-daemon.service || true
             systemctl enable hardn-api.service || true
-            # hardn-monitor is deprecated/optional - don't enable by default
-            # systemctl enable hardn-monitor.service || true
+            systemctl enable hardn-monitor.service || true
         else
             echo "systemctl not found, skipping service enablement."
         fi

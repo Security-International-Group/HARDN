@@ -1,6 +1,0 @@
-target/release/hardn                              usr/bin/
-usr/share/hardn/tools/*.sh                        usr/share/hardn/tools/
-usr/share/hardn/modules/*.sh                      usr/share/hardn/modules/
-src/hardn-api.py                                  usr/share/hardn/src/
-etc/aide/aide.conf                                etc/aide/
-systemd/*.service                                 lib/systemd/system/

@@ -31,3 +31,13 @@ build/
 # Added by cargo
 
 /target
+debian/hardn/
+
+# Ignore Debian build artifacts
+debian/files
+debian/*.debhelper
+debian/*.substvars
+debian/debhelper-build-stamp
+
+# TODO file copy
+TODO-my-copy.md
