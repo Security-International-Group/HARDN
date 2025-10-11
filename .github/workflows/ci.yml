@@ -166,3 +166,29 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+      - name: Discord notify
+        if: always()
+        shell: bash
+        env:
+          WEBHOOK: ${{ secrets. DEV_UPDATES_DISCORD_WEBHOOK }}
+        run: |
+          STATUS="${{ job.status }}"
+          MSG="Install Test: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
+          if command -v hardn-discord.sh >/dev/null 2>&1; then
+            if [[ "$STATUS" == "success" ]]; then
+              hardn-discord.sh "OK" "$MSG" || true
+            else
+              hardn-discord.sh "FAILED" "$MSG" || true
+            fi
+          elif [[ -n "${WEBHOOK:-}" ]]; then
+            COLOR=15105570
+            [[ "$STATUS" == "success" ]] && COLOR=3066993 || true
+            [[ "$STATUS" == "failure" ]] && COLOR=15158332 || true
+            curl -H "Content-Type: application/json" -X POST "$WEBHOOK" \
+              -d "{"embeds":[{"title":"Install Test • ${{ github.repository }}","description":"Status: **${{ job.status }}** on \\`${{ github.ref }}\\`","color":$COLOR,"url":"$MSG"}]}" || true
+          else
+            echo "[INFO] No Discord webhook configured; skipping notification."
+          fi
