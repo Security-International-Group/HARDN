@@ -76,7 +76,7 @@ build:
 build-internal:
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Recon: supply scan$(COLOR_RESET)\n'
 	@MISSING_DEPS=""; \
-	for pkg in build-essential pkg-config libssl-dev debhelper lintian python3-all python3-requests python3-setuptools curl wget whiptail libgtk-4-dev libglib2.0-dev cargo rustc; do \
+	for pkg in build-essential pkg-config libssl-dev debhelper lintian python3-all python3-requests python3-setuptools curl wget whiptail libgtk-4-dev libglib2.0-dev libvte-2.91-gtk4-dev cargo rustc; do \
 		if ! dpkg -l "$$pkg" 2>/dev/null | grep -q "^ii"; then \
 			MISSING_DEPS="$$MISSING_DEPS $$pkg"; \
 		fi; \

@@ -1,11 +1,12 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use glib::clone;
-use glib::timeout_add_local;
-use glib::ControlFlow;
+use gtk4::glib::{timeout_add_local, ControlFlow};
 use gtk4::prelude::{ApplicationExt, ApplicationExtManual};
-use gtk4::{prelude::*, Application, ApplicationWindow, ScrolledWindow, TextBuffer, TextView};
+use gtk4::{prelude::*, Application, ApplicationWindow, ScrolledWindow, TextBuffer, TextView, Notebook, Paned, Orientation, Box as GtkBox, CssProvider, gdk, STYLE_PROVIDER_PRIORITY_APPLICATION, Label, Picture, TextMark};
+use std::cell::RefCell;
+use std::rc::Rc;
+use vte4::{Terminal as VteTerminal, TerminalExt, TerminalExtManual, PtyFlags};
 
 // Simple normalized event structure
 #[derive(Clone, Debug)]
@@ -47,6 +48,8 @@ impl EventBuffer {
         }
         out
     }
+
+    fn len(&self) -> usize { self.items.len() }
 }
 
 // Very small journald tailer via `journalctl -fu` spawned process.
@@ -226,25 +229,253 @@ fn main() {
     let app = Application::new(None::<&str>, Default::default());
 
     app.connect_activate(|app| {
-        // UI widgets
-        let text_view = TextView::new();
-        text_view.set_editable(false);
-        text_view.set_cursor_visible(false);
-        text_view.set_monospace(true);
-        text_view.add_css_class("view");
-        let buffer: TextBuffer = text_view.buffer();
+        // Application styling (prefer external CSS for separation of concerns)
+        if let Some(display) = gdk::Display::default() {
+            let provider = CssProvider::new();
+            let css_data = {
+                // External CSS search order
+                let mut data: Option<String> = None;
+                if let Ok(path) = std::env::var("HARDN_GUI_CSS") {
+                    data = std::fs::read_to_string(path).ok();
+                }
+                if data.is_none() {
+                    for p in [
+                        "/usr/share/hardn/gui/style.css",
+                        "/usr/local/share/hardn/gui/style.css",
+                        "./etc/gui/style.css",
+                        "./gui/style.css",
+                    ] {
+                        if let Ok(s) = std::fs::read_to_string(p) { data = Some(s); break; }
+                    }
+                }
+                data.unwrap_or_else(|| {
+                    // Fallback embedded theme (black + green, tactical)
+                    String::from(
+                        "* { background: #000; color: #d1ffe8; font-family: \"JetBrains Mono\", monospace; }\nwindow, scrolledwindow, viewport, notebook, textview, textview.view, vte-terminal, paned { background: #000; color: #d1ffe8; }\n/* Tabs */\nnotebook > header { padding: 2px 8px; }\nnotebook > header > tabs > tab { background: #000; color: #81e6d9; padding: 8px 12px; margin-right: 6px; border-radius: 6px 6px 0 0; border-bottom: 2px solid transparent; }\nnotebook > header > tabs > tab:checked { color: #d1ffe8; border-bottom: 2px solid #10b981; }\n/* Content boxes */\ntextview.view, vte-terminal { border: 1px solid #073e2c; box-shadow: inset 0 0 0 1px rgba(16,185,129,0.08); }\n.box-header { padding: 8px 10px; }\n.clock { color: #86efac; }\n/* Badges */\n.badge { border-radius: 14px; padding: 3px 10px; margin-right: 8px; background: #000; color: #81e6d9; border: 1px solid #073e2c; }\n.badge-ok { background: #001a14; color: #34d399; border-color: #10b981; }\n.badge-down { background: #1a0000; color: #fca5a5; border-color: #ef4444; }\n.badge-unknown { background: #000; color: #94a3b8; border-style: dashed; border-color: #334155; }\n/* Gridlines subtle */\ntextview.view, vte-terminal { background-image: linear-gradient(rgba(16, 185, 129, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(16, 185, 129, 0.03) 1px, transparent 1px); background-size: 32px 32px, 32px 32px; }\n",
+                    )
+                })
+            };
+            let _ = provider.load_from_data(&css_data);
+            gtk4::style_context_add_provider_for_display(&display, &provider, STYLE_PROVIDER_PRIORITY_APPLICATION);
+        }
+        if let Some(settings) = gtk4::Settings::default() {
+            settings.set_gtk_application_prefer_dark_theme(true);
+        }
 
-        let scroll = ScrolledWindow::new();
-        scroll.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
-        scroll.set_child(Some(&text_view));
+        // Logs buffer with two separate views (tab and split)
+        let buffer: TextBuffer = TextBuffer::new(None);
+        // Keep a mark at the end to allow smooth follow scrolling
+        let mut tmp_end = buffer.end_iter();
+        let end_mark: TextMark = buffer.create_mark(Some("log_end"), &tmp_end, true);
+
+        let text_view_tab = TextView::new();
+        text_view_tab.set_editable(false);
+        text_view_tab.set_cursor_visible(false);
+        text_view_tab.set_monospace(true);
+        text_view_tab.add_css_class("view");
+        text_view_tab.set_buffer(Some(&buffer));
+
+        let text_view_split = TextView::new();
+        text_view_split.set_editable(false);
+        text_view_split.set_cursor_visible(false);
+        text_view_split.set_monospace(true);
+        text_view_split.add_css_class("view");
+        text_view_split.set_buffer(Some(&buffer));
+
+        let logs_scroll_tab = ScrolledWindow::new();
+        logs_scroll_tab.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
+        logs_scroll_tab.set_child(Some(&text_view_tab));
+        logs_scroll_tab.set_overlay_scrolling(false);
+        logs_scroll_tab.set_kinetic_scrolling(false);
+        logs_scroll_tab.set_hexpand(true);
+        logs_scroll_tab.set_vexpand(true);
+
+        let logs_scroll_split = ScrolledWindow::new();
+        logs_scroll_split.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
+        logs_scroll_split.set_child(Some(&text_view_split));
+        logs_scroll_split.set_overlay_scrolling(false);
+        logs_scroll_split.set_kinetic_scrolling(false);
+        logs_scroll_split.set_hexpand(true);
+        logs_scroll_split.set_vexpand(true);
+
+        // Terminal views (two instances: tab and split)
+        let terminal_tab = VteTerminal::new();
+        let term_scroll_tab = ScrolledWindow::new();
+        term_scroll_tab.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
+        term_scroll_tab.set_child(Some(&terminal_tab));
+        term_scroll_tab.set_hexpand(true);
+        term_scroll_tab.set_vexpand(true);
+
+        let terminal_split = VteTerminal::new();
+        let term_scroll_split = ScrolledWindow::new();
+        term_scroll_split.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
+        term_scroll_split.set_child(Some(&terminal_split));
+        term_scroll_split.set_hexpand(true);
+        term_scroll_split.set_vexpand(true);
+
+        // Start shells: keep idle shells; prompt/launch when tab is opened
+        {
+            let argv: [&str; 1] = ["/bin/bash"]; // login shell
+            for term in [&terminal_tab, &terminal_split] {
+                term.spawn_async(
+                    PtyFlags::DEFAULT,
+                    None::<&str>,
+                    &argv,
+                    &[],
+                    gtk4::glib::SpawnFlags::SEARCH_PATH,
+                    || {},
+                    -1,
+                    None::<&gtk4::gio::Cancellable>,
+                    |_| {},
+                );
+            }
+        }
+
+        // Split view (Logs + Terminal)
+        let split = Paned::new(Orientation::Horizontal);
+        split.set_hexpand(true);
+        split.set_vexpand(true);
+        split.set_start_child(Some(&logs_scroll_split));
+        split.set_resize_start_child(true);
+        split.set_shrink_start_child(true);
+        split.set_end_child(Some(&term_scroll_split));
+        split.set_resize_end_child(true);
+        split.set_shrink_end_child(true);
+
+        // Tabs container
+        let notebook = Notebook::new();
+        notebook.set_hexpand(true);
+        notebook.set_vexpand(true);
+        let tab_logs_label = gtk4::Label::new(Some("Logs"));
+        let tab_term_label = gtk4::Label::new(Some("Terminal"));
+        let tab_split_label = gtk4::Label::new(Some("Logs + Terminal"));
+
+        // The Notebook requires owned children; wrap scrolled children in boxes to avoid shared child reuse.
+        let logs_box = GtkBox::new(Orientation::Vertical, 0);
+        logs_box.set_hexpand(true);
+        logs_box.set_vexpand(true);
+        logs_box.append(&logs_scroll_tab);
+        let term_box = GtkBox::new(Orientation::Vertical, 0);
+        term_box.set_hexpand(true);
+        term_box.set_vexpand(true);
+        term_box.append(&term_scroll_tab);
+        let split_box = GtkBox::new(Orientation::Vertical, 0);
+        split_box.set_hexpand(true);
+        split_box.set_vexpand(true);
+        split_box.append(&split);
+
+        notebook.append_page(&logs_box, Some(&tab_logs_label));
+        notebook.append_page(&term_box, Some(&tab_term_label));
+        notebook.append_page(&split_box, Some(&tab_split_label));
+        notebook.set_tab_pos(gtk4::PositionType::Top);
+
+        // Prepare on-demand terminal launch per tab selection (one-time per view)
+        let term_prompted_tab = Rc::new(RefCell::new(false));
+        let term_prompted_split = Rc::new(RefCell::new(false));
+        let terminal_tab_c = terminal_tab.clone();
+        let terminal_split_c = terminal_split.clone();
+        let tab_flag_c = term_prompted_tab.clone();
+        let split_flag_c = term_prompted_split.clone();
+        notebook.connect_switch_page(move |_nb, _page, idx| {
+            // Build the command to clear screen, print prompt, then trigger sudo to launch the manager
+            const LAUNCH_CMD: &[u8] = b"printf \"\\033c\\033]0;HARDN Service Console\\007\\033[38;5;48m>>> Enter password to launch HARDN Service Manager...\\033[0m\\n\"; sudo -k; sudo -S bash -lc hardn-service-manager\n";
+            if idx == 1 {
+                if !*tab_flag_c.borrow() {
+                    terminal_tab_c.feed_child(LAUNCH_CMD);
+                    *tab_flag_c.borrow_mut() = true;
+                }
+            } else if idx == 2 {
+                if !*split_flag_c.borrow() {
+                    terminal_split_c.feed_child(LAUNCH_CMD);
+                    *split_flag_c.borrow_mut() = true;
+                }
+            }
+        });
+
+        // If current page is already Terminal or Split at startup, fire once
+        {
+            const LAUNCH_CMD: &[u8] = b"printf \"\\033c\\033]0;HARDN Service Console\\007\\033[38;5;48m>>> Enter password to launch HARDN Service Manager...\\033[0m\\n\"; sudo -k; sudo -S bash -lc hardn-service-manager\n";
+            let current = notebook.current_page();
+            if current == Some(1) && !*term_prompted_tab.borrow() {
+                terminal_tab.feed_child(LAUNCH_CMD);
+                *term_prompted_tab.borrow_mut() = true;
+            } else if current == Some(2) && !*term_prompted_split.borrow() {
+                terminal_split.feed_child(LAUNCH_CMD);
+                *term_prompted_split.borrow_mut() = true;
+            }
+        }
+
+        // Header with logo at top-left and clock at right
+        let header_box = GtkBox::new(Orientation::Horizontal, 8);
+        header_box.set_margin_top(6);
+        header_box.set_margin_start(8);
+        header_box.set_margin_end(8);
+        header_box.add_css_class("box-header");
+        let logo_path_candidates = [
+            "/usr/share/hardn/docs/IMG_1233.jpeg",
+            "/usr/share/pixmaps/hardn.png",
+            "/usr/share/pixmaps/hardn.jpg",
+            "./docs/assets/IMG_1233.jpeg",
+        ];
+        let mut logo_picture: Option<Picture> = None;
+        for p in logo_path_candidates.iter() {
+            if std::path::Path::new(p).exists() {
+                let pic = Picture::for_filename(p);
+                pic.set_width_request(26);
+                pic.set_height_request(26);
+                pic.add_css_class("logo");
+                logo_picture = Some(pic);
+                break;
+            }
+        }
+        if let Some(pic) = &logo_picture { header_box.append(pic); }
+        let title_label = Label::new(Some("HARDN Monitor (Read-Only)"));
+        title_label.add_css_class("title-2");
+        header_box.append(&title_label);
+        // Spacer
+        let spacer = GtkBox::new(Orientation::Horizontal, 0);
+        spacer.set_hexpand(true);
+        header_box.append(&spacer);
+        // Clock (updates every second)
+        let clock_label = Label::new(None);
+        clock_label.add_css_class("clock");
+        header_box.append(&clock_label);
+
+        // Status badges row
+        let badge_box = GtkBox::new(Orientation::Horizontal, 6);
+        badge_box.set_margin_start(8);
+        badge_box.set_margin_end(8);
+        let badge_hardn = Label::new(Some("HARDN: ?"));
+        let badge_api = Label::new(Some("API: ?"));
+        let badge_legion = Label::new(Some("LEGION: ?"));
+        let badge_monitor = Label::new(Some("MONITOR: ?"));
+        for b in [&badge_hardn, &badge_api, &badge_legion, &badge_monitor] {
+            b.add_css_class("badge");
+            b.add_css_class("badge-unknown");
+        }
+        badge_box.append(&badge_hardn);
+        badge_box.append(&badge_api);
+        badge_box.append(&badge_legion);
+        badge_box.append(&badge_monitor);
+
+        // Root container: header + badges + tabs
+        let root = GtkBox::new(Orientation::Vertical, 0);
+        root.set_hexpand(true);
+        root.set_vexpand(true);
+        root.append(&header_box);
+        root.append(&badge_box);
+        root.append(&notebook);
 
         let window = ApplicationWindow::builder()
             .application(app)
             .title("HARDN Monitor (Read-Only)")
             .default_width(980)
             .default_height(640)
-            .child(&scroll)
+            .child(&root)
             .build();
+        window.maximize();
+
+        // Note: VTE already supports Ctrl+Shift+C / Ctrl+Shift+V in many environments.
 
         // Ring buffer: assume ~200 bytes/event average -> 500_000 events ~100MB; we target ~50MB.
         // Choose 250_000 events cap conservatively (<200MB with safety margin depending on strings).
@@ -273,24 +504,105 @@ fn main() {
         let alerts_ref = alerts_state.clone();
         let buf_for_ui = buffer.clone();
 
-        // Periodic UI refresh (pull model) ~10 times/second is cheap; we use 5/sec
-        timeout_add_local(Duration::from_millis(200), clone!(@strong rb, @strong buf_for_ui, @strong alerts_ref => move || {
-            let header = if let Ok(h) = health_ref.lock() { render_header_text(&*h) } else { String::new() };
-            let alerts = if let Ok(a) = alerts_ref.lock() {
+        // Auto-follow flags for each log view: follow only when at bottom
+        let auto_follow_tab = Arc::new(Mutex::new(true));
+        let auto_follow_split = Arc::new(Mutex::new(true));
+        {
+            let vadj = logs_scroll_tab.vadjustment();
+            let auto_flag = auto_follow_tab.clone();
+            vadj.connect_value_changed(move |adj| {
+                let value = adj.value();
+                let upper = adj.upper();
+                let page = adj.page_size();
+                let at_bottom = value + page >= upper - 2.0;
+                if let Ok(mut f) = auto_flag.lock() { *f = at_bottom; }
+            });
+        }
+        {
+            let vadj = logs_scroll_split.vadjustment();
+            let auto_flag = auto_follow_split.clone();
+            vadj.connect_value_changed(move |adj| {
+                let value = adj.value();
+                let upper = adj.upper();
+                let page = adj.page_size();
+                let at_bottom = value + page >= upper - 2.0;
+                if let Ok(mut f) = auto_flag.lock() { *f = at_bottom; }
+            });
+        }
+
+        // Periodic UI refresh (pull model)
+        let rb_c = rb.clone();
+        let buf_for_ui_c = buf_for_ui.clone();
+        let alerts_ref_c = alerts_ref.clone();
+        let health_ref_c = health_ref.clone();
+        let badge_hardn_c = badge_hardn.clone();
+        let badge_api_c = badge_api.clone();
+        let badge_legion_c = badge_legion.clone();
+        let badge_monitor_c = badge_monitor.clone();
+        let text_view_tab_c = text_view_tab.clone();
+        let text_view_split_c = text_view_split.clone();
+        let auto_follow_tab_c = auto_follow_tab.clone();
+        let auto_follow_split_c = auto_follow_split.clone();
+        let end_mark_c = end_mark.clone();
+        let last_len: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
+        let last_len_c = last_len.clone();
+        // Update clock
+        let clock_label_c = clock_label.clone();
+        timeout_add_local(Duration::from_millis(1000), move || {
+            let now = chrono::Local::now();
+            clock_label_c.set_label(&now.format("%b %d %H:%M:%S").to_string());
+            ControlFlow::Continue
+        });
+
+        timeout_add_local(Duration::from_millis(200), move || {
+            // Remove header text from logs (no duplication)
+            let header = String::new();
+            // Update badges from service health
+            if let Ok(hs) = health_ref_c.lock() {
+                let update_badge = |lbl: &Label, name: &str, state: Option<bool>| {
+                    lbl.set_label(&format!("{}: {}", name, match state { Some(true)=>"RUNNING", Some(false)=>"DOWN", None=>"?" }));
+                    let ctx = lbl.style_context();
+                    ctx.remove_class("badge-ok");
+                    ctx.remove_class("badge-down");
+                    ctx.remove_class("badge-unknown");
+                    match state { Some(true)=>ctx.add_class("badge-ok"), Some(false)=>ctx.add_class("badge-down"), None=>ctx.add_class("badge-unknown") }
+                };
+                update_badge(&badge_hardn_c, "HARDN", hs.hardn);
+                update_badge(&badge_api_c, "API", hs.api);
+                update_badge(&badge_legion_c, "LEGION", hs.legion);
+                update_badge(&badge_monitor_c, "MONITOR", hs.monitor);
+            }
+            let alerts = if let Ok(a) = alerts_ref_c.lock() {
                 let mut s = String::new();
                 if let Some(ref core) = a.core_services { s.push_str(&format!("Core Services: {}\n", core)); }
                 if let Some(ref sys) = a.systemd_metrics { s.push_str(&format!("Systemd: {}\n", sys)); }
                 if let Some(ref journal) = a.journal_metrics { s.push_str(&format!("Journal: {}\n", journal)); }
                 if let Some(ref network) = a.network_metrics { s.push_str(&format!("Networkd: {}\n", network)); }
-                if let Some(ref m) = a.metrics { s.push_str(&format!("Host Metrics: {}\n", m)); }
                 if let Some(ref l) = a.legion_summary { s.push_str(&format!("LEGION: {}\n", l)); }
                 if !s.is_empty() { s.push('\n'); }
                 s
             } else { String::new() };
-            let body = rb.lock().map(|b| b.to_display_text()).unwrap_or_else(|_| String::new());
-            buf_for_ui.set_text(&(header + &alerts + &body));
+            // Only update the view when new lines arrived, and avoid redraw while user is paging
+            let (len, body) = if let Ok(b) = rb_c.lock() {
+                (b.len(), b.to_display_text())
+            } else { (0usize, String::new()) };
+            let should_update = len != *last_len_c.borrow() && (auto_follow_tab_c.lock().map(|v| *v).unwrap_or(false) || auto_follow_split_c.lock().map(|v| *v).unwrap_or(false));
+            if should_update {
+                *last_len_c.borrow_mut() = len;
+                buf_for_ui_c.set_text(&(header + &alerts + &body));
+            }
+
+            // Scroll to end if auto-follow is active for each view
+            let mut end_iter = buf_for_ui_c.end_iter();
+            buf_for_ui_c.move_mark(&end_mark_c, &end_iter);
+            if auto_follow_tab_c.lock().map(|v| *v).unwrap_or(false) {
+                text_view_tab_c.scroll_mark_onscreen(&end_mark_c);
+            }
+            if auto_follow_split_c.lock().map(|v| *v).unwrap_or(false) {
+                text_view_split_c.scroll_mark_onscreen(&end_mark_c);
+            }
             ControlFlow::Continue
-        }));
+        });
 
         // Background thread to read stdout lines from journalctl and append to ring buffer
         if let Some(mut child) = child {
