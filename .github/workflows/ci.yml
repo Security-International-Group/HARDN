@@ -25,14 +25,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install system deps
+
+      - name: Install from debian/control
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential pkg-config libssl-dev ca-certificates \
-            fakeroot debhelper devscripts jq curl file \
-            libgtk-4-dev libglib2.0-dev libvte-2.91-dev
-            echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
+            sudo apt-get update
+            sudo apt-get install -y equivs
+            cd $GITHUB_WORKSPACE
+            equivs-control debian/control
+            sudo mk-build-deps -i debian/control --tool "apt-get -y"
 
       - name: Cache cargo
         uses: actions/cache@v4
