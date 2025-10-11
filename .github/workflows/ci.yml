@@ -31,6 +31,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y equivs devscripts
           cd $GITHUB_WORKSPACE
+          if [ ! -f debian/control ]; then
+            echo "ERROR: debian/control file not found!"
+            ls -l debian
+            exit 1
+          fi
           equivs-control debian/control
           sudo mk-build-deps -i debian/control --tool "apt-get -y"
 
