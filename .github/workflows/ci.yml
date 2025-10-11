@@ -25,6 +25,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Debug debian directory
+        run: |
+          ls -l debian
+
 
       - name: Install control
         run: |
