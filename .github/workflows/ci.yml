@@ -322,8 +322,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -f latest
-          git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/Security-International-Group/HARDN.git latest
+          git tag -d latest || true
+          git tag latest
+          git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/Security-International-Group/HARDN.git latest --force
 
       - name: Prepare release assets with static naming
         id: assets
@@ -482,6 +483,5 @@ jobs:
           else
             echo "[INFO] No Discord webhook configured; skipping notification."
           fi
-
 
 
