@@ -311,25 +311,19 @@ jobs:
           echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
           echo "Creating/updating latest release (version: $VERSION)"
 
-      - name: Delete existing latest tag and release
+      - name: Push tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.tag.outputs.new_tag }}"
+          git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/Security-International-Group/HARDN.git "${{ steps.tag.outputs.new_tag }}"
 
-          # Delete the latest tag locally and remotely if it exists
-          if git tag -l | grep -q "^latest$"; then
-            git tag -d latest || true
-          fi
-          git push origin :refs/tags/latest || true
-
-          echo "Cleaned up existing latest tag"
-
-      - name: Create new latest tag
+      - name: Create/update latest tag
         run: |
-          # Create a fresh latest tag pointing to current commit
-          git tag latest
-          git push origin latest
-          echo "Created new latest tag"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f latest
+          git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/Security-International-Group/HARDN.git latest
 
       - name: Prepare release assets with static naming
         id: assets
@@ -478,7 +472,7 @@ jobs:
             [[ "$STATUS" == "failure" ]] && COLOR=15158332 || true  # Red
 
             if [[ "$STATUS" == "success" ]]; then
-              DESCRIPTION=" **Latest Release Updated**\\n**Package**: \`${STATIC_DEB_NAME}\`\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`\\n✅ Static download URL ready!"
+              DESCRIPTION=" **Latest Release Updated**\\n**Package**: \`${STATIC_DEB_NAME}\`\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`\\n Static download URL ready!"
             else
               DESCRIPTION=" **Latest Release Update Failed**\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`"
             fi
@@ -488,5 +482,6 @@ jobs:
           else
             echo "[INFO] No Discord webhook configured; skipping notification."
           fi
+
 
 
