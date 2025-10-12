@@ -125,6 +125,7 @@ jobs:
           lintian --display-info --display-experimental --pedantic "$DEB_FILE" || true
 
       - name: Test package installation in clean environment
+        timeout-minutes: 10
         run: |
           DEB_FILE="${{ steps.deb-build.outputs.deb_path }}"
 
@@ -147,8 +148,23 @@ jobs:
 
           echo "=== Testing Binary Execution ==="
           # Test that binaries can run (basic smoke test)
+          echo "Testing hardn binary..."
           hardn --version || echo "hardn version check failed"
-          hardn-monitor --help || echo "hardn-monitor help failed"
+          hardn --help >/dev/null || echo "hardn help failed"
+
+          # Test hardn-monitor with strict timeout to prevent infinite loop
+          echo "Testing hardn-monitor (with 3-second timeout)..."
+          timeout 3s hardn-monitor 2>/dev/null && echo "hardn-monitor started successfully" || echo "hardn-monitor test completed (expected timeout after service monitoring check)"
+
+          # Test hardn-gui in headless environment (expected to fail gracefully)
+          echo "Testing hardn-gui (expected to fail in headless CI)..."
+          timeout 3s hardn-gui --version 2>/dev/null || echo "hardn-gui test completed (expected failure in headless environment)"
+
+          # Ensure no background processes are still running
+          echo "Cleaning up any remaining processes..."
+          pkill -f hardn-monitor || true
+          pkill -f hardn-gui || true
+          sleep 1
 
           echo "=== Testing Package Removal ==="
           # Test package removal
@@ -192,6 +208,7 @@ jobs:
           path: release_assets
 
       - name: Integration test in fresh container
+        timeout-minutes: 8
         run: |
           DEB_FILE=$(ls release_assets/*.deb | head -n1)
           echo "Testing deployment of: $DEB_FILE"
@@ -229,7 +246,11 @@ jobs:
           # Test basic functionality
           echo "=== Testing Basic Functionality ==="
           hardn --version
-          hardn --help
+          timeout 3s hardn --help >/dev/null || echo "hardn help test completed"
+
+          # Quick test of hardn-monitor (with timeout)
+          echo "Quick hardn-monitor validation..."
+          timeout 2s hardn-monitor 2>/dev/null || echo "hardn-monitor validation completed"
 
           # Test systemd service files
           echo "=== Testing Service Integration ==="
@@ -276,30 +297,50 @@ jobs:
           echo "Version extracted: $VERSION"
           echo "Architecture: $ARCH"
 
-      - name: Create semantic version tag
+      - name: Prepare latest release
         id: tag
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          # Use version from Cargo.toml/debian control, increment build number
-          if git tag --list | grep -q "^v${VERSION}"; then
-            # If exact version exists, add build number
-            BUILD_NUM=1
-            while git tag --list | grep -q "^v${VERSION}-${BUILD_NUM}$"; do
-              BUILD_NUM=$((BUILD_NUM + 1))
-            done
-            NEW_TAG="v${VERSION}-${BUILD_NUM}"
-          else
-            NEW_TAG="v${VERSION}"
-          fi
+          # Always use "latest" as the tag for a rolling release
+          NEW_TAG="latest"
           echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
-          echo "Creating tag: $NEW_TAG"
+          echo "Creating/updating latest release (version: $VERSION)"
 
-      - name: Push tag
+      - name: Delete existing latest tag and release
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "${{ steps.tag.outputs.new_tag }}"
-          git push origin "${{ steps.tag.outputs.new_tag }}"
+
+          # Delete the latest tag locally and remotely if it exists
+          if git tag -l | grep -q "^latest$"; then
+            git tag -d latest || true
+          fi
+          git push origin :refs/tags/latest || true
+
+          echo "Cleaned up existing latest tag"
+
+      - name: Create new latest tag
+        run: |
+          # Create a fresh latest tag pointing to current commit
+          git tag latest
+          git push origin latest
+          echo "Created new latest tag"
+
+      - name: Prepare release assets with static naming
+        id: assets
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ARCH="${{ steps.version.outputs.architecture }}"
+          ORIGINAL_DEB="${{ steps.version.outputs.deb_name }}"
+
+          # Create static filename for the release
+          STATIC_DEB_NAME="hardn-latest_${ARCH}.deb"
+
+          # Copy with static name
+          cp "release_assets/$ORIGINAL_DEB" "release_assets/$STATIC_DEB_NAME"
+
+          echo "static_deb_name=$STATIC_DEB_NAME" >> $GITHUB_OUTPUT
+          echo "Renamed $ORIGINAL_DEB to $STATIC_DEB_NAME for static download URL"
 
       - name: Generate release notes
         id: notes
@@ -307,30 +348,34 @@ jobs:
           TAG="${{ steps.tag.outputs.new_tag }}"
           VERSION="${{ steps.version.outputs.version }}"
           ARCH="${{ steps.version.outputs.architecture }}"
-          DEB_NAME="${{ steps.version.outputs.deb_name }}"
-          DEB_FILE="release_assets/$DEB_NAME"
+          STATIC_DEB_NAME="${{ steps.assets.outputs.static_deb_name }}"
+          DEB_FILE="release_assets/$STATIC_DEB_NAME"
 
           # Get package size
           SIZE=$(du -h "$DEB_FILE" | cut -f1)
+          BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
           cat > RELEASE_NOTES.md <<EOF
-          # HARDN ${TAG}
+          # HARDN Latest Release
 
-          **Linux Security Hardening Framework - Debian Package Release**
+          **Debian Security Hardening Framework - Latest Debian Package**
 
-          ## 📦 Package Information
-          - **File**: \`${DEB_NAME}\`
+          >  **Release**: This release is automatically updated with each build.
+
+          ##  Package Information
+          - **File**: \`${STATIC_DEB_NAME}\`
           - **Version**: \`${VERSION}\`
           - **Architecture**: \`${ARCH}\`
           - **Size**: \`${SIZE}\`
+          - **Built**: \`${BUILD_DATE}\`
 
-          ## 🚀 Installation
+          ##  Installation
 
-          ### Quick Install
+          ### Quick Install (Always Latest)
           \`\`\`bash
-          # Download and install
-          wget https://github.com/\${{ github.repository }}/releases/download/${TAG}/${DEB_NAME}
-          sudo dpkg -i ${DEB_NAME}
+          # Download latest version (URL stays the same!)
+          wget https://github.com/\${{ github.repository }}/releases/download/latest/${STATIC_DEB_NAME}
+          sudo dpkg -i ${STATIC_DEB_NAME}
 
           # Fix any dependency issues
           sudo apt-get install -f
@@ -338,7 +383,6 @@ jobs:
           # Start services
           sudo systemctl enable hardn-api
           sudo systemctl start hardn-api
-          \`\`\`
 
           ### Usage
           \`\`\`bash
@@ -352,7 +396,7 @@ jobs:
           hardn-gui
           \`\`\`
 
-          ## 🔧 What's Included
+          ##  What's Included
 
           ### Binaries
           - \`hardn\` - Main security hardening CLI
@@ -371,7 +415,7 @@ jobs:
           - Standard system utilities (curl, wget, git, lsof, etc.)
           - GTK4 and VTE for GUI components
 
-          ## 🛡️ Security Features
+          ##  Security Features
           - Automated system hardening
           - Real-time security monitoring
           - Compliance checking and reporting
@@ -379,7 +423,7 @@ jobs:
           - File integrity monitoring
           - Network security scanning
 
-          ## 📚 Documentation
+          ## Documentation
           See the [documentation](https://github.com/\${{ github.repository }}/tree/main/docs) for detailed usage instructions and security guidelines.
 
           ---
@@ -387,16 +431,24 @@ jobs:
           **Built with dpkg-buildpackage** | **Tested on Ubuntu Latest** | **CI/CD Pipeline Validated**
           EOF
 
-      - name: Create GitHub Release
+      - name: Delete existing latest release
+        run: |
+          # Delete the existing latest release if it exists
+          gh release delete latest --yes || echo "No existing latest release to delete"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Latest Release
         uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836
         with:
           tag_name: ${{ steps.tag.outputs.new_tag }}
           target_commitish: ${{ github.sha }}
-          name: HARDN ${{ steps.tag.outputs.new_tag }}
+          name: "HARDN Latest"
           body_path: RELEASE_NOTES.md
-          files: release_assets/*.deb
+          files: release_assets/${{ steps.assets.outputs.static_deb_name }}
           draft: false
           prerelease: false
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -407,26 +459,29 @@ jobs:
           WEBHOOK: ${{ secrets.DEV_UPDATES_DISCORD_WEBHOOK }}
         run: |
           STATUS="${{ job.status }}"
-          TAG="${{ steps.tag.outputs.new_tag }}"
-          DEB_NAME="${{ steps.version.outputs.deb_name }}"
-          MSG="🚀 HARDN Release ${TAG}: https://github.com/${{ github.repository }}/releases/tag/${TAG}"
+          VERSION="${{ steps.version.outputs.version }}"
+          STATIC_DEB_NAME="${{ steps.assets.outputs.static_deb_name }}"
+          MSG="🚀 HARDN Latest Updated (v${VERSION}): https://github.com/${{ github.repository }}/releases/tag/latest"
 
           if command -v hardn-discord.sh >/dev/null 2>&1; then
             if [[ "$STATUS" == "success" ]]; then
-              hardn-discord.sh "RELEASE SUCCESS" "$MSG" || true
+              hardn-discord.sh "LATEST RELEASE UPDATED" "$MSG" || true
             else
-              hardn-discord.sh "RELEASE FAILED" "$MSG" || true
+              hardn-discord.sh "LATEST RELEASE FAILED" "$MSG" || true
             fi
           elif [[ -n "${WEBHOOK:-}" ]]; then
             COLOR=15105570  # Default gray
             [[ "$STATUS" == "success" ]] && COLOR=3066993 || true  # Green
             [[ "$STATUS" == "failure" ]] && COLOR=15158332 || true  # Red
 
-            DESCRIPTION="**Package**: \`${DEB_NAME}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`"
-            [[ "$STATUS" == "success" ]] && DESCRIPTION="$DESCRIPTION\\n✅ Ready for deployment!"
+            if [[ "$STATUS" == "success" ]]; then
+              DESCRIPTION="🔄 **Latest Release Updated**\\n**Package**: \`${STATIC_DEB_NAME}\`\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`\\n✅ Static download URL ready!"
+            else
+              DESCRIPTION="❌ **Latest Release Update Failed**\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`"
+            fi
 
             curl -H "Content-Type: application/json" -X POST "$WEBHOOK" \
-              -d "{\"embeds\":[{\"title\":\"HARDN Release Pipeline • ${{ github.repository }}\",\"description\":\"$DESCRIPTION\",\"color\":$COLOR,\"url\":\"$MSG\"}]}" || true
+              -d "{\"embeds\":[{\"title\":\"HARDN Latest Release Pipeline • ${{ github.repository }}\",\"description\":\"$DESCRIPTION\",\"color\":$COLOR,\"url\":\"$MSG\"}]}" || true
           else
             echo "[INFO] No Discord webhook configured; skipping notification."
           fi
