@@ -302,22 +302,36 @@ jobs:
           echo "Version extracted: $VERSION"
           echo "Architecture: $ARCH"
 
-      - name: Prepare latest release
+      - name: Prepare semantic version tag
         id: tag
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          # Always use "latest" as the tag for a rolling release
-          NEW_TAG="latest"
-          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
-          echo "Creating/updating latest release (version: $VERSION)"
+          # Create semantic version tag (e.g., v1.0.0)
+          SEMANTIC_TAG="v${VERSION}"
+          echo "semantic_tag=$SEMANTIC_TAG" >> $GITHUB_OUTPUT
+          echo "latest_tag=latest" >> $GITHUB_OUTPUT
+          echo "Creating semantic tag: $SEMANTIC_TAG and updating latest tag"
 
-      - name: Create/update latest tag
+      - name: Create/update tags
         run: |
+          SEMANTIC_TAG="${{ steps.tag.outputs.semantic_tag }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create semantic version tag (only if it doesn't exist)
+          if ! git tag -l | grep -q "^${SEMANTIC_TAG}$"; then
+            git tag "$SEMANTIC_TAG"
+            git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/Security-International-Group/HARDN.git "$SEMANTIC_TAG"
+            echo "Created new semantic tag: $SEMANTIC_TAG"
+          else
+            echo "Semantic tag $SEMANTIC_TAG already exists"
+          fi
+
+          # Force update latest tag to point to current commit
           git tag -d latest || true
           git tag latest
           git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/Security-International-Group/HARDN.git latest --force
+          echo "Updated latest tag to point to current commit"
 
       - name: Prepare release assets with static naming
         id: assets
@@ -354,10 +368,11 @@ jobs:
           **Debian Security Hardening Framework - Latest Debian Package**
 
           >  **Release**: This release is automatically updated with each build.
+          >  **Version Tag**: \`v${VERSION}\` | **Latest Tag**: \`latest\`
 
           ##  Package Information
           - **File**: \`${STATIC_DEB_NAME}\`
-          - **Version**: \`${VERSION}\`
+          - **Version**: \`v${VERSION}\`
           - **Architecture**: \`${ARCH}\`
           - **Size**: \`${SIZE}\`
           - **Built**: \`${BUILD_DATE}\`
@@ -376,8 +391,14 @@ jobs:
           # Start services
           sudo systemctl enable hardn-api
           sudo systemctl start hardn-api
+          \`\`\`
 
-          ### Usage
+          ### Alternative: Install Specific Version
+          \`\`\`bash
+          # Download specific version
+          wget https://github.com/\${{ github.repository }}/releases/download/v${VERSION}/${STATIC_DEB_NAME}
+          sudo dpkg -i ${STATIC_DEB_NAME}
+          \`\`\`
           \`\`\`bash
           # Command line interface
           hardn --help
@@ -434,9 +455,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836
         with:
-          tag_name: ${{ steps.tag.outputs.new_tag }}
+          tag_name: ${{ steps.tag.outputs.latest_tag }}
           target_commitish: ${{ github.sha }}
-          name: HARDN ${{ steps.tag.outputs.new_tag }}
+          name: HARDN Latest Release (v${{ steps.version.outputs.version }})
           body_path: RELEASE_NOTES.md
           files: release_assets/*.deb
           draft: false
@@ -458,9 +479,9 @@ jobs:
 
           if command -v hardn-discord.sh >/dev/null 2>&1; then
             if [[ "$STATUS" == "success" ]]; then
-              hardn-discord.sh "LATEST RELEASE UPDATED" "$MSG" || true
+              hardn-discord.sh "LATEST RELEASE UPDATED (v${VERSION})" "$MSG" || true
             else
-              hardn-discord.sh "LATEST RELEASE FAILED" "$MSG" || true
+              hardn-discord.sh "LATEST RELEASE FAILED (v${VERSION})" "$MSG" || true
             fi
           elif [[ -n "${WEBHOOK:-}" ]]; then
             COLOR=15105570  # Default gray
@@ -468,9 +489,9 @@ jobs:
             [[ "$STATUS" == "failure" ]] && COLOR=15158332 || true  # Red
 
             if [[ "$STATUS" == "success" ]]; then
-              DESCRIPTION=" **Latest Release Updated**\\n**Package**: \`${STATIC_DEB_NAME}\`\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`\\n Static download URL ready!"
+              DESCRIPTION=" **Latest Release Updated (v${VERSION})**\\n**Package**: \`${STATIC_DEB_NAME}\`\\n**Version**: \`v${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`\\n Static download URL ready!"
             else
-              DESCRIPTION=" **Latest Release Update Failed**\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`"
+              DESCRIPTION=" **Latest Release Update Failed (v${VERSION})**\\n**Version**: \`v${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`"
             fi
 
             curl -H "Content-Type: application/json" -X POST "$WEBHOOK" \
@@ -478,6 +499,5 @@ jobs:
           else
             echo "[INFO] No Discord webhook configured; skipping notification."
           fi
-
 
 
