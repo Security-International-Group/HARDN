@@ -1165,7 +1165,7 @@ fn run_all_tools() -> i32 {
 /// Sandbox commands (--sandbox-on/--sandbox-off) are NEVER included in this batch operation
 fn run_everything() -> i32 {
     println!("\n╔═══════════════════════════════════════╗");
-    println!("║   COMPREHENSIVE SYSTEM HARDENING       ║");
+    println!("║   COMPREHENSIVE SYSTEM HARDENING        ║");
     println!("╚═════════════════════════════════════════╝\n");
 
     log_message(
@@ -1433,8 +1433,8 @@ fn sandbox_on() -> i32 {
 /// WARNING: This will DISABLE AppArmor and REQUIRE a system reboot
 fn enable_selinux() -> i32 {
     println!("\n╔══════════════════════════════════════╗");
-    println!("║           ⚠️  DANGER ZONE ⚠️           ║");
-    println!("║         SELINUX ACTIVATION             ║");
+    println!("║            ⚠️ Advanced ⚠️             ║");
+    println!("║          SELINUX ACTIVATION            ║");
     println!("╚════════════════════════════════════════╝\n");
 
     log_message(
@@ -1812,7 +1812,7 @@ fn get_security_tools() -> Vec<SecurityToolInfo> {
         },
         SecurityToolInfo {
             name: "ClamAV",
-            service_name: "clamav-daemon",
+            service_name: "clamv-daemon",
             process_name: "clamd",
             description: "Antivirus engine for detecting trojans and malware",
         },
@@ -2442,8 +2442,8 @@ fn display_formatted_logs(logs: &str) {
         }
 
         // Check if this is a new log entry (starts with timestamp or contains service name with PID)
-        let is_new_entry = line.contains("hardn[") || 
-                          line.contains("legion[") || 
+        let is_new_entry = line.contains("hardn[") ||
+                          line.contains("legion[") ||
                           line.contains("hardn-monitor[") ||
                           line.starts_with("2025-") || // Year prefix for timestamps
                           line.starts_with("2024-");
@@ -2551,14 +2551,14 @@ fn format_log_entry(entry: &str) -> String {
 
         // Clean up emojis and format
         let clean_message = message
-            .replace("🌐", "[NET]")
-            .replace("⚠️", "[WARN]")
-            .replace("🔒", "[SEC]")
-            .replace("🚨", "[ALERT]")
-            .replace("✓", "[OK]")
-            .replace("✗", "[FAIL]")
-            .replace("📊", "[STATS]")
-            .replace("🛡️", "[SHIELD]");
+            .replace("\u{1F310}", "[NET]")
+            .replace("\u{26A0}\u{FE0F}", "[WARN]")
+            .replace("\u{1F512}", "[SEC]")
+            .replace("\u{1F6A8}", "[ALERT]")
+            .replace("\u{2713}", "[OK]")
+            .replace("\u{2717}", "[FAIL]")
+            .replace("\u{1F4CA}", "[STATS]")
+            .replace("\u{1F6E1}\u{FE0F}", "[SHIELD]");
 
         // Truncate very long messages
         if clean_message.len() > 80 {

@@ -101,20 +101,20 @@ build-internal:
 			while kill -0 $$RUSTUP_PID 2>/dev/null; do \
 				BAR="$${BAR}▰"; \
 				if [ $${#BAR} -gt 20 ]; then BAR='▰'; fi; \
-				printf '\r$(SUBSTEP_PREFIX) $(COLOR_PRIMARY)Deploying rustup agents $(COLOR_STAGE)%s$(COLOR_RESET)' "$$BAR"; \
+				printf '\r$(SUBSTEP_PREFIX) $(COLOR_PRIMARY)Deploying rust agents $(COLOR_STAGE)%s$(COLOR_RESET)' "$$BAR"; \
 				sleep 0.18; \
 			done; \
 			wait $$RUSTUP_PID; \
 			INSTALL_STATUS=$$?; \
 		}; \
 		if [ $$INSTALL_STATUS -ne 0 ]; then \
-			printf '\r$(SUBSTEP_PREFIX) $(COLOR_WARN)Rustup deploy failed; see /tmp/hardn-rustup.log$(COLOR_RESET)\033[K\n'; \
+			printf '\r$(SUBSTEP_PREFIX) $(COLOR_WARN)Rust deploy failed; see /tmp/hardn-rustup.log$(COLOR_RESET)\033[K\n'; \
 			exit $$INSTALL_STATUS; \
 		else \
-			printf '\r$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)Rustup agents deployed successfully.$(COLOR_RESET)\033[K\n'; \
+			printf '\r$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)Rust agents deployed successfully.$(COLOR_RESET)\033[K\n'; \
 		fi; \
 	else \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)rustup already stationed.$(COLOR_RESET)\n'; \
+		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)rust already stationed.$(COLOR_RESET)\n'; \
 	fi
 	@{ \
 		if [ -f "$(RUST_ENV_FILE)" ]; then \
@@ -130,7 +130,7 @@ build-internal:
 			rustup default stable >/dev/null 2>&1; \
 		fi; \
 	}
-	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)core spinning up.$(COLOR_RESET)\n'
+	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)core build in progress.$(COLOR_RESET)\n'
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Compiling HARDN core$(COLOR_RESET)\n'
 	@BUILD_STATUS=0; \
 	{ \

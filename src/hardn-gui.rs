@@ -114,33 +114,6 @@ fn parse_service_status(line: &str) -> Option<ServiceHealth> {
     None
 }
 
-fn render_header_text(h: &ServiceHealth) -> String {
-    let mk = |label: &str, v: Option<bool>| match v {
-        Some(true) => format!("{}: RUNNING", label),
-        Some(false) => format!("{}: DOWN", label),
-        None => format!("{}: ?", label),
-    };
-    let header = format!(
-        "{}  {}  {}  {}  {}\n",
-        mk("HARDN", h.hardn),
-        mk("API", h.api),
-        mk("LEGION", h.legion),
-        mk("MONITOR", h.monitor),
-        mk("GRAFANA", h.grafana)
-    );
-    let any_down = [h.hardn, h.api, h.legion, h.monitor, h.grafana]
-        .into_iter()
-        .any(|x| matches!(x, Some(false)));
-    if any_down {
-        format!(
-            "{}Tip: To interact with HARDN run: sudo hardn-service-manager\n\n",
-            header
-        )
-    } else {
-        format!("{}\n", header)
-    }
-}
-
 fn parse_metrics(line: &str) -> Option<String> {
     // From monitor: "Metrics - cpu=..% mem=..% load=x,y,z"
     if let Some(idx) = line.find("Metrics - ") {
@@ -265,7 +238,7 @@ fn main() {
         // Logs buffer with two separate views (tab and split)
         let buffer: TextBuffer = TextBuffer::new(None);
         // Keep a mark at the end to allow smooth follow scrolling
-        let mut tmp_end = buffer.end_iter();
+        let tmp_end = buffer.end_iter();
         let end_mark: TextMark = buffer.create_mark(Some("log_end"), &tmp_end, true);
 
         let text_view_tab = TextView::new();
@@ -593,7 +566,7 @@ fn main() {
             }
 
             // Scroll to end if auto-follow is active for each view
-            let mut end_iter = buf_for_ui_c.end_iter();
+            let end_iter = buf_for_ui_c.end_iter();
             buf_for_ui_c.move_mark(&end_mark_c, &end_iter);
             if auto_follow_tab_c.lock().map(|v| *v).unwrap_or(false) {
                 text_view_tab_c.scroll_mark_onscreen(&end_mark_c);

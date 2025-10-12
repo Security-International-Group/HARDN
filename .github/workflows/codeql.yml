@@ -2,17 +2,17 @@ name: "SAST"
 
 on:
   push:
-    branches: [ "*" ]  
+    branches: [ "*" ]
   pull_request:
     branches: [ "*" ]
   schedule:
     - cron: '0 6 * * 1'  # Weekly Monday at 6 AM UTC
-  workflow_dispatch:  
+  workflow_dispatch:
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  
+
   codeql:
     name: CodeQL Analysis (${{ matrix.language }})
     runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
@@ -122,8 +122,8 @@ jobs:
         echo "# Security Scan Results" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "## Job Status Summary" >> $GITHUB_STEP_SUMMARY
-        echo "- CodeQL Analysis: ${{ needs.codeql.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Static Analysis: ${{ needs.static-analysis.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- CodeQL Analysis: ${{ needs.codeql.result == 'success' && ' Passed' || ' Failed' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Static Analysis: ${{ needs.static-analysis.result == 'success' && ' Passed' || ' Failed' }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "## Scan Coverage" >> $GITHUB_STEP_SUMMARY
         echo "- **Languages**: Rust, Python" >> $GITHUB_STEP_SUMMARY

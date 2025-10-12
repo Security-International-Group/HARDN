@@ -1,21 +1,20 @@
-# Bug Report Template
+# tims report (staging)
+- Report date: 10/13/2025
+- Reported by:
 
-Important
-- During the testing phase, bugs are to be reported, not fixed. We will plan and schedule patches after local testing is complete.
-- Target platforms: Debian 12–13 and Ubuntu 24.04
-- Goal: 10 consecutive front-to-back tests with zero errors
+
 
 1. Report Summary
 - Brief title:
 - Short description:
 
 2. Environment
-- HARDN version (commit or tag):
-- Platform (Debian 12/13 or Ubuntu 24.04):
-- VM details (vCPUs, RAM, disk):
+- machine name: ubunutu 24.04
+- HARDN version: v0.4.27
+- Bare Metal
 
 3. Preconditions
-- Installed from: .deb / source / other
+- Installed from: clone from git
 - Services enabled (hardn.service, legion-daemon.service, hardn-api.service, hardn-monitor.service):
 - Any non-default settings:
 
@@ -24,8 +23,8 @@ Important
 - Step 2:
 - Step 3:
 
-5. Expected Result
-- What should happen:
+5. Expected Behavior:
+-
 
 6. Actual Result
 - What happened instead:

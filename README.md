@@ -8,7 +8,7 @@
 
 HARDN is a comprehensive security hardening system for Debian-based Linux systems, providing automated security hardening and continuous monitoring through an integrated toolkit.
 
-**Demo Version** - This is a demonstration version showcasing core security features.
+**Demo Version** - This is a demonstration version showcasing core security features of HARDN-XDR, the full enterprise solution. For production use and advanced features, please contact Security International Group.
 ## Key Features
 
 - **Automated System Hardening** - One-command security configuration
@@ -20,7 +20,17 @@ HARDN is a comprehensive security hardening system for Debian-based Linux system
 
 ## Quick Start
 
-### Installation
+### From Release
+
+- Download and install the latest `.deb` package:
+
+```bash
+wget https://github.com/Security-International-Group/HARDN/releases/latest/download/hardn_*.deb
+sudo dpkg -i hardn_*.deb
+sudo hardn-service-manager
+```
+
+### From Source
 ```bash
 git clone https://github.com/Security-International-Group/HARDN.git
 cd HARDN
@@ -28,29 +38,14 @@ sudo make build
 sudo make hardn
 ```
 
-### Verify Installation
-```bash
-hardn --version
-```
+### HARDN Usage
 
-### Usage
-
-**Launch with GUI (Default)**
-```bash
-sudo make hardn
-```
-
-**Launch without GUI**
-```bash
-HARDN_NO_AUTO_GUI=1 sudo make hardn
-```
-
-**Manual GUI Launch**
-```bash
-hardn-gui
-```
+- Upon using the standard `sudo make hardn` the graphic interface SIEM will launch automatically.
+- This apoplication provides real-time monitoring of your system's security status and places a local GTK4 Native app within your user environment.
 
 **Service Manager**
+
+- This service manager allows you to manage HARDN services interactively both over CLI and the SIEM.
 ```bash
 sudo hardn-service-manager
 ```
@@ -70,7 +65,7 @@ Real-time monitoring dashboard showing system status, security events, and servi
 
 HARDN installs two main services:
 
-### **hardn.service** 
+### **hardn.service**
 Security hardening service that applies security configurations when triggered.
 
 ### **legion-daemon.service**
