@@ -26,6 +26,7 @@ Rules-Requires-Root: no
 Homepage: https://github.com/Security-International-Group/HARDN
 Vcs-Git: https://github.com/Security-International-Group/HARDN.git
 Vcs-Browser: https://github.com/Security-International-Group/HARDN
+
 Package: hardn
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, python3:any, adduser, curl, wget, lsof, psmisc, procps, git, python3-fastapi, python3-uvicorn, python3-requests, python3-psutil,
