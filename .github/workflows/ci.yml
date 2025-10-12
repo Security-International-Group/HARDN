@@ -107,10 +107,15 @@ jobs:
           VERSION=$(dpkg-deb -f "$DEB_FILE" Version)
           ARCH=$(dpkg-deb -f "$DEB_FILE" Architecture)
 
-          # Create dist directory and copy package
+          # Create dist directory and copy package and build artifacts
           mkdir -p dist
           DEB_NAME="hardn_${VERSION}_${ARCH}.deb"
           cp "$DEB_FILE" "dist/${DEB_NAME}"
+
+          # Copy build artifacts for upload
+          cp ../*.build "dist/" 2>/dev/null || true
+          cp ../*.buildinfo "dist/" 2>/dev/null || true
+          cp ../*.changes "dist/" 2>/dev/null || true
 
           echo "Built package: $DEB_NAME"
           echo "Package path: dist/${DEB_NAME}"
@@ -185,9 +190,9 @@ jobs:
         with:
           name: build-logs
           path: |
-            ../*.build
-            ../*.buildinfo
-            ../*.changes
+            dist/*.build
+            dist/*.buildinfo
+            dist/*.changes
           retention-days: 7
 
   deploy-test:
@@ -461,7 +466,7 @@ jobs:
           STATUS="${{ job.status }}"
           VERSION="${{ steps.version.outputs.version }}"
           STATIC_DEB_NAME="${{ steps.assets.outputs.static_deb_name }}"
-          MSG="🚀 HARDN Latest Updated (v${VERSION}): https://github.com/${{ github.repository }}/releases/tag/latest"
+          MSG=" HARDN Latest Updated (v${VERSION}): https://github.com/${{ github.repository }}/releases/tag/latest"
 
           if command -v hardn-discord.sh >/dev/null 2>&1; then
             if [[ "$STATUS" == "success" ]]; then
@@ -475,9 +480,9 @@ jobs:
             [[ "$STATUS" == "failure" ]] && COLOR=15158332 || true  # Red
 
             if [[ "$STATUS" == "success" ]]; then
-              DESCRIPTION="🔄 **Latest Release Updated**\\n**Package**: \`${STATIC_DEB_NAME}\`\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`\\n✅ Static download URL ready!"
+              DESCRIPTION=" **Latest Release Updated**\\n**Package**: \`${STATIC_DEB_NAME}\`\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`\\n✅ Static download URL ready!"
             else
-              DESCRIPTION="❌ **Latest Release Update Failed**\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`"
+              DESCRIPTION=" **Latest Release Update Failed**\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`"
             fi
 
             curl -H "Content-Type: application/json" -X POST "$WEBHOOK" \
