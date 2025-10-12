@@ -429,7 +429,7 @@ jobs:
           # Delete the existing latest release if it exists
           gh release delete latest --yes || echo "No existing latest release to delete"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836
@@ -442,6 +442,8 @@ jobs:
           draft: false
           prerelease: false
           overwrite: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
       - name: Discord notification
         if: always()
@@ -476,5 +478,6 @@ jobs:
           else
             echo "[INFO] No Discord webhook configured; skipping notification."
           fi
+
 
 
