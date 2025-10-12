@@ -302,36 +302,61 @@ jobs:
           echo "Version extracted: $VERSION"
           echo "Architecture: $ARCH"
 
-      - name: Prepare semantic version tag
+      - name: Determine next release tag
         id: tag
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          # Create semantic version tag (e.g., v1.0.0)
-          SEMANTIC_TAG="v${VERSION}"
-          echo "semantic_tag=$SEMANTIC_TAG" >> $GITHUB_OUTPUT
-          echo "latest_tag=latest" >> $GITHUB_OUTPUT
-          echo "Creating semantic tag: $SEMANTIC_TAG and updating latest tag"
+          git fetch --tags --force --prune
 
-      - name: Create/update tags
+          LATEST_TAG=$(git tag -l 'v*.*.*' --sort=-v:refname | head -n1)
+
+          if [ -z "$LATEST_TAG" ]; then
+            RAW_VERSION=${VERSION#v}
+            RAW_VERSION=${RAW_VERSION%%-*}
+            IFS='.' read -r MAJOR MINOR PATCH <<<"${RAW_VERSION}"
+            MAJOR=$((10#${MAJOR:-0}))
+            MINOR=$((10#${MINOR:-0}))
+            PATCH=$((10#${PATCH:-1}))
+            if [ "$PATCH" -lt 1 ]; then PATCH=1; fi
+          else
+            echo "Current release tag: $LATEST_TAG"
+            RAW_VERSION=${LATEST_TAG#v}
+            RAW_VERSION=${RAW_VERSION%%-*}
+            IFS='.' read -r MAJOR MINOR PATCH <<<"${RAW_VERSION}"
+            MAJOR=$((10#${MAJOR:-0}))
+            MINOR=$((10#${MINOR:-0}))
+            PATCH=$((10#${PATCH:-0}))
+            PATCH=$((PATCH + 1))
+            if [ "$PATCH" -gt 99 ]; then
+              PATCH=1
+              MINOR=$((MINOR + 1))
+              if [ "$MINOR" -gt 99 ]; then
+                MINOR=0
+                MAJOR=$((MAJOR + 1))
+              fi
+            fi
+          fi
+
+          NEW_TAG=$(printf 'v%d.%d.%02d' "$MAJOR" "$MINOR" "$PATCH")
+          echo "Next release tag: $NEW_TAG"
+          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+          if [ -n "$LATEST_TAG" ]; then
+            echo "previous_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create release tag
         run: |
-          SEMANTIC_TAG="${{ steps.tag.outputs.semantic_tag }}"
+          NEW_TAG="${{ steps.tag.outputs.new_tag }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Create semantic version tag (only if it doesn't exist)
-          if ! git tag -l | grep -q "^${SEMANTIC_TAG}$"; then
-            git tag "$SEMANTIC_TAG"
-            git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/Security-International-Group/HARDN.git "$SEMANTIC_TAG"
-            echo "Created new semantic tag: $SEMANTIC_TAG"
+          if git tag -l | grep -q "^${NEW_TAG}$"; then
+            echo "Tag ${NEW_TAG} already exists; skipping creation."
           else
-            echo "Semantic tag $SEMANTIC_TAG already exists"
+            git tag "$NEW_TAG"
+            git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/Security-International-Group/HARDN.git "$NEW_TAG"
+            echo "Created new tag: $NEW_TAG"
           fi
-
-          # Force update latest tag to point to current commit
-          git tag -d latest || true
-          git tag latest
-          git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/Security-International-Group/HARDN.git latest --force
-          echo "Updated latest tag to point to current commit"
 
       - name: Prepare release assets with static naming
         id: assets
@@ -339,15 +364,17 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           ARCH="${{ steps.version.outputs.architecture }}"
           ORIGINAL_DEB="${{ steps.version.outputs.deb_name }}"
+          TAG="${{ steps.tag.outputs.new_tag }}"
+          TAG_NOPREFIX="${TAG#v}"
 
-          # Create static filename for the release
-          STATIC_DEB_NAME="hardn-latest_${ARCH}.deb"
+          # Create deterministic filename for the release artifacts
+          STATIC_DEB_NAME="hardn_${TAG_NOPREFIX}_${ARCH}.deb"
 
           # Copy with static name
           cp "release_assets/$ORIGINAL_DEB" "release_assets/$STATIC_DEB_NAME"
 
           echo "static_deb_name=$STATIC_DEB_NAME" >> $GITHUB_OUTPUT
-          echo "Renamed $ORIGINAL_DEB to $STATIC_DEB_NAME for static download URL"
+          echo "Renamed $ORIGINAL_DEB to $STATIC_DEB_NAME for versioned download URL"
 
       - name: Generate release notes
         id: notes
@@ -356,6 +383,8 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           ARCH="${{ steps.version.outputs.architecture }}"
           STATIC_DEB_NAME="${{ steps.assets.outputs.static_deb_name }}"
+          PREVIOUS="${{ steps.tag.outputs.previous_tag }}"
+          [ -z "$PREVIOUS" ] && PREVIOUS="n/a"
           DEB_FILE="release_assets/$STATIC_DEB_NAME"
 
           # Get package size
@@ -363,51 +392,49 @@ jobs:
           BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
 
           cat > RELEASE_NOTES.md <<EOF
-          # HARDN Latest Release
+          # HARDN ${TAG}
 
-          **Debian Security Hardening Framework - Latest Debian Package**
+          **Debian Security Hardening Framework – Stable Release Artifact**
 
-          >  **Release**: This release is automatically updated with each build.
-          >  **Version Tag**: \`v${VERSION}\` | **Latest Tag**: \`latest\`
+          >  **Release tag**: \`${TAG}\`
+          >  **Previous tag**: \`${PREVIOUS}\`
 
           ##  Package Information
           - **File**: \`${STATIC_DEB_NAME}\`
-          - **Version**: \`v${VERSION}\`
+          - **Version**: \`${TAG}\`
           - **Architecture**: \`${ARCH}\`
           - **Size**: \`${SIZE}\`
           - **Built**: \`${BUILD_DATE}\`
 
           ##  Installation
 
-          ### Quick Install (Always Latest)
+          ### Quick Install (Fetch Latest Tag Automatically)
           \`\`\`bash
-          # Download latest version (URL stays the same!)
-          wget https://github.com/\${{ github.repository }}/releases/download/latest/${STATIC_DEB_NAME}
-          sudo dpkg -i ${STATIC_DEB_NAME}
+          REPO="${{ github.repository }}"
+          ARCH="${ARCH}"
+          TAG=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | jq -r '.tag_name')
+          FILE="hardn_${TAG#v}_${ARCH}.deb"
+          wget "https://github.com/$REPO/releases/download/$TAG/$FILE"
+          sudo dpkg -i "$FILE"
 
-          # Fix any dependency issues
-          sudo apt-get install -f
-
-          # Start services
-          sudo systemctl enable hardn-api
-          sudo systemctl start hardn-api
+          # Resolve missing dependencies if prompted
+          sudo apt-get install -f -y
           \`\`\`
 
-          ### Alternative: Install Specific Version
+          ### Install This Specific Release
           \`\`\`bash
-          # Download specific version
-          wget https://github.com/\${{ github.repository }}/releases/download/v${VERSION}/${STATIC_DEB_NAME}
-          sudo dpkg -i ${STATIC_DEB_NAME}
+          REPO="${{ github.repository }}"
+          TAG="${TAG}"
+          FILE="${STATIC_DEB_NAME}"
+          wget "https://github.com/$REPO/releases/download/$TAG/$FILE"
+          sudo dpkg -i "$FILE"
           \`\`\`
+
+          ### Post-install Verification
           \`\`\`bash
-          # Command line interface
           hardn --help
-
-          # Monitor service
           hardn-monitor --help
-
-          # GUI interface (if X11/Wayland available)
-          hardn-gui
+          hardn-gui --help || echo "GUI requires desktop environment"
           \`\`\`
 
           ##  What's Included
@@ -445,24 +472,16 @@ jobs:
           **Built with dpkg-buildpackage** | **Tested on Ubuntu Latest** | **CI/CD Pipeline Validated**
           EOF
 
-      - name: Delete existing latest release
-        run: |
-          # Delete the existing latest release if it exists
-          gh release delete latest --yes || echo "No existing latest release to delete"
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836
         with:
-          tag_name: ${{ steps.tag.outputs.latest_tag }}
+          tag_name: ${{ steps.tag.outputs.new_tag }}
           target_commitish: ${{ github.sha }}
-          name: HARDN Latest Release (v${{ steps.version.outputs.version }})
+          name: HARDN ${{ steps.tag.outputs.new_tag }}
           body_path: RELEASE_NOTES.md
           files: release_assets/*.deb
           draft: false
           prerelease: false
-          overwrite: true
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
@@ -475,13 +494,15 @@ jobs:
           STATUS="${{ job.status }}"
           VERSION="${{ steps.version.outputs.version }}"
           STATIC_DEB_NAME="${{ steps.assets.outputs.static_deb_name }}"
-          MSG=" HARDN Latest Updated (v${VERSION}): https://github.com/${{ github.repository }}/releases/tag/latest"
+          TAG="${{ steps.tag.outputs.new_tag }}"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG}"
+          MSG=" HARDN Release ${TAG} (v${VERSION}): ${RELEASE_URL}"
 
           if command -v hardn-discord.sh >/dev/null 2>&1; then
             if [[ "$STATUS" == "success" ]]; then
-              hardn-discord.sh "LATEST RELEASE UPDATED (v${VERSION})" "$MSG" || true
+              hardn-discord.sh "RELEASE PUBLISHED (${TAG})" "$MSG" || true
             else
-              hardn-discord.sh "LATEST RELEASE FAILED (v${VERSION})" "$MSG" || true
+              hardn-discord.sh "RELEASE FAILED (${TAG})" "$MSG" || true
             fi
           elif [[ -n "${WEBHOOK:-}" ]]; then
             COLOR=15105570  # Default gray
@@ -489,15 +510,13 @@ jobs:
             [[ "$STATUS" == "failure" ]] && COLOR=15158332 || true  # Red
 
             if [[ "$STATUS" == "success" ]]; then
-              DESCRIPTION=" **Latest Release Updated (v${VERSION})**\\n**Package**: \`${STATIC_DEB_NAME}\`\\n**Version**: \`v${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`\\n Static download URL ready!"
+              DESCRIPTION=" **Release Published (${TAG})**\\n**Package**: \`${STATIC_DEB_NAME}\`\\n**Version**: \`v${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`"
             else
-              DESCRIPTION=" **Latest Release Update Failed (v${VERSION})**\\n**Version**: \`v${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`"
+              DESCRIPTION=" **Release Failed (${TAG})**\\n**Version**: \`v${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`"
             fi
 
             curl -H "Content-Type: application/json" -X POST "$WEBHOOK" \
-              -d "{\"embeds\":[{\"title\":\"HARDN Latest Release Pipeline • ${{ github.repository }}\",\"description\":\"$DESCRIPTION\",\"color\":$COLOR,\"url\":\"$MSG\"}]}" || true
+              -d "{\"embeds\":[{\"title\":\"HARDN Release Pipeline • ${{ github.repository }}\",\"description\":\"$DESCRIPTION\",\"color\":$COLOR,\"url\":\"$RELEASE_URL\"}]}" || true
           else
             echo "[INFO] No Discord webhook configured; skipping notification."
           fi
-
-
