@@ -110,6 +110,44 @@ export HARDN_TOOL_PATH=\"${TOOL_DIR}:${LEGACY_TOOL_DIR}\"
             echo "systemctl not found, skipping service enablement."
         fi
 
+        ICON_SRC="/usr/share/pixmaps/hardn-gui.jpeg"
+        if [ -f "${ICON_SRC}" ]; then
+            TARGET_USER="${SUDO_USER:-}"
+            if [ -z "${TARGET_USER}" ] || [ "${TARGET_USER}" = "root" ]; then
+                TARGET_USER=$(logname 2>/dev/null || true)
+            fi
+
+            if [ -n "${TARGET_USER}" ] && getent passwd "${TARGET_USER}" >/dev/null; then
+                TARGET_HOME=$(getent passwd "${TARGET_USER}" | cut -d: -f6)
+                if [ -n "${TARGET_HOME}" ] && [ -d "${TARGET_HOME}" ]; then
+                    DESKTOP_DIR="${TARGET_HOME}/.local/share/applications"
+                    ICON_DIR="${TARGET_HOME}/.local/share/icons"
+                    DESKTOP_PATH="${DESKTOP_DIR}/hardn-gui.desktop"
+                    ICON_DEST="${ICON_DIR}/hardn-gui.jpeg"
+
+                    install -d -m 755 -o "${TARGET_USER}" -g "${TARGET_USER}" "${DESKTOP_DIR}" "${ICON_DIR}"
+                    install -m 644 -o "${TARGET_USER}" -g "${TARGET_USER}" "${ICON_SRC}" "${ICON_DEST}"
+                    cat <<EOF > "${DESKTOP_PATH}"
+[Desktop Entry]
+Type=Application
+Name=HARDN Control Center
+Comment=Launch the HARDN monitoring console
+Exec=/usr/bin/hardn-gui
+Icon=${ICON_DEST}
+Terminal=false
+Categories=Security;System;
+StartupNotify=true
+EOF
+                    chown "${TARGET_USER}:${TARGET_USER}" "${DESKTOP_PATH}" "${ICON_DEST}" || true
+                    echo "HARDN desktop launcher deployed for ${TARGET_USER}."
+                else
+                    echo "HARDN desktop launcher skipped: unable to resolve home for ${TARGET_USER}."
+                fi
+            else
+                echo "HARDN desktop launcher skipped: no non-root sudo user detected."
+            fi
+        fi
+
         echo "HARDN installed successfully."
         echo "Run 'sudo hardn' to execute modules, or 'sudo hardn run-module <name>' for one module."
         echo "Environment paths set in ${PROFILE_D_FILE}"

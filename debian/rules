@@ -35,6 +35,9 @@ override_dh_auto_install:
 	# Install desktop launcher
 	install -d debian/hardn/usr/share/applications
 	install -m 644 usr/share/applications/hardn-gui.desktop debian/hardn/usr/share/applications/ 2>/dev/null || true
+	# Install desktop icon
+	install -d debian/hardn/usr/share/pixmaps
+	install -m 644 docs/assets/IMG_1233.jpeg debian/hardn/usr/share/pixmaps/hardn-gui.jpeg 2>/dev/null || true
 
 override_dh_dwz:
 	@echo "Skipping dwz pass; Rust release binaries are already stripped"

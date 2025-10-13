@@ -82,9 +82,34 @@ build-internal:
 		fi; \
 	done; \
 	if [ -n "$$MISSING_DEPS" ]; then \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Adding missing ops gear:%s$(COLOR_RESET)\n' "$$MISSING_DEPS"; \
-		DEBIAN_FRONTEND=noninteractive apt-get update -qq; \
-		DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $$MISSING_DEPS; \
+		printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Missing ops gear identified:$(COLOR_RESET)\n'; \
+		for pkg in $$MISSING_DEPS; do \
+			[ -z "$$pkg" ] && continue; \
+			printf '$(SUBSTEP_PREFIX)   $(COLOR_MUTED)- %s$(COLOR_RESET)\n' "$$pkg"; \
+		done; \
+		INSTALL_LOG=$$(mktemp); \
+		printf '$(SUBSTEP_PREFIX) $(COLOR_STAGE)Securing supply drop…$(COLOR_RESET)'; \
+		set -o pipefail; \
+		( DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $$MISSING_DEPS ) > "$$INSTALL_LOG" 2>&1 & \
+		APT_PID=$$!; \
+		FRAMES=('|' '/' '-' '\\'); \
+		INDEX=0; \
+		while kill -0 $$APT_PID 2>/dev/null; do \
+			printf '\r$(SUBSTEP_PREFIX) $(COLOR_STAGE)Securing supply drop %s$(COLOR_RESET)' "$${FRAMES[$$INDEX]}"; \
+			INDEX=$$(( (INDEX + 1) % $${#FRAMES[@]} )); \
+			sleep 0.15; \
+		done; \
+		wait $$APT_PID; \
+		APT_STATUS=$$?; \
+		if [ $$APT_STATUS -ne 0 ]; then \
+			printf '\r$(SUBSTEP_PREFIX) $(COLOR_WARN)Supply drop failed; review %s$(COLOR_RESET)\033[K\n' "$$INSTALL_LOG"; \
+			tail -n 40 "$$INSTALL_LOG" || true; \
+			rm -f "$$INSTALL_LOG"; \
+			exit $$APT_STATUS; \
+		else \
+			printf '\r$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)Supply drop secured.$(COLOR_RESET)\033[K\n'; \
+			rm -f "$$INSTALL_LOG"; \
+		fi; \
 	else \
 		printf '$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)All gear already online.$(COLOR_RESET)\n'; \
 	fi
@@ -273,3 +298,4 @@ clean:
 		cargo clean >/dev/null 2>&1 || true; \
 	}
 	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)Forge embers extinguished.$(COLOR_RESET)\n'
+

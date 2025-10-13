@@ -385,17 +385,20 @@ fn main() {
         header_box.set_margin_end(8);
         header_box.add_css_class("box-header");
         let logo_path_candidates = [
-            "/usr/share/hardn/docs/IMG_1233.jpeg",
-            "/usr/share/pixmaps/hardn.png",
-            "/usr/share/pixmaps/hardn.jpg",
-            "./docs/assets/IMG_1233.jpeg",
+            std::env::var("HARDN_GUI_LOGO").ok(),
+            Some("/usr/share/pixmaps/hardn.png".to_string()),
+            Some("/usr/share/pixmaps/hardn.jpg".to_string()),
+            Some("/usr/share/pixmaps/hardn-gui.jpeg".to_string()),
+            Some("/usr/share/hardn/docs/IMG_1233.jpeg".to_string()),
+            Some("/usr/share/hardn/hardn-logo.png".to_string()),
+            Some("./docs/assets/IMG_1233.jpeg".to_string()),
         ];
         let mut logo_picture: Option<Picture> = None;
-        for p in logo_path_candidates.iter() {
+        for p in logo_path_candidates.iter().flatten() {
             if std::path::Path::new(p).exists() {
                 let pic = Picture::for_filename(p);
-                pic.set_width_request(26);
-                pic.set_height_request(26);
+                pic.set_width_request(32);
+                pic.set_height_request(32);
                 pic.add_css_class("logo");
                 logo_picture = Some(pic);
                 break;
