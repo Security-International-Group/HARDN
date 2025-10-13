@@ -25,10 +25,12 @@ HARDN is a comprehensive security hardening system for Debian-based Linux system
 - Download and install the latest `.deb` package:
 
 ```bash
-wget https://github.com/Security-International-Group/HARDN/releases/latest/download/hardn_*.deb
+wget https://github.com/Security-International-Group/HARDN/releases/latest/download/hardn_amd64.deb
 sudo dpkg -i hardn_*.deb
-sudo hardn-service-manager
+sudo apt-get install -f -y
 ```
+
+- Launch the Service Manager
 
 ### From Source
 ```bash
@@ -37,10 +39,11 @@ cd HARDN
 sudo make build
 sudo make hardn
 ```
+- This launches the service manager automatically
 
 ### HARDN Usage
 
-- Upon using the standard `sudo make hardn` the graphic interface SIEM will launch automatically.
+- Upon using the standard `sudo make hardn` the graphic interface SIEM will launch automatically alongside the service manager. 
 - This apoplication provides real-time monitoring of your system's security status and places a local GTK4 Native app within your user environment.
 
 **Service Manager**
