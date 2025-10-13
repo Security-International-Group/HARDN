@@ -16,7 +16,7 @@ env:
 
 jobs:
   build:
-    name: Build and Test Debian Package
+    name: Build and Deploy
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -30,7 +30,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
-            debhelper-compat \
+            debhelper \
             devscripts \
             lintian \
             fakeroot \
@@ -38,15 +38,10 @@ jobs:
             dpkg-dev \
             pkg-config \
             libssl-dev \
-              NEW_TAG="${{ steps.tag.outputs.new_tag }}"
-              DEB_NAME="${{ steps.version.outputs.deb_name }}"
-              MSG="https://github.com/${{ github.repository }}/releases/tag/${NEW_TAG}"
             libvte-2.91-gtk4-dev \
             python3-all \
             python3-requests \
-                  hardn-discord.sh "RELEASE ${NEW_TAG}" "HARDN ${NEW_TAG} (${VERSION}) is live: $MSG" || true
             curl \
-                  hardn-discord.sh "RELEASE ${NEW_TAG} FAILED" "Release ${NEW_TAG} failed on branch ${{ github.ref_name }}" || true
             whiptail
 
       - name: Install Rust toolchain
@@ -54,23 +49,22 @@ jobs:
         with:
           toolchain: stable
 
-                  DESCRIPTION=" **Release ${NEW_TAG}**\n**Package**: \`${DEB_NAME}\`\n**Version**: \`${VERSION}\`\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`"
+      - name: Cache cargo registry and git
         uses: actions/cache@v4
-                  DESCRIPTION=" **Release ${NEW_TAG} Failed**\n**Version**: \`${VERSION}\`\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`"
+        with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-                  -d "{\"embeds\":[{\"title\":\"HARDN Release ${NEW_TAG} • ${{ github.repository }}\",\"description\":\"$DESCRIPTION\",\"color\":$COLOR,\"url\":\"$MSG\"}]}" || true
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
       - name: Install build dependencies from debian/control
         run: |
-          cd $GITHUB_WORKSPACE
+          cd "$GITHUB_WORKSPACE"
           if [ ! -f debian/control ]; then
             echo "ERROR: debian/control file not found!"
-            ls -l debian/
+            ls -l debian/ || true
             exit 1
           fi
           sudo mk-build-deps -i debian/control --tool "apt-get -o Debug::pkgProblemResolver=yes --no-install-recommends -y"
@@ -94,7 +88,7 @@ jobs:
           export DEB_BUILD_OPTIONS="parallel=$(nproc) nodwz nocheck"
 
           # Build the package using dpkg-buildpackage
-          dpkg-buildpackage -us -uc -b --no-pre-clean -j$(nproc)
+          dpkg-buildpackage -us -uc -b --no-pre-clean -j"$(nproc)"
 
           # Find the generated .deb file
           DEB_FILE=$(find .. -name "hardn_*.deb" -type f | head -n1)
@@ -120,9 +114,9 @@ jobs:
 
           echo "Built package: $DEB_NAME"
           echo "Package path: dist/${DEB_NAME}"
-          echo "deb_path=dist/${DEB_NAME}" >> $GITHUB_OUTPUT
-          echo "deb_name=${DEB_NAME}" >> $GITHUB_OUTPUT
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "deb_path=dist/${DEB_NAME}" >> "$GITHUB_OUTPUT"
+          echo "deb_name=${DEB_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Test Debian package with lintian
         run: |
@@ -150,7 +144,7 @@ jobs:
           sudo apt-get install -f -y
 
           # Verify installation
-          dpkg -l | grep hardn
+          dpkg -l | grep hardn || true
 
           echo "=== Testing Binary Execution ==="
           # Test that binaries can run (basic smoke test)
@@ -302,9 +296,9 @@ jobs:
           VERSION=$(dpkg-deb -f "$DEB_FILE" Version)
           ARCH=$(dpkg-deb -f "$DEB_FILE" Architecture)
           DEB_NAME=$(basename "$DEB_FILE")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "architecture=$ARCH" >> $GITHUB_OUTPUT
-          echo "deb_name=$DEB_NAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "architecture=$ARCH" >> "$GITHUB_OUTPUT"
+          echo "deb_name=$DEB_NAME" >> "$GITHUB_OUTPUT"
           echo "Version extracted: $VERSION"
           echo "Architecture: $ARCH"
 
@@ -334,9 +328,9 @@ jobs:
           NEW_VERSION="$MAJOR.$MINOR.$PATCH"
           NEW_TAG="${PREFIX}${NEW_VERSION}"
 
-          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
-          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "latest_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+          echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
           echo "Calculated next tag: $NEW_TAG (from $LATEST_TAG)"
 
       - name: Create and push release tag
@@ -363,10 +357,10 @@ jobs:
 
           SIZE=$(du -h "$DEB_FILE" | cut -f1)
           SHA256=$(sha256sum "$DEB_FILE" | awk '{print $1}')
-          BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC)')
           DOCS_URL="https://github.com/${{ github.repository }}/tree/main/docs"
 
-          cat > RELEASE_NOTES.md <<EOF
+          cat > RELEASE_NOTES.md <<'EOF'
           ![HARDN](docs/assets/IMG_1233.jpeg)
 
           # HARDN $TAG
@@ -374,18 +368,18 @@ jobs:
           > Automated release generated on $BUILD_DATE.
 
           ## Package Details
-          - **Debian package**: \`$DEB_NAME\`
-          - **Project version**: \`$VERSION\`
-          - **Architecture**: \`$ARCH\`
-          - **Size**: \`$SIZE\`
-          - **SHA256**: \`$SHA256\`
+          - **Debian package**: `$DEB_NAME`
+          - **Project version**: `$VERSION`
+          - **Architecture**: `$ARCH`
+          - **Size**: `$SIZE`
+          - **SHA256**: `$SHA256`
 
           ## Installation
-          \`\`\`bash
+          ```bash
           wget https://github.com/${{ github.repository }}/releases/download/$TAG/$DEB_NAME
           sudo dpkg -i $DEB_NAME
           sudo apt-get install -f -y
-          \`\`\`
+          ```
 
           ## What's Inside
           - HARDN CLI, monitoring service, and GTK-based GUI
@@ -399,6 +393,7 @@ jobs:
 
           Built with dpkg-buildpackage • Validated by integration tests
           EOF
+        shell: bash
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836
@@ -424,14 +419,14 @@ jobs:
         run: |
           STATUS="${{ job.status }}"
           VERSION="${{ steps.version.outputs.version }}"
-          STATIC_DEB_NAME="${{ steps.assets.outputs.static_deb_name }}"
-          MSG=" HARDN Latest Updated (v${VERSION}): https://github.com/${{ github.repository }}/releases/tag/latest"
+          DEB_NAME="${{ steps.version.outputs.deb_name }}"
+          MSG="https://github.com/${{ github.repository }}/releases/tag/latest"
 
           if command -v hardn-discord.sh >/dev/null 2>&1; then
             if [[ "$STATUS" == "success" ]]; then
-              hardn-discord.sh "LATEST RELEASE UPDATED" "$MSG" || true
+              hardn-discord.sh "LATEST RELEASE UPDATED" "HARDN Latest Updated (v${VERSION}): $MSG" || true
             else
-              hardn-discord.sh "LATEST RELEASE FAILED" "$MSG" || true
+              hardn-discord.sh "LATEST RELEASE FAILED" "Latest release update failed for v${VERSION} on branch ${{ github.ref_name }}" || true
             fi
           elif [[ -n "${WEBHOOK:-}" ]]; then
             COLOR=15105570  # Default gray
@@ -439,7 +434,7 @@ jobs:
             [[ "$STATUS" == "failure" ]] && COLOR=15158332 || true  # Red
 
             if [[ "$STATUS" == "success" ]]; then
-              DESCRIPTION=" **Latest Release Updated**\\n**Package**: \`${STATIC_DEB_NAME}\`\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`\\n Static download URL ready!"
+              DESCRIPTION=" **Latest Release Updated**\\n**Package**: \`${DEB_NAME}\`\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`\\nStatic download URL ready!"
             else
               DESCRIPTION=" **Latest Release Update Failed**\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`"
             fi
@@ -449,4 +444,3 @@ jobs:
           else
             echo "[INFO] No Discord webhook configured; skipping notification."
           fi
-
