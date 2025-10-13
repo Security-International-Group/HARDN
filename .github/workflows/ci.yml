@@ -360,7 +360,7 @@ jobs:
           BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC)')
           DOCS_URL="https://github.com/${{ github.repository }}/tree/main/docs"
 
-          cat > RELEASE_NOTES.md <<'EOF'
+          cat > RELEASE_NOTES.md <<EOF
           ![HARDN](docs/assets/IMG_1233.jpeg)
 
           # HARDN $TAG
