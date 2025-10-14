@@ -423,6 +423,7 @@ jobs:
             else
               DESCRIPTION=" **Latest Release Update Failed**\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`"
             fi
+          fi
 
             curl -H "Content-Type: application/json" -X POST "$WEBHOOK" \
               -d "{\"embeds\":[{\"title\":\"HARDN Latest Release Pipeline • ${{ github.repository }}\",\"description\":\"$DESCRIPTION\",\"color\":$COLOR,\"url\":\"$MSG\"}]}" || true
