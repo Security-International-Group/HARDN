@@ -345,7 +345,7 @@ jobs:
             git tag "$NEW_TAG"
             git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/Security-International-Group/HARDN.git "$NEW_TAG"
           fi
-
+  steps: 
       - name: Generate release notes
         id: notes
         run: |
