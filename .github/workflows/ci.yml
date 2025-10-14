@@ -345,7 +345,7 @@ jobs:
             git tag "$NEW_TAG"
             git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/Security-International-Group/HARDN.git "$NEW_TAG"
           fi
-  steps: 
+          
       - name: Generate release notes
         id: notes
         run: |
@@ -373,22 +373,6 @@ jobs:
           - **Architecture**: `$ARCH`
           - **Size**: `$SIZE`
           - **SHA256**: `$SHA256`
-
-          ## Installation
-          ```bash
-          wget https://github.com/${{ github.repository }}/releases/download/$TAG/$DEB_NAME
-          sudo dpkg -i $DEB_NAME
-          sudo apt-get install -f -y
-          ```
-         - The Lau
-
-          ## What's Inside
-          - HARDN CLI, monitoring service, and GTK-based GUI
-          - Systemd service units and baseline configuration
-          - Legion security modules and automated hardening utilities
-
-          ## Documentation
-          Explore the docs: $DOCS_URL
 
           ---
 
