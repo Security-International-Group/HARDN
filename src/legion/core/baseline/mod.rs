@@ -100,6 +100,38 @@ impl BaselineManager {
         let json = serde_json::to_string_pretty(baseline)?;
         fs::write(&filename, json)?;
         eprintln!(" Baseline saved to: {}", filename);
+        
+        // Clean up old baselines, keeping only the last 30 days
+        self.cleanup_old_baselines()?;
+        
+        Ok(())
+    }
+
+    /// Clean up baseline files older than 30 days
+    fn cleanup_old_baselines(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let pattern = format!("{}/baseline_*.json", self.config.baseline_dir);
+        let paths = glob::glob(&pattern)?;
+
+        let now = SystemTime::now();
+        let thirty_days_ago = now - Duration::from_secs(30 * 24 * 60 * 60);
+
+        for path in paths.filter_map(Result::ok) {
+            if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                if let Some(timestamp_str) = filename.strip_prefix("baseline_").and_then(|s| s.strip_suffix(".json")) {
+                    if let Ok(timestamp) = timestamp_str.parse::<u64>() {
+                        let file_time = UNIX_EPOCH + Duration::from_secs(timestamp);
+                        if file_time < thirty_days_ago {
+                            if let Err(e) = fs::remove_file(&path) {
+                                eprintln!("Failed to remove old baseline {}: {}", path.display(), e);
+                            } else {
+                                eprintln!("Removed old baseline: {}", path.display());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 

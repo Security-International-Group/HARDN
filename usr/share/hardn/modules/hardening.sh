@@ -1024,13 +1024,19 @@ fi
 # ==========================================
 # APPARMOR PROFILES
 # ==========================================
-HARDN_STATUS "Enabling AppArmor  - ENFORCE - profiles...for non-native Unix apps to work, you will need to whitelist them individually..."
+HARDN_STATUS "Configuring AppArmor profiles...enforcing security profiles while disabling problematic native apps"
 sleep 2
 if command -v aa-enforce >/dev/null 2>&1; then
     # Install apparmor-profiles if not present
     apt_install "apparmor" "Installing AppArmor profiles" apparmor-profiles apparmor-utils || true
-    
-    # Enforce all profiles
+
+    # Disable problematic native applications that cause segfaults
+    HARDN_STATUS "Disabling AppArmor profiles for native applications that cause issues"
+    aa-disable nautilus 2>/dev/null || log_warning "Failed to disable nautilus AppArmor profile"
+    aa-disable evince 2>/dev/null || log_warning "Failed to disable evince AppArmor profile"
+    aa-disable firefox 2>/dev/null || log_warning "Failed to disable firefox AppArmor profile"
+
+    # Enforce remaining profiles for security
     aa-enforce /etc/apparmor.d/* 2>/dev/null || log_warning "Some AppArmor profiles failed to enforce"
 fi
 
@@ -1376,7 +1382,7 @@ echo "  ✓ MITRE ATT&CK audit rules"
 echo "  ✓ Strict firewall configuration"
 echo "  ✓ Log rotation configured"
 echo "  ✓ Core dumps disabled"
-echo "  ✓ AppArmor profiles enforced (status captured)"
+echo "  ✓ AppArmor profiles configured (problematic apps disabled, others enforced)"
 echo "  ✓ Compiler access restricted"
 echo "  ✓ Network parameters tuned"
 echo "  ✓ Lynis baseline scan completed"

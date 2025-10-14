@@ -100,6 +100,45 @@ EOF
 +            Some("./docs/assets/IMG_1233.jpeg".to_string()),
          ];
 ```
+**APP STREAM FILE PERM ISSUES***
+- the discovery wa si couldnt open the gnmome file app, but could open eveyrhting else nativly. 
+
+```
+tim@tim-P53:~/dev/HARDN$ sudo grep -i "libappstream\|flatpak" /var/log/dpkg.log* /var/log/apt/history.log* 2>/dev/null || true
+[sudo] password for tim: 
+Sorry, try again.
+[sudo] password for tim: 
+/var/log/dpkg.log.1:2024-08-27 15:38:33 install libappstream5:amd64 <none> 1.0.2-1build6
+/var/log/dpkg.log.1:2024-08-27 15:38:33 status half-installed libappstream5:amd64 1.0.2-1build6
+/var/log/dpkg.log.1:2024-08-27 15:38:33 status unpacked libappstream5:amd64 1.0.2-1build6
+/var/log/dpkg.log.1:2024-08-27 15:39:37 configure libappstream5:amd64 1.0.2-1build6 <none>
+/var/log/dpkg.log.1:2024-08-27 15:39:37 status unpacked libappstream5:amd64 1.0.2-1build6
+/var/log/dpkg.log.1:2024-08-27 15:39:37 status half-configured libappstream5:amd64 1.0.2-1build6
+/var/log/dpkg.log.1:2024-08-27 15:39:37 status installed libappstream5:amd64 1.0.2-1build6
+/var/log/dpkg.log.1:2025-09-14 12:32:32 install flatpak:amd64 <none> 1.14.6-1ubuntu0.1
+/var/log/dpkg.log.1:2025-09-14 12:32:32 status half-installed flatpak:amd64 1.14.6-1ubuntu0.1
+/var/log/dpkg.log.1:2025-09-14 12:32:32 status unpacked flatpak:amd64 1.14.6-1ubuntu0.1
+/var/log/dpkg.log.1:2025-09-14 12:32:32 configure flatpak:amd64 1.14.6-1ubuntu0.1 <none>
+/var/log/dpkg.log.1:2025-09-14 12:32:32 status unpacked flatpak:amd64 1.14.6-1ubuntu0.1
+/var/log/dpkg.log.1:2025-09-14 12:32:32 status half-configured flatpak:amd64 1.14.6-1ubuntu0.1
+/var/log/dpkg.log.1:2025-09-14 12:32:32 status installed flatpak:amd64 1.14.6-1ubuntu0.1
+/var/log/dpkg.log.1:2025-09-14 12:37:38 install libflatpak0:amd64 <none> 1.14.6-1ubuntu0.1
+/var/log/dpkg.log.1:2025-09-14 12:37:38 status half-installed libflatpak0:amd64 1.14.6-1ubuntu0.1
+/var/log/dpkg.log.1:2025-09-14 12:37:38 status unpacked libflatpak0:amd64 1.14.6-1ubuntu0.1
+/var/log/dpkg.log.1:2025-09-14 12:37:38 install gnome-software-plugin-flatpak:amd64 <none> 46.0-1ubuntu2
+/var/log/dpkg.log.1:2025-09-14 12:37:38 status half-installed gnome-software-plugin-flatpak:amd64 46.0-1ubuntu2
+/var/log/dpkg.log.1:2025-09-14 12:37:38 status unpacked gnome-software-plugin-flatpak:amd64 46.0-1ubuntu2
+/var/log/dpkg.log.1:2025-09-14 12:37:38 configure libflatpak0:amd64 1.14.6-1ubuntu0.1 <none>
+/var/log/dpkg.log.1:2025-09-14 12:37:38 status unpacked libflatpak0:amd64 1.14.6-1ubuntu0.1
+/var/log/dpkg.log.1:2025-09-14 12:37:38 status half-configured libflatpak0:amd64 1.14.6-1ubuntu0.1
+/var/log/dpkg.log.1:2025-09-14 12:37:38 status installed libflatpak0:amd64 1.14.6-1ubuntu0.1
+/var/log/dpkg.log.1:2025-09-14 12:37:39 configure gnome-software-plugin-flatpak:amd64 46.0-1ubuntu2 <none>
+/var/log/dpkg.log.1:2025-09-14 12:37:39 status unpacked gnome-software-plugin-flatpak:amd64 46.0-1ubuntu2
+/var/log/dpkg.log.1:2025-09-14 12:37:39 status half-configured gnome-software-plugin-flatpak:amd64 46.0-1ubuntu2
+/var/log/dpkg.log.1:2025-09-14 12:37:39 status installed gnome-software-plugin-flatpak:amd64 46.0-1ubuntu2
+```
+
+- updated the apparmor.sh sfile, and hardneing file to complain all native linux apps and allow user file usage only
 
 - **TOOLS TESTS**
 - 

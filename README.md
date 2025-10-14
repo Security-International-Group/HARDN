@@ -22,15 +22,19 @@ HARDN is a comprehensive security hardening system for Debian-based Linux system
 
 ### From Release
 
-- Download and install the latest `.deb` package:
+- Download and install the desired versioned `.deb` package:
 
 ```bash
-wget https://github.com/Security-International-Group/HARDN/releases/latest/download/hardn_amd64.deb
-sudo dpkg -i hardn_*.deb
+LATEST=$(curl -s https://api.github.com/repos/Security-International-Group/HARDN/releases/latest | jq -r .tag_name)
+wget https://github.com/Security-International-Group/HARDN/releases/download/${LATEST}/hardn_${LATEST}_amd64.deb
+sudo dpkg -i hardn_${LATEST}_amd64.deb
 sudo apt-get install -f -y
 ```
 
 - Launch the Service Manager
+```bash
+sudo hardn-service-manager
+```
 
 ### From Source
 ```bash
@@ -39,7 +43,8 @@ cd HARDN
 sudo make build
 sudo make hardn
 ```
-- This launches the service manager automatically
+- This launches the service manager automatically and builds the Debian package. 
+- To move forward, use the serivce manager chaoces to launch the hardeing script or other options as needed. 
 
 ### HARDN Usage
 
@@ -52,6 +57,10 @@ sudo make hardn
 ```bash
 sudo hardn-service-manager
 ```
+
+- You can launch the module script or launch tools indivually. 
+- There is the ability to launch a security report based on a built in HARDN Compliance meter built in accordance to CIS standards. 
+- The Service Manager is there to monitor, launch and get the needed system data an Administraotr needs in times of monitoring and response. 
 
 ## What HARDN Does
 

@@ -234,19 +234,6 @@ hardn-internal:
 	else \
 		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)No sudo operator; skipping squad sync.$(COLOR_RESET)\n'; \
 	fi
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Igniting the service stack$(COLOR_RESET)\n'
-	@systemctl enable hardn-api.service >/dev/null 2>&1 || true
-	@systemctl start hardn-api.service >/dev/null 2>&1 || true
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Executing hardening ops$(COLOR_RESET)\n'
-	@if [ -f "hardening.sh" ]; then \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Running local hardening ops$(COLOR_RESET)\n'; \
-		bash hardening.sh; \
-	elif [ -f "/usr/share/hardn/modules/hardening.sh" ]; then \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Running packaged hardening ops$(COLOR_RESET)\n'; \
-		bash /usr/share/hardn/modules/hardening.sh; \
-	else \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)No hardening module found; skipping shell-based hardening phase.$(COLOR_RESET)\n'; \
-	fi
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Spawning the command console$(COLOR_RESET)\n'
 	# Optionally launch GUI (unless disabled)
 	@if [ "$$HARDN_NO_AUTO_GUI" != "1" ]; then \

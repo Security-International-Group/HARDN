@@ -71,7 +71,6 @@ struct ServiceHealth {
     api: Option<bool>,
     legion: Option<bool>,
     monitor: Option<bool>,
-    grafana: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -105,7 +104,6 @@ fn parse_service_status(line: &str) -> Option<ServiceHealth> {
                 "hardn-api" | "api" => health.api = Some(running),
                 "legion-daemon" | "legion" => health.legion = Some(running),
                 "hardn-monitor" | "monitor" => health.monitor = Some(running),
-                "hardn-grafana" | "grafana" => health.grafana = Some(running),
                 _ => {}
             }
         }
@@ -620,7 +618,6 @@ fn main() {
                                     if h.api.is_some() { hs.api = h.api; }
                                     if h.legion.is_some() { hs.legion = h.legion; }
                                     if h.monitor.is_some() { hs.monitor = h.monitor; }
-                                    if h.grafana.is_some() { hs.grafana = h.grafana; }
                                 }
                             }
                             if let Some(core) = parse_core_services(&line) {

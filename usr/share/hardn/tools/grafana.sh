@@ -70,3 +70,6 @@ else
 fi
 
 HARDN_STATUS "info" "Grafana setup complete"
+HARDN_STATUS "info" "Grafana management URL: http://localhost:9002"
+HARDN_STATUS "info" "Default credentials: admin/admin (change on first login)"
+HARDN_STATUS "info" "Grafana configured with system monitoring permissions"
