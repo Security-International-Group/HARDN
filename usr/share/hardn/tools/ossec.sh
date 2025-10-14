@@ -90,6 +90,8 @@ fi
 
 # Enable whichever service exists
 HARDN_STATUS "info" "Enabling and starting agent service"
+# Note: Wazuh agent requires a manager server to be functional
+# For offline HIDS, consider using OSSEC instead
 # Reload units in case a new package dropped a service
 systemctl daemon-reload 2>/dev/null || true
 service_candidates=("${agent_service}" ossec ossec-hids wazuh-agent)
@@ -100,7 +102,12 @@ for svc in "${service_candidates[@]}"; do
         continue
     fi
     if service_exists "$svc"; then
-        if enable_service "$svc"; then
+        if [ "$svc" = "wazuh-agent" ]; then
+            HARDN_STATUS "info" "Wazuh agent installed but requires manager server configuration for operation"
+            HARDN_STATUS "info" "Skipping service start - configure manager IP in /var/ossec/etc/ossec.conf"
+            started=1
+            break
+        elif enable_service "$svc"; then
             HARDN_STATUS "pass" "Service $svc enabled and running"
             started=1
             break

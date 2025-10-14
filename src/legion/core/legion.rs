@@ -320,7 +320,7 @@ fn classify_contributing_factor(factor: &str) -> (&'static str, String) {
         category = "Baseline Drift";
     } else if normalized.contains("suid") || normalized.contains("privilege") {
         category = "Privilege Exposure";
-    } else if normalized.contains("wazuh") || normalized.contains("grafana") {
+    } else if normalized.contains("wazuh") {
         category = "Security Platform";
     } else if normalized.contains("docker") || normalized.contains("podman") {
         category = "Platform Coverage";
@@ -348,7 +348,7 @@ fn classify_contributing_factor(factor: &str) -> (&'static str, String) {
     } else if normalized.contains("not installed") {
         category = "Platform Coverage";
     } else if normalized.contains("warning") || normalized.contains("not active") {
-        if normalized.contains("wazuh") || normalized.contains("grafana") {
+        if normalized.contains("wazuh") {
             category = "Security Platform";
         }
     }
@@ -2398,7 +2398,6 @@ impl Legion {
         &mut self,
     ) -> Result<Vec<SecurityPlatformStatus>, Box<dyn std::error::Error>> {
         let platforms = vec![
-            ("Grafana", "grafana-server.service"),
             ("Wazuh Agent", "wazuh-agent.service"),
         ];
 

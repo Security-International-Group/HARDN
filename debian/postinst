@@ -26,9 +26,18 @@ PROFILE_D_FILE="/etc/profile.d/hardn-paths.sh"
 case "$1" in
     configure)
 
-        # Create system user and group
+        # Ensure system group 'hardn' exists, then create system user 'hardn' in that group
+        if ! getent group hardn >/dev/null; then
+            addgroup --system hardn || true
+        fi
         if ! getent passwd hardn >/dev/null; then
-            adduser --system --group --home /var/lib/hardn --shell /usr/sbin/nologin hardn
+            adduser --system --ingroup hardn --home /var/lib/hardn --shell /usr/sbin/nologin hardn || true
+        fi
+
+        # If package was installed via sudo by a logged-in user, add them to the hardn group
+        if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ] && getent passwd "${SUDO_USER}" >/dev/null; then
+            usermod -aG hardn "${SUDO_USER}" 2>/dev/null || true
+            echo "Added ${SUDO_USER} to group 'hardn'"
         fi
 
         # Create symlink for backward compatibility
@@ -36,17 +45,23 @@ case "$1" in
             ln -sf /usr/bin/hardn /usr/bin/hardn
         fi
 
-        # Log directory
-        install -d -m 750 -o hardn -g hardn /var/log/hardn
+        # Runtime directories: ensure group 'hardn' can read/write and new files inherit the group
+        mkdir -p /var/log/hardn /var/lib/hardn /var/lib/hardn/backups 2>/dev/null || true
+        chown root:hardn /var/log/hardn /var/lib/hardn /var/lib/hardn/backups 2>/dev/null || true
+        chmod 2770 /var/log/hardn /var/lib/hardn /var/lib/hardn/backups 2>/dev/null || true
 
-        # Config directory
+        # Config directory: readable by group but writable only by root (maintain security)
         if [ -d /etc/hardn ]; then
-            chown root:hardn /etc/hardn
-            chmod 750 /etc/hardn
+            chown root:hardn /etc/hardn 2>/dev/null || true
+            chmod 750 /etc/hardn 2>/dev/null || true
         fi
 
-        # Backup directory
-        install -d -m 750 -o hardn -g hardn /var/lib/hardn/backups
+        # Ensure packaged data under /usr/share/hardn is owned by root:hardn and inherits group
+        if [ -d /usr/share/hardn ]; then
+            chown -R root:hardn /usr/share/hardn 2>/dev/null || true
+            # setgid so new files/dirs inherit the hardn group; world read allowed for static assets
+            find /usr/share/hardn -type d -exec chmod 2755 {} + 2>/dev/null || true
+        fi
 
         # Deploy default config if missing
         if [ ! -f /etc/hardn/hardn.conf ] && [ -f "${TEMPLATE_DIR}/hardn.conf" ]; then
@@ -108,6 +123,52 @@ export HARDN_TOOL_PATH=\"${TOOL_DIR}:${LEGACY_TOOL_DIR}\"
             systemctl enable hardn-monitor.service || true
         else
             echo "systemctl not found, skipping service enablement."
+        fi
+
+        ICON_SRC="/usr/share/pixmaps/hardn-gui.jpeg"
+        if [ -f "${ICON_SRC}" ]; then
+            # Determine a non-root invoking user safely
+            TARGET_USER="${SUDO_USER:-}"
+            if [ -z "${TARGET_USER}" ] || [ "${TARGET_USER}" = "root" ]; then
+                # logname may fail in some contexts; ensure it's valid
+                _LOGNAME=$(logname 2>/dev/null || true)
+                if [ -n "${_LOGNAME}" ] && getent passwd "${_LOGNAME}" >/dev/null; then
+                    TARGET_USER="${_LOGNAME}"
+                fi
+            fi
+
+            # Only deploy per-user files when we have a resolvable, non-root user
+            if [ -n "${TARGET_USER}" ] && [ "${TARGET_USER}" != "root" ] && getent passwd "${TARGET_USER}" >/dev/null; then
+                TARGET_HOME=$(getent passwd "${TARGET_USER}" | cut -d: -f6)
+                if [ -n "${TARGET_HOME}" ] && [ -d "${TARGET_HOME}" ]; then
+                    DESKTOP_DIR="${TARGET_HOME}/.local/share/applications"
+                    ICON_DIR="${TARGET_HOME}/.local/share/icons"
+                    DESKTOP_PATH="${DESKTOP_DIR}/hardn-gui.desktop"
+                    ICON_DEST="${ICON_DIR}/hardn-gui.jpeg"
+
+                    # Create directories as root, then copy files then chown carefully
+                    install -d -m 755 "${DESKTOP_DIR}" "${ICON_DIR}" || true
+                    install -m 644 "${ICON_SRC}" "${ICON_DEST}" || cp -f "${ICON_SRC}" "${ICON_DEST}" 2>/dev/null || true
+                    cat <<EOF > "${DESKTOP_PATH}"
+[Desktop Entry]
+Type=Application
+Name=HARDN Control Center
+Comment=Launch the HARDN monitoring console
+Exec=/usr/bin/hardn-gui
+Icon=${ICON_DEST}
+Terminal=false
+Categories=Security;System;
+StartupNotify=true
+EOF
+                    # Change ownership only if user exists and home directory matches
+                    chown "${TARGET_USER}:${TARGET_USER}" "${DESKTOP_PATH}" "${ICON_DEST}" 2>/dev/null || true
+                    echo "HARDN desktop launcher deployed for ${TARGET_USER}."
+                else
+                    echo "HARDN desktop launcher skipped: unable to resolve home for ${TARGET_USER}."
+                fi
+            else
+                echo "HARDN desktop launcher skipped: no non-root sudo user detected."
+            fi
         fi
 
         echo "HARDN installed successfully."

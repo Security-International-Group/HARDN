@@ -31,14 +31,14 @@ HARDN is a complete security framework that includes:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    HARDN Security Framework                  │
+│                    HARDN Security Framework                 │
 ├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │ Service     │  │ LEGION      │  │ REST API    │          │
-│  │ Manager     │  │ Daemon      │  │ Service     │          │
-│  │ (Interactive│  │ (Monitoring)│  │ (Remote     │          │
-│  │ Interface)  │  │             │  │ Access)     │          │
-│  └─────────────┘  └─────────────┘  └─────────────┘          │
+│   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
+│   │ Service     │  │ LEGION      │  │ REST API    │         │
+│   │ Manager     │  │ Daemon      │  │ Service     │         │
+│   │ (Interactive│  │ (Monitoring)│  │ (Remote     │         │
+│   │ Interface)  │  │             │  │ Access)     │         │
+│   └─────────────┘  └─────────────┘  └─────────────┘         │
 ├─────────────────────────────────────────────────────────────┤
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
 │  │ Hardening   │  │ Threat      │  │ System      │          │
@@ -179,7 +179,7 @@ HARDN is released under the MIT License, encouraging community contributions and
 
 ## Roadmap
 
-### Current Version (v1.0)
+### Current Version
 - Interactive service manager
 - LEGION security daemon
 - REST API service
@@ -195,6 +195,6 @@ HARDN is released under the MIT License, encouraging community contributions and
 
 ---
 
-**Website**: [Security International Group](https://securityinternationalgroup.org)  
-**Repository**: [GitHub](https://github.com/Security-International-Group/HARDN)  
+**Website**: [Security International Group](https://securityinternationalgroup.org)
+**Repository**: [GitHub](https://github.com/Security-International-Group/HARDN)
 **Documentation**: [Full Documentation](https://docs.hardn.security)

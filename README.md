@@ -8,7 +8,7 @@
 
 HARDN is a comprehensive security hardening system for Debian-based Linux systems, providing automated security hardening and continuous monitoring through an integrated toolkit.
 
-**Demo Version** - This is a demonstration version showcasing core security features.
+**Demo Version** - This is a demonstration version showcasing core security features of HARDN-XDR, the full enterprise solution. For production use and advanced features, please contact Security International Group.
 ## Key Features
 
 - **Automated System Hardening** - One-command security configuration
@@ -20,40 +20,47 @@ HARDN is a comprehensive security hardening system for Debian-based Linux system
 
 ## Quick Start
 
-### Installation
+### From Release
+
+- Download and install the desired versioned `.deb` package:
+
+```bash
+LATEST=$(curl -s https://api.github.com/repos/Security-International-Group/HARDN/releases/latest | jq -r .tag_name)
+wget https://github.com/Security-International-Group/HARDN/releases/download/${LATEST}/hardn_${LATEST}_amd64.deb
+sudo dpkg -i hardn_${LATEST}_amd64.deb
+sudo apt-get install -f -y
+```
+
+- Launch the Service Manager
+```bash
+sudo hardn-service-manager
+```
+
+### From Source
 ```bash
 git clone https://github.com/Security-International-Group/HARDN.git
 cd HARDN
 sudo make build
 sudo make hardn
 ```
+- This launches the service manager automatically and builds the Debian package. 
+- To move forward, use the serivce manager chaoces to launch the hardeing script or other options as needed. 
 
-### Verify Installation
-```bash
-hardn --version
-```
+### HARDN Usage
 
-### Usage
-
-**Launch with GUI (Default)**
-```bash
-sudo make hardn
-```
-
-**Launch without GUI**
-```bash
-HARDN_NO_AUTO_GUI=1 sudo make hardn
-```
-
-**Manual GUI Launch**
-```bash
-hardn-gui
-```
+- Upon using the standard `sudo make hardn` the graphic interface SIEM will launch automatically alongside the service manager. 
+- This apoplication provides real-time monitoring of your system's security status and places a local GTK4 Native app within your user environment.
 
 **Service Manager**
+
+- This service manager allows you to manage HARDN services interactively both over CLI and the SIEM.
 ```bash
 sudo hardn-service-manager
 ```
+
+- You can launch the module script or launch tools indivually. 
+- There is the ability to launch a security report based on a built in HARDN Compliance meter built in accordance to CIS standards. 
+- The Service Manager is there to monitor, launch and get the needed system data an Administraotr needs in times of monitoring and response. 
 
 ## What HARDN Does
 
@@ -70,7 +77,7 @@ Real-time monitoring dashboard showing system status, security events, and servi
 
 HARDN installs two main services:
 
-### **hardn.service** 
+### **hardn.service**
 Security hardening service that applies security configurations when triggered.
 
 ### **legion-daemon.service**

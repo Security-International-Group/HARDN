@@ -16,11 +16,16 @@ else
     exit 1
 fi
 
-HARDN_STATUS "info" "Updating ClamAV virus definitions"
-if freshclam >/dev/null 2>&1; then
-    HARDN_STATUS "pass" "ClamAV virus definitions updated"
+HARDN_STATUS "info" "Checking ClamAV virus definitions"
+if [[ -f /var/lib/clamav/daily.cld && -f /var/lib/clamav/main.cvd ]]; then
+    # Check if database is reasonably current (less than 7 days old)
+    if [[ $(find /var/lib/clamav/daily.cld -mtime -7 2>/dev/null) ]]; then
+        HARDN_STATUS "pass" "ClamAV virus definitions are current"
+    else
+        HARDN_STATUS "info" "ClamAV virus definitions may be outdated (clamav-freshclam service should update automatically)"
+    fi
 else
-    HARDN_STATUS "warning" "Could not update virus definitions via freshclam"
+    HARDN_STATUS "warning" "ClamAV virus definition files not found"
 fi
 
 HARDN_STATUS "info" "Enabling ClamAV services"

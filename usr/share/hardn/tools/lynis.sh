@@ -197,13 +197,15 @@ run_lynis_audit() {
     mkdir -p /var/log/lynis
     HARDN_STATUS "info" "Running Lynis audit (this may take a few minutes)"
 
-    if lynis audit system --verbose --log-file "$audit_log" --report-file "$report_file" 2>/dev/null; then
+    # Run audit with timeout to prevent hanging
+    if timeout 120 lynis audit system --quiet --log-file "$audit_log" --report-file "$report_file" 2>/dev/null; then
         HARDN_STATUS "pass" "Lynis audit completed successfully"
         HARDN_STATUS "info" "Audit log: $audit_log"
         HARDN_STATUS "info" "Report file: $report_file"
         generate_concise_report
     else
-        HARDN_STATUS "error" "Lynis audit command failed"
+        HARDN_STATUS "warning" "Lynis audit timed out or failed - configuration files are ready for manual audit"
+        HARDN_STATUS "info" "Run manually: lynis audit system --log-file $audit_log --report-file $report_file"
     fi
 }
 

@@ -56,8 +56,7 @@ ProtectSystem=strict
 ReadWritePaths=/var/log /var/lib/hardn
 MemoryLimit=256M
 ```
-
-#### Daemon Responsibilities
+### Expected Behavior
 - **Telemetry Hub**: Streams normalized event data, risk scores, and detailed findings to the GUI and external consumers through a single API surface.
 - **Control Plane**: Accepts configuration pushes, response commands, and policy updates, applying them atomically to monitoring modules.
 - **Baseline Steward**: Coordinates learning cycles, persists baselines, and manages drift heuristics without delegating to auxiliary workers.
