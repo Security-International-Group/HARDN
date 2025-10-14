@@ -302,7 +302,7 @@ jobs:
           echo "Version extracted: $VERSION"
           echo "Architecture: $ARCH"
 
-      - name: Determine next release tag
+      - name: Determine next tag
         id: tag
         run: |
           LATEST_TAG=$(git tag --sort=-version:refname | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
@@ -380,6 +380,7 @@ jobs:
           sudo dpkg -i $DEB_NAME
           sudo apt-get install -f -y
           ```
+         - The Lau
 
           ## What's Inside
           - HARDN CLI, monitoring service, and GTK-based GUI
@@ -441,6 +442,3 @@ jobs:
 
             curl -H "Content-Type: application/json" -X POST "$WEBHOOK" \
               -d "{\"embeds\":[{\"title\":\"HARDN Latest Release Pipeline • ${{ github.repository }}\",\"description\":\"$DESCRIPTION\",\"color\":$COLOR,\"url\":\"$MSG\"}]}" || true
-          else
-            echo "[INFO] No Discord webhook configured; skipping notification."
-          fi

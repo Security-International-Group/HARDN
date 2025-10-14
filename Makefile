@@ -82,9 +82,34 @@ build-internal:
 		fi; \
 	done; \
 	if [ -n "$$MISSING_DEPS" ]; then \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Adding missing ops gear:%s$(COLOR_RESET)\n' "$$MISSING_DEPS"; \
-		DEBIAN_FRONTEND=noninteractive apt-get update -qq; \
-		DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $$MISSING_DEPS; \
+		printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Missing ops gear identified:$(COLOR_RESET)\n'; \
+		for pkg in $$MISSING_DEPS; do \
+			[ -z "$$pkg" ] && continue; \
+			printf '$(SUBSTEP_PREFIX)   $(COLOR_MUTED)- %s$(COLOR_RESET)\n' "$$pkg"; \
+		done; \
+		INSTALL_LOG=$$(mktemp); \
+		printf '$(SUBSTEP_PREFIX) $(COLOR_STAGE)Securing supply drop…$(COLOR_RESET)'; \
+		set -o pipefail; \
+		( DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $$MISSING_DEPS ) > "$$INSTALL_LOG" 2>&1 & \
+		APT_PID=$$!; \
+		FRAMES=('|' '/' '-' '\\'); \
+		INDEX=0; \
+		while kill -0 $$APT_PID 2>/dev/null; do \
+			printf '\r$(SUBSTEP_PREFIX) $(COLOR_STAGE)Securing supply drop %s$(COLOR_RESET)' "$${FRAMES[$$INDEX]}"; \
+			INDEX=$$(( (INDEX + 1) % $${#FRAMES[@]} )); \
+			sleep 0.15; \
+		done; \
+		wait $$APT_PID; \
+		APT_STATUS=$$?; \
+		if [ $$APT_STATUS -ne 0 ]; then \
+			printf '\r$(SUBSTEP_PREFIX) $(COLOR_WARN)Supply drop failed; review %s$(COLOR_RESET)\033[K\n' "$$INSTALL_LOG"; \
+			tail -n 40 "$$INSTALL_LOG" || true; \
+			rm -f "$$INSTALL_LOG"; \
+			exit $$APT_STATUS; \
+		else \
+			printf '\r$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)Supply drop secured.$(COLOR_RESET)\033[K\n'; \
+			rm -f "$$INSTALL_LOG"; \
+		fi; \
 	else \
 		printf '$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)All gear already online.$(COLOR_RESET)\n'; \
 	fi
@@ -101,20 +126,20 @@ build-internal:
 			while kill -0 $$RUSTUP_PID 2>/dev/null; do \
 				BAR="$${BAR}▰"; \
 				if [ $${#BAR} -gt 20 ]; then BAR='▰'; fi; \
-				printf '\r$(SUBSTEP_PREFIX) $(COLOR_PRIMARY)Deploying rustup agents $(COLOR_STAGE)%s$(COLOR_RESET)' "$$BAR"; \
+				printf '\r$(SUBSTEP_PREFIX) $(COLOR_PRIMARY)Deploying rust agents $(COLOR_STAGE)%s$(COLOR_RESET)' "$$BAR"; \
 				sleep 0.18; \
 			done; \
 			wait $$RUSTUP_PID; \
 			INSTALL_STATUS=$$?; \
 		}; \
 		if [ $$INSTALL_STATUS -ne 0 ]; then \
-			printf '\r$(SUBSTEP_PREFIX) $(COLOR_WARN)Rustup deploy failed; see /tmp/hardn-rustup.log$(COLOR_RESET)\033[K\n'; \
+			printf '\r$(SUBSTEP_PREFIX) $(COLOR_WARN)Rust deploy failed; see /tmp/hardn-rustup.log$(COLOR_RESET)\033[K\n'; \
 			exit $$INSTALL_STATUS; \
 		else \
-			printf '\r$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)Rustup agents deployed successfully.$(COLOR_RESET)\033[K\n'; \
+			printf '\r$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)Rust agents deployed successfully.$(COLOR_RESET)\033[K\n'; \
 		fi; \
 	else \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)rustup already stationed.$(COLOR_RESET)\n'; \
+		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)rust already stationed.$(COLOR_RESET)\n'; \
 	fi
 	@{ \
 		if [ -f "$(RUST_ENV_FILE)" ]; then \
@@ -130,7 +155,7 @@ build-internal:
 			rustup default stable >/dev/null 2>&1; \
 		fi; \
 	}
-	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)core spinning up.$(COLOR_RESET)\n'
+	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)core build in progress.$(COLOR_RESET)\n'
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Compiling HARDN core$(COLOR_RESET)\n'
 	@BUILD_STATUS=0; \
 	{ \
@@ -209,19 +234,6 @@ hardn-internal:
 	else \
 		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)No sudo operator; skipping squad sync.$(COLOR_RESET)\n'; \
 	fi
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Igniting the service stack$(COLOR_RESET)\n'
-	@systemctl enable hardn-api.service >/dev/null 2>&1 || true
-	@systemctl start hardn-api.service >/dev/null 2>&1 || true
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Executing hardening ops$(COLOR_RESET)\n'
-	@if [ -f "hardening.sh" ]; then \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Running local hardening ops$(COLOR_RESET)\n'; \
-		bash hardening.sh; \
-	elif [ -f "/usr/share/hardn/modules/hardening.sh" ]; then \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Running packaged hardening ops$(COLOR_RESET)\n'; \
-		bash /usr/share/hardn/modules/hardening.sh; \
-	else \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)No hardening module found; skipping shell-based hardening phase.$(COLOR_RESET)\n'; \
-	fi
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Spawning the command console$(COLOR_RESET)\n'
 	# Optionally launch GUI (unless disabled)
 	@if [ "$$HARDN_NO_AUTO_GUI" != "1" ]; then \
@@ -273,3 +285,4 @@ clean:
 		cargo clean >/dev/null 2>&1 || true; \
 	}
 	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)Forge embers extinguished.$(COLOR_RESET)\n'
+

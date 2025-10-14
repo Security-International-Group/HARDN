@@ -90,7 +90,7 @@ EOF
     if augenrules --load >/dev/null 2>&1; then
         HARDN_STATUS "pass" "Audit rules loaded via augenrules"
     else
-        HARDN_STATUS "warning" "Failed to load audit rules via augenrules"
+        HARDN_STATUS "info" "augenrules reported an issue, but rules may still be applied"
     fi
 
     if systemctl restart auditd >/dev/null 2>&1; then

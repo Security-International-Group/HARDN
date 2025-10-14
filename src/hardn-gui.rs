@@ -71,7 +71,6 @@ struct ServiceHealth {
     api: Option<bool>,
     legion: Option<bool>,
     monitor: Option<bool>,
-    grafana: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -105,40 +104,12 @@ fn parse_service_status(line: &str) -> Option<ServiceHealth> {
                 "hardn-api" | "api" => health.api = Some(running),
                 "legion-daemon" | "legion" => health.legion = Some(running),
                 "hardn-monitor" | "monitor" => health.monitor = Some(running),
-                "hardn-grafana" | "grafana" => health.grafana = Some(running),
                 _ => {}
             }
         }
         return Some(health);
     }
     None
-}
-
-fn render_header_text(h: &ServiceHealth) -> String {
-    let mk = |label: &str, v: Option<bool>| match v {
-        Some(true) => format!("{}: RUNNING", label),
-        Some(false) => format!("{}: DOWN", label),
-        None => format!("{}: ?", label),
-    };
-    let header = format!(
-        "{}  {}  {}  {}  {}\n",
-        mk("HARDN", h.hardn),
-        mk("API", h.api),
-        mk("LEGION", h.legion),
-        mk("MONITOR", h.monitor),
-        mk("GRAFANA", h.grafana)
-    );
-    let any_down = [h.hardn, h.api, h.legion, h.monitor, h.grafana]
-        .into_iter()
-        .any(|x| matches!(x, Some(false)));
-    if any_down {
-        format!(
-            "{}Tip: To interact with HARDN run: sudo hardn-service-manager\n\n",
-            header
-        )
-    } else {
-        format!("{}\n", header)
-    }
 }
 
 fn parse_metrics(line: &str) -> Option<String> {
@@ -265,7 +236,7 @@ fn main() {
         // Logs buffer with two separate views (tab and split)
         let buffer: TextBuffer = TextBuffer::new(None);
         // Keep a mark at the end to allow smooth follow scrolling
-        let mut tmp_end = buffer.end_iter();
+        let tmp_end = buffer.end_iter();
         let end_mark: TextMark = buffer.create_mark(Some("log_end"), &tmp_end, true);
 
         let text_view_tab = TextView::new();
@@ -412,17 +383,20 @@ fn main() {
         header_box.set_margin_end(8);
         header_box.add_css_class("box-header");
         let logo_path_candidates = [
-            "/usr/share/hardn/docs/IMG_1233.jpeg",
-            "/usr/share/pixmaps/hardn.png",
-            "/usr/share/pixmaps/hardn.jpg",
-            "./docs/assets/IMG_1233.jpeg",
+            std::env::var("HARDN_GUI_LOGO").ok(),
+            Some("/usr/share/pixmaps/hardn.png".to_string()),
+            Some("/usr/share/pixmaps/hardn.jpg".to_string()),
+            Some("/usr/share/pixmaps/hardn-gui.jpeg".to_string()),
+            Some("/usr/share/hardn/docs/IMG_1233.jpeg".to_string()),
+            Some("/usr/share/hardn/hardn-logo.png".to_string()),
+            Some("./docs/assets/IMG_1233.jpeg".to_string()),
         ];
         let mut logo_picture: Option<Picture> = None;
-        for p in logo_path_candidates.iter() {
+        for p in logo_path_candidates.iter().flatten() {
             if std::path::Path::new(p).exists() {
                 let pic = Picture::for_filename(p);
-                pic.set_width_request(26);
-                pic.set_height_request(26);
+                pic.set_width_request(32);
+                pic.set_height_request(32);
                 pic.add_css_class("logo");
                 logo_picture = Some(pic);
                 break;
@@ -593,7 +567,7 @@ fn main() {
             }
 
             // Scroll to end if auto-follow is active for each view
-            let mut end_iter = buf_for_ui_c.end_iter();
+            let end_iter = buf_for_ui_c.end_iter();
             buf_for_ui_c.move_mark(&end_mark_c, &end_iter);
             if auto_follow_tab_c.lock().map(|v| *v).unwrap_or(false) {
                 text_view_tab_c.scroll_mark_onscreen(&end_mark_c);
@@ -644,7 +618,6 @@ fn main() {
                                     if h.api.is_some() { hs.api = h.api; }
                                     if h.legion.is_some() { hs.legion = h.legion; }
                                     if h.monitor.is_some() { hs.monitor = h.monitor; }
-                                    if h.grafana.is_some() { hs.grafana = h.grafana; }
                                 }
                             }
                             if let Some(core) = parse_core_services(&line) {

@@ -329,14 +329,51 @@ fn get_tool_status_detail(tool_name: &str) -> ToolStatusDetail {
                 tool_detail(ToolStatusType::NotInstalled, false, false)
             }
         }
-        "AppArmor" | "Fail2Ban" | "Auditd" | "ClamAV" | "Legion" => {
+        "Firejail" => {
+            // Firejail is a sandboxing tool, check if installed and profiles exist
+            if Command::new("which")
+                .arg("firejail")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                // Check if HARDN profiles exist
+                if Path::new("/etc/firejail/hardn-service-manager.profile").exists() {
+                    tool_detail(ToolStatusType::Active, true, true)
+                } else {
+                    tool_detail(ToolStatusType::Installed, false, true)
+                }
+            } else {
+                tool_detail(ToolStatusType::NotInstalled, false, false)
+            }
+        }
+        "SELinux" => {
+            // SELinux is a kernel security module
+            let output = Command::new("sestatus").output();
+            match output {
+                Ok(o) => {
+                    let status = String::from_utf8_lossy(&o.stdout);
+                    if status.contains("SELinux status:\tenabled") && status.contains("Current mode:\tenforcing") {
+                        tool_detail(ToolStatusType::Active, true, true)
+                    } else if status.contains("SELinux status:\tenabled") {
+                        tool_detail(ToolStatusType::Enabled, true, true)
+                    } else {
+                        tool_detail(ToolStatusType::NotInstalled, false, false)
+                    }
+                }
+                Err(_) => tool_detail(ToolStatusType::NotInstalled, false, false),
+            }
+        }
+        "AppArmor" | "Fail2Ban" | "Auditd" | "ClamAV" | "Grafana" | "Legion" | "Suricata" => {
             // These are standard systemd services
             let service_name = match tool_name {
                 "AppArmor" => "apparmor",
                 "Fail2Ban" => "fail2ban",
                 "Auditd" => "auditd",
                 "ClamAV" => "clamav-daemon",
+                "Grafana" => "grafana-server",
                 "Legion" => "legion-daemon",
+                "Suricata" => "suricata",
                 _ => return tool_detail(ToolStatusType::NotInstalled, false, false),
             };
 
@@ -544,7 +581,7 @@ fn generate_security_report() {
     let mut enabled_tools: u32 = 0;
     let mut installed_tools: u32 = 0;
     let mut tool_points: f64 = 0.0;
-    let total_tools: u32 = 10;
+    let total_tools: u32 = 13;
 
     // Check each tool with appropriate method
     let tool_statuses = vec![
@@ -553,10 +590,13 @@ fn generate_security_report() {
         ("Fail2Ban", get_tool_status_detail("Fail2Ban")),
         ("UFW", get_tool_status_detail("UFW")),
         ("Auditd", get_tool_status_detail("Auditd")),
-        ("RKHunter", get_tool_status_detail("RKHunter")),
         ("ClamAV", get_tool_status_detail("ClamAV")),
+        ("Firejail", get_tool_status_detail("Firejail")),
+        ("Grafana", get_tool_status_detail("Grafana")),
         ("Legion", get_tool_status_detail("Legion")),
         ("OSSEC", get_tool_status_detail("OSSEC")),
+        ("SELinux", get_tool_status_detail("SELinux")),
+        ("Suricata", get_tool_status_detail("Suricata")),
         ("Lynis", get_tool_status_detail("Lynis")),
     ];
 
@@ -1165,7 +1205,7 @@ fn run_all_tools() -> i32 {
 /// Sandbox commands (--sandbox-on/--sandbox-off) are NEVER included in this batch operation
 fn run_everything() -> i32 {
     println!("\n╔═══════════════════════════════════════╗");
-    println!("║   COMPREHENSIVE SYSTEM HARDENING       ║");
+    println!("║   COMPREHENSIVE SYSTEM HARDENING        ║");
     println!("╚═════════════════════════════════════════╝\n");
 
     log_message(
@@ -1433,8 +1473,8 @@ fn sandbox_on() -> i32 {
 /// WARNING: This will DISABLE AppArmor and REQUIRE a system reboot
 fn enable_selinux() -> i32 {
     println!("\n╔══════════════════════════════════════╗");
-    println!("║           ⚠️  DANGER ZONE ⚠️           ║");
-    println!("║         SELINUX ACTIVATION             ║");
+    println!("║            ⚠️ Advanced ⚠️             ║");
+    println!("║          SELINUX ACTIVATION            ║");
     println!("╚════════════════════════════════════════╝\n");
 
     log_message(
@@ -1812,7 +1852,7 @@ fn get_security_tools() -> Vec<SecurityToolInfo> {
         },
         SecurityToolInfo {
             name: "ClamAV",
-            service_name: "clamav-daemon",
+            service_name: "clamv-daemon",
             process_name: "clamd",
             description: "Antivirus engine for detecting trojans and malware",
         },
@@ -2442,8 +2482,8 @@ fn display_formatted_logs(logs: &str) {
         }
 
         // Check if this is a new log entry (starts with timestamp or contains service name with PID)
-        let is_new_entry = line.contains("hardn[") || 
-                          line.contains("legion[") || 
+        let is_new_entry = line.contains("hardn[") ||
+                          line.contains("legion[") ||
                           line.contains("hardn-monitor[") ||
                           line.starts_with("2025-") || // Year prefix for timestamps
                           line.starts_with("2024-");
@@ -2551,14 +2591,14 @@ fn format_log_entry(entry: &str) -> String {
 
         // Clean up emojis and format
         let clean_message = message
-            .replace("🌐", "[NET]")
-            .replace("⚠️", "[WARN]")
-            .replace("🔒", "[SEC]")
-            .replace("🚨", "[ALERT]")
-            .replace("✓", "[OK]")
-            .replace("✗", "[FAIL]")
-            .replace("📊", "[STATS]")
-            .replace("🛡️", "[SHIELD]");
+            .replace("\u{1F310}", "[NET]")
+            .replace("\u{26A0}\u{FE0F}", "[WARN]")
+            .replace("\u{1F512}", "[SEC]")
+            .replace("\u{1F6A8}", "[ALERT]")
+            .replace("\u{2713}", "[OK]")
+            .replace("\u{2717}", "[FAIL]")
+            .replace("\u{1F4CA}", "[STATS]")
+            .replace("\u{1F6E1}\u{FE0F}", "[SHIELD]");
 
         // Truncate very long messages
         if clean_message.len() > 80 {

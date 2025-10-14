@@ -25,7 +25,7 @@ BOLD='\033[1m'
 readonly LOG_DIR="/var/log/hardn"
 readonly HARDN_SERVICES="hardn.service hardn-api.service legion-daemon.service hardn-monitor.service"
 readonly DEFAULT_TOOL_PATHS="/usr/share/hardn/tools:/usr/lib/hardn/src/setup/tools"
-declare -ar DEFAULT_TOOL_COMMANDS=(aide apparmor auditd clamv fail2ban lynis ossec suricata ufw grafana)
+declare -ar DEFAULT_TOOL_COMMANDS=(aide apparmor auditd clamv fail2ban firejail grafana lynis ossec selinux suricata ufw)
 HARDN_BIN="${HARDN_BINARY:-}"
 
 print_colored() {
@@ -72,6 +72,12 @@ format_tool_display() {
             ;;
         grafana)
             echo "Grafana Endpoint Monitoring"
+            ;;
+        firejail)
+            echo "Firejail (Application Sandboxing)"
+            ;;
+        selinux)
+            echo "SELinux (Mandatory Access Control)"
             ;;
         *)
             local human=${name//[_-]/ }

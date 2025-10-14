@@ -5,7 +5,7 @@ Important
 - Target platforms: Debian 12–13 and Ubuntu 24.04
 - Goal: 10 consecutive front-to-back tests with zero errors
 
-1. Summary
+1. Report Summary
 - Brief title:
 - Short description:
 

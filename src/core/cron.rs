@@ -493,14 +493,14 @@ impl CronOrchestrator {
 
         // Daily Legion baseline snapshot (lightweight report)
         jobs.push(Arc::new(ScheduledJob::new(CronJob::daily_job(
-            "legion-daily-snapshot",
-            "Capture Legion baseline snapshot for dashboards",
+            "legion-daily-baseline",
+            "Create daily Legion baseline snapshot",
             &log_root,
-            "legion-daily-snapshot.log",
+            "legion-daily-baseline.log",
             1,
             30,
             "/usr/bin/hardn",
-            &["legion", "--json"],
+            &["legion", "--create-baseline", "--json"],
         ))));
 
         {
