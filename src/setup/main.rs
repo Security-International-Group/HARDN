@@ -41,10 +41,10 @@
 //! # List available modules
 //! sudo hardn --list-modules
 //!
-//! # Show help
+    tool_score = (tool_points / max_tool_points * 60.0).min(60.0);
 //! sudo hardn --help
 //! ```
-//!
+    println!("  \x1b[1;33mTool Score: {:.1}/60\x1b[0m\n", tool_score);
 //! ## Environment Variables
 //! The following environment variables are passed to all executed scripts:
 //! - `HARDN_MODULES_DIR`: Primary module directory path
@@ -84,11 +84,11 @@
 //! - Implement parallel module execution for performance
 //! - Add dry-run mode for testing
 //! - Enhance progress reporting for long-running modules
-//!
+    module_score = (module_points / 10.0 * 40.0).min(40.0);
 //! ## Author
 //! Developed by the Security International Group (SIG) Team
 //! License: MIT
-//! Version: 2.2.0
+    println!("  \x1b[1;33mModule Score: {:.1}/40\x1b[0m\n", module_score);
 
 // main.rs
 
@@ -269,10 +269,9 @@ fn generate_security_report() {
     // Track scoring components
     let tool_score: f64;
     let module_score: f64;
-    let mut lynis_score: f64;
     
-    // 1. Check active security tools (40% of total score)
-    println!("\x1b[1;36m▶ SECURITY TOOLS ASSESSMENT (40% weight):\x1b[0m");
+    // 1. Check active security tools (60% of total score)
+    println!("\x1b[1;36m▶ SECURITY TOOLS ASSESSMENT (60% weight):\x1b[0m");
     let tools = get_security_tools();
     let mut active_tools = 0;
     let mut enabled_tools = 0;
@@ -296,13 +295,13 @@ fn generate_security_report() {
     // Calculate tool score: active tools get full points, enabled get half
     let max_tool_points = tools.len() as f64;
     let tool_points = (active_tools as f64) + (enabled_tools as f64 * 0.5);
-    tool_score = (tool_points / max_tool_points * 40.0).min(40.0);
+    tool_score = (tool_points / max_tool_points * 60.0).min(60.0);
     
     println!("\n  Active: {}/{}, Enabled: {}/{}", active_tools, tools.len(), enabled_tools, tools.len());
-    println!("  \x1b[1;33mTool Score: {:.1}/40\x1b[0m\n", tool_score);
+    println!("  \x1b[1;33mTool Score: {:.1}/60\x1b[0m\n", tool_score);
     
-    // 2. Check executed modules (20% of total score)
-    println!("\x1b[1;36m▶ MODULE EXECUTION STATUS (20% weight):\x1b[0m");
+    // 2. Check executed modules (40% of total score)
+    println!("\x1b[1;36m▶ MODULE EXECUTION STATUS (40% weight):\x1b[0m");
     
     // Check if log directory exists and analyze module execution
     let mut executed_modules = Vec::new();
@@ -337,120 +336,34 @@ fn generate_security_report() {
     
     // Calculate module score based on logs and services
     let expected_modules = 5; // Expected number of module logs
-    let module_points = (executed_modules.len() as f64 / expected_modules as f64 * 10.0) + 
-                       (active_services as f64 / hardn_services.len() as f64 * 10.0);
-    module_score = module_points.min(20.0);
-    
-    println!("\n  Module logs found: {}/{}", executed_modules.len(), expected_modules);
+    let module_points = (executed_modules.len() as f64 / expected_modules as f64 * 10.0)
+        + (active_services as f64 / hardn_services.len() as f64 * 10.0);
+    module_score = (module_points / 20.0 * 40.0).min(40.0);
+
     println!("  HARDN services active: {}/{}", active_services, hardn_services.len());
-    println!("  \x1b[1;33mModule Score: {:.1}/20\x1b[0m\n", module_score);
-    
-    // 3. Run Lynis audit and get score (40% of total score)
-    println!("\x1b[1;36m▶ LYNIS SECURITY AUDIT (40% weight):\x1b[0m");
-    println!("  Running Lynis security audit (this may take a moment)...\n");
-    
-    // Create log directory if it doesn't exist
-    let _ = fs::create_dir_all("/var/log/lynis");
-    
-    // Initialize lynis_score
-    lynis_score = 0.0;
-    
-    // Run Lynis audit
-    let lynis_output = Command::new("lynis")
-        .args(&["audit", "system", "--quick", "--quiet", "--no-colors"])
-        .output();
-    
-    match lynis_output {
-        Ok(output) => {
-            let output_str = String::from_utf8_lossy(&output.stdout);
-            
-            // Extract hardening index using regex-like pattern matching
-            let hardening_index = output_str
-                .lines()
-                .find(|line| line.contains("Hardening index"))
-                .and_then(|line| {
-                    // Extract number between brackets
-                    line.find('[')
-                        .and_then(|start| {
-                            line[start+1..].find(']')
-                                .and_then(|end| {
-                                    line[start+1..start+1+end].trim().parse::<f64>().ok()
-                                })
-                        })
-                })
-                .unwrap_or(0.0);
-            
-            // If we couldn't get it from quick scan, try checking the log file
-            let hardening_index = if hardening_index == 0.0 {
-                // Try to get from existing log file using ripgrep if available
-                Command::new("rg")
-                    .args(&["-i", "Hardening index", "/var/log/lynis/hardn-audit.log"])
-                    .output()
-                    .ok()
-                    .and_then(|rg_output| {
-                        String::from_utf8_lossy(&rg_output.stdout)
-                            .lines()
-                            .find(|line| line.contains("Hardening index"))
-                            .and_then(|line| {
-                                // Extract the number
-                                line.split('[').nth(1)
-                                    .and_then(|s| s.split(']').next())
-                                    .and_then(|s| s.trim().parse::<f64>().ok())
-                            })
-                    })
-                    .unwrap_or(hardening_index)
-            } else {
-                hardening_index
-            };
-            
-            // Lynis score is 40% of its hardening index
-            lynis_score = (hardening_index / 100.0 * 40.0).min(40.0);
-            
-            if hardening_index > 0.0 {
-                println!("  \x1b[32m✓\x1b[0m Lynis audit completed successfully");
-                println!("  Hardening Index: \x1b[1;33m{}\x1b[0m/100", hardening_index);
-                
-                // Show security status indicator
-                let status_msg = match hardening_index as i32 {
-                    0..=49 => "\x1b[1;31mCRITICAL - Immediate attention required\x1b[0m",
-                    50..=64 => "\x1b[1;31mPOOR - Significant improvements needed\x1b[0m",
-                    65..=74 => "\x1b[1;33mFAIR - Some improvements recommended\x1b[0m",
-                    75..=84 => "\x1b[1;32mGOOD - Minor improvements possible\x1b[0m",
-                    85..=94 => "\x1b[1;32mEXCELLENT - Well hardened system\x1b[0m",
-                    _ => "\x1b[1;32mOUTSTANDING - Exceptional security posture\x1b[0m",
-                };
-                println!("  Security Level: {}", status_msg);
-            } else {
-                println!("  \x1b[33m⚠\x1b[0m Could not determine Lynis hardening index");
-                println!("  Run 'sudo lynis audit system' for detailed results");
-            }
-        }
-        Err(_) => {
-            println!("  \x1b[31m✗\x1b[0m Lynis not installed or not accessible");
-            println!("  Install with: sudo apt install lynis");
-        }
-    }
-    
-    println!("  \x1b[1;33mLynis Score: {:.1}/40\x1b[0m\n", lynis_score);
-    
+    println!("  \x1b[1;33mModule Score: {:.1}/40\x1b[0m\n", module_score);
+
     // Calculate total score
-    let total_score = tool_score + module_score + lynis_score;
-    
-    // Display final report
+    let total_score = tool_score + module_score;
+
     println!("╔═══════════════════════════════════════════════════════════════════════════════╗");
     println!("║                              SECURITY SCORE SUMMARY                            ║");
     println!("╠═══════════════════════════════════════════════════════════════════════════════╣");
-    println!("║  Component                │ Score      │ Weight │ Status                      ║");
-    println!("╠───────────────────────────┼────────────┼────────┼─────────────────────────────╣");
-    
-    let tool_status = if tool_score >= 30.0 { "✓" } else if tool_score >= 20.0 { "●" } else { "✗" };
-    let module_status = if module_score >= 15.0 { "✓" } else if module_score >= 10.0 { "●" } else { "✗" };
-    let lynis_status = if lynis_score >= 30.0 { "✓" } else if lynis_score >= 20.0 { "●" } else { "✗" };
-    
-    println!("║  Security Tools           │ {:>6.1}/40 │   40%  │ {}                           ║", tool_score, tool_status);
-    println!("║  Module Execution         │ {:>6.1}/20 │   20%  │ {}                           ║", module_score, module_status);
-    println!("║  Lynis Audit             │ {:>6.1}/40 │   40%  │ {}                           ║", lynis_score, lynis_status);
-    println!("╠───────────────────────────┼────────────┼────────┼─────────────────────────────╣");
+    println!("║  Component                │    Score    │ Weight │         Status              ║");
+    println!("╠───────────────────────────┼─────────────┼────────┼─────────────────────────────╣");
+
+    let tool_status = if tool_score >= 45.0 { "✓" } else if tool_score >= 30.0 { "●" } else { "✗" };
+    let module_status = if module_score >= 30.0 { "✓" } else if module_score >= 20.0 { "●" } else { "✗" };
+
+    println!(
+        "║  Security Tools           │  {:>6.1}/60  │  60%   │             {}               ║",
+        tool_score, tool_status
+    );
+    println!(
+        "║  Module Execution         │  {:>6.1}/40  │  40%   │             {}               ║",
+        module_score, module_status
+    );
+    println!("╠═══════════════════════════╧═════════════╧════════╧═════════════════════════════╣");
     
     // Determine overall grade and color
     let (grade, grade_color) = match total_score as i32 {
@@ -462,33 +375,37 @@ fn generate_security_report() {
         _ => ("A+", "\x1b[1;32m"),         // Green
     };
     
-    println!("║  {}TOTAL SCORE: {:.1}/100  Grade: {}{}\x1b[0m                                    ║", 
-             grade_color, total_score, grade, grade_color);
-    println!("╚═══════════════════════════════════════════════════════════════════════════════╝");
-    
+    let score_text = format!("TOTAL SCORE: {:.1}/100  Grade: {}", total_score, grade);
+    let padding = 78 - score_text.len();
+
+    println!(
+        "║  {}{}{}{:width$}║",
+        grade_color,
+        score_text,
+        "\x1b[0m",
+        " ",
+        width = padding
+    );
+    println!("╚════════════════════════════════════════════════════════════════════════════════╝");
+
     // Recommendations
-    println!("\n\x1b[1;36m▶ RECOMMENDATIONS:\x1b[0m");
-    
-    if tool_score < 30.0 {
+    println!("\n\x1b[1;36m▶ RECOMMENDATIONS:\x1b[0m\n");
+
+    if tool_score < 45.0 {
         println!("  • Enable more security tools to improve protection");
-        println!("    Run: sudo hardn run-tool <tool-name>");
+        println!("    Run: sudo hardn run-tool <tool-name>\n");
     }
-    
-    if module_score < 15.0 {
+
+    if module_score < 30.0 {
         println!("  • Execute HARDN modules for system hardening");
-        println!("    Run: sudo hardn run-module hardening");
+        println!("    Run: sudo hardn run-module hardening\n");
     }
-    
-    if lynis_score < 30.0 {
-        println!("  • Review Lynis audit findings and apply recommendations");
-        println!("    View: /var/log/lynis/lynis-report-concise.log");
-    }
-    
+
     if total_score >= 80.0 {
-        println!("  \x1b[1;32m✓ System security posture is strong. Maintain regular audits.\x1b[0m");
+        println!("  \x1b[1;32m✓ System security posture is strong. Maintain regular audits.\x1b[0m\n");
     }
-    
-    println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+
+    println!("═══════════════════════════════════════════════════════════════════════════════\n");
 }
 
 /// Run all available modules

@@ -38,6 +38,7 @@ jobs:
             dpkg-dev \
             pkg-config \
             libssl-dev \
+            libsqlite3-dev \
             libvte-2.91-gtk4-dev \
             python3-all \
             python3-requests \
@@ -374,16 +375,8 @@ jobs:
           - **Size**: `$SIZE`
           - **SHA256**: `$SHA256`
 
-          ## Installation
-          ```bash
-          wget https://github.com/${{ github.repository }}/releases/download/$TAG/$DEB_NAME
-          sudo dpkg -i $DEB_NAME
-          sudo apt-get install -f -y
-          ```
-         - The Lau
-
           ## What's Inside
-          - HARDN CLI, monitoring service, and GTK-based GUI
+          - HARDN SIEM monitoring service, and GTK-based GUI
           - Systemd service units and baseline configuration
           - Legion security modules and automated hardening utilities
 

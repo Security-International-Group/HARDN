@@ -50,6 +50,11 @@ case "$1" in
         chown root:hardn /var/log/hardn /var/lib/hardn /var/lib/hardn/backups 2>/dev/null || true
         chmod 2770 /var/log/hardn /var/lib/hardn /var/lib/hardn/backups 2>/dev/null || true
 
+        # Initialize Legion baseline database directory
+        mkdir -p /var/lib/hardn/baselines 2>/dev/null || true
+        chown root:hardn /var/lib/hardn/baselines 2>/dev/null || true
+        chmod 2770 /var/lib/hardn/baselines 2>/dev/null || true
+
         # Config directory: readable by group but writable only by root (maintain security)
         if [ -d /etc/hardn ]; then
             chown root:hardn /etc/hardn 2>/dev/null || true

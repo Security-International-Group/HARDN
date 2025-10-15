@@ -11,6 +11,8 @@ override_dh_auto_install:
 	install -D -m 755 target/release/hardn-monitor debian/hardn/usr/bin/hardn-monitor
 	# Install the GUI binary (read-only viewer)
 	install -D -m 755 target/release/hardn-gui debian/hardn/usr/bin/hardn-gui
+	# Install the internal compliance auditor
+	install -D -m 755 target/release/hardn-audit debian/hardn/usr/lib/hardn/hardn-audit
 	# Install modules
 	install -d debian/hardn/usr/share/hardn/modules
 	@if ls usr/share/hardn/modules/*.sh >/dev/null 2>&1; then \
@@ -18,6 +20,10 @@ override_dh_auto_install:
 	else \
 		echo "Skipping module install; no shell modules found"; \
 	fi
+	# Install automation scripts
+	install -d debian/hardn/usr/share/hardn/scripts
+	install -m 755 scripts/openscap.sh debian/hardn/usr/share/hardn/scripts/ 2>/dev/null || true
+	install -m 755 scripts/print-banner.sh debian/hardn/usr/share/hardn/scripts/ 2>/dev/null || true
 	# Install tools
 	install -d debian/hardn/usr/share/hardn/tools
 	install -m 755 usr/share/hardn/tools/*.sh debian/hardn/usr/share/hardn/tools/ 2>/dev/null || true

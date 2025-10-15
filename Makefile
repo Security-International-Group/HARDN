@@ -76,7 +76,7 @@ build:
 build-internal:
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Recon: supply scan$(COLOR_RESET)\n'
 	@MISSING_DEPS=""; \
-	for pkg in build-essential pkg-config libssl-dev debhelper lintian python3-all python3-requests python3-setuptools curl wget whiptail libgtk-4-dev libglib2.0-dev libvte-2.91-gtk4-dev cargo rustc; do \
+	for pkg in build-essential pkg-config libssl-dev libsqlite3-dev debhelper lintian python3-all python3-requests python3-setuptools curl wget whiptail libgtk-4-dev libglib2.0-dev libvte-2.91-gtk4-dev cargo rustc; do \
 		if ! dpkg -l "$$pkg" 2>/dev/null | grep -q "^ii"; then \
 			MISSING_DEPS="$$MISSING_DEPS $$pkg"; \
 		fi; \
@@ -180,6 +180,14 @@ build-internal:
 		exit $$BUILD_STATUS; \
 	else \
 		printf '\r$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)Core compile complete.$(COLOR_RESET)\033[K\n'; \
+	fi
+	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Compiling compliance auditor$(COLOR_RESET)\n'
+	@mkdir -p target/release
+	@if ! cc -std=c11 -O2 -Wall -Wextra -pedantic src/audit/hardn_audit.c -o target/release/hardn-audit; then \
+		printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)C auditor build failed.$(COLOR_RESET)\n'; \
+		exit 1; \
+	else \
+		printf '$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)Compliance auditor built.$(COLOR_RESET)\n'; \
 	fi
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Assembling Debian bunker$(COLOR_RESET)\n'
 	@TMP_LOG=$$(mktemp); \

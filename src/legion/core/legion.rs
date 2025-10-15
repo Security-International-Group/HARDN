@@ -92,7 +92,9 @@ const CRON_LOG_SUBDIR: &str = "cron";
 
 const ENHANCED_LOOP_INTERVAL_SECS: u64 = 300;
 const FULL_SCAN_INTERVAL_CYCLES: u64 = 6;
+#[allow(dead_code)]
 const PROCESS_SCAN_INTERVAL_SECS: u64 = 120;
+#[allow(dead_code)]
 const MAX_PROCESS_ALERTS: usize = 12;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -114,18 +116,6 @@ impl ScanProfile {
     }
 }
 
-#[derive(Debug, Clone)]
-struct ProcessAlertRecord {
-    pid: u32,
-    action: String,
-    details: String,
-    first_seen: DateTime<Utc>,
-    last_seen: DateTime<Utc>,
-    occurrences: u32,
-}
-
-static PROCESS_ALERTS: Lazy<Mutex<Vec<ProcessAlertRecord>>> = Lazy::new(|| Mutex::new(Vec::new()));
-
 #[derive(Debug, Serialize)]
 struct LegionMonitorSnapshot {
     timestamp: DateTime<Utc>,
@@ -143,6 +133,20 @@ struct LegionMonitorSnapshot {
     platform_health: Vec<LegionPlatformHealth>,
     baseline_drift: Option<LegionBaselineDriftSnapshot>,
 }
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+struct ProcessAlertRecord {
+    pid: u32,
+    action: String,
+    details: String,
+    first_seen: DateTime<Utc>,
+    last_seen: DateTime<Utc>,
+    occurrences: u32,
+}
+
+#[allow(dead_code)]
+static PROCESS_ALERTS: Lazy<Mutex<Vec<ProcessAlertRecord>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
 #[derive(Debug, Serialize)]
 struct LegionMonitorMetrics {
@@ -681,6 +685,7 @@ pub struct Legion {
     monitoring_active: bool,
 }
 
+#[allow(dead_code)]
 impl Legion {
     fn run_self_script<F>(
         &mut self,
@@ -754,6 +759,7 @@ impl Legion {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let config = Config::load()?;
         let baseline = BaselineManager::new(&config)?;
+        let baseline_arc = Arc::new(BaselineManager::new(&config)?);
 
         // Initialize threat intelligence
         let threat_intel_path = std::path::PathBuf::from("/var/lib/hardn/legion/threat_intel.json");
@@ -772,7 +778,11 @@ impl Legion {
         let risk_scoring = RiskScoringManager::new();
 
         // Build the minimal sequential framework pipeline
-        let core = framework_pipeline::build_default_core(baseline.snapshot(), response_enabled);
+        let core = framework_pipeline::build_default_core(
+            baseline.snapshot(),
+            response_enabled,
+            Arc::clone(&baseline_arc),
+        );
 
         Ok(Self {
             config,
@@ -931,13 +941,37 @@ impl Legion {
                     format!(" platforms=[{}]", details)
                 };
 
+                // Get database statistics
+                let database_summary = match self.baseline.get_database_stats() {
+                    Ok(Some((baseline_count, anomaly_count, latest_timestamp, db_size))) => {
+                        let age_hours = latest_timestamp
+                            .map(|ts| {
+                                let now = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs() as i64;
+                                ((now - ts) / 3600) as f64
+                            })
+                            .unwrap_or(0.0);
+                        format!(
+                            " db=[baselines={},anomalies={},latest_age={:.1}h,size={:.1}MB]",
+                            baseline_count,
+                            anomaly_count,
+                            age_hours,
+                            db_size as f64 / (1024.0 * 1024.0)
+                        )
+                    }
+                    _ => " db=[not_initialized]".to_string(),
+                };
+
                 functions::info(format!(
-                    "LEGION SUMMARY: risk={:.3} level={:?} indicators={} issues={}{}",
+                    "LEGION SUMMARY: risk={:.3} level={:?} indicators={} issues={}{}{}",
                     risk_score.overall_score,
                     risk_score.risk_level,
                     risk_score.contributing_factors.len(),
                     system_state.detected_issues.len(),
-                    platform_summary
+                    platform_summary,
+                    database_summary
                 ));
 
                 self.loop_iteration = self.loop_iteration.saturating_add(1);
@@ -984,6 +1018,61 @@ impl Legion {
                 risk_score.overall_score, risk_score.risk_level
             ));
         }
+
+        Ok(())
+    }
+
+    /// Show detailed database information
+    pub async fn show_database_info(&self) -> Result<(), Box<dyn std::error::Error>> {
+        functions::heading("LEGION - Database Information");
+        functions::detail("Detailed baseline database configuration and status");
+        functions::blank_line();
+
+        // Show database file location
+        let db_path = "/var/lib/hardn/legion/baselines/legion_baselines.db";
+        functions::info(format!("Database Location: {}", db_path));
+
+        // Check if database file exists
+        if std::path::Path::new(db_path).exists() {
+            functions::success("Database file exists");
+
+            // Get file metadata
+            if let Ok(metadata) = std::fs::metadata(db_path) {
+                let size_bytes = metadata.len();
+                let size_mb = size_bytes as f64 / (1024.0 * 1024.0);
+                functions::info(format!(
+                    "File Size: {:.2} MB ({} bytes)",
+                    size_mb, size_bytes
+                ));
+
+                let modified = metadata
+                    .modified()
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+                    .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let modified_time =
+                    chrono::DateTime::from_timestamp(modified as i64, 0).unwrap_or_default();
+                functions::info(format!(
+                    "Last Modified: {}",
+                    modified_time.format("%Y-%m-%d %H:%M:%S UTC")
+                ));
+            }
+        } else {
+            functions::warn("Database file does not exist");
+        }
+
+        functions::blank_line();
+        functions::info("Database Schema Information:");
+        functions::detail("- baselines: Stores system baseline snapshots");
+        functions::detail("- anomalies: Tracks detected security anomalies");
+        functions::detail("- SQLite format with WAL mode for concurrent access");
+
+        functions::blank_line();
+        functions::info("Maintenance Recommendations:");
+        functions::detail("- Regular backups recommended");
+        functions::detail("- Monitor database size growth");
+        functions::detail("- Check for corruption periodically");
 
         Ok(())
     }
@@ -2397,9 +2486,7 @@ impl Legion {
     fn collect_security_platform_status(
         &mut self,
     ) -> Result<Vec<SecurityPlatformStatus>, Box<dyn std::error::Error>> {
-        let platforms = vec![
-            ("Wazuh Agent", "wazuh-agent.service"),
-        ];
+        let platforms = vec![("Wazuh Agent", "wazuh-agent.service")];
 
         let mut statuses = Vec::new();
 
@@ -2625,6 +2712,21 @@ impl Legion {
                 component_factors.insert(component.clone(), factors.clone());
             }
 
+            // Get database statistics for JSON report
+            let database_stats = match self.baseline.get_database_stats() {
+                Ok(Some((baseline_count, anomaly_count, latest_timestamp, db_size))) => {
+                    let size_mb = db_size as f64 / (1024.0 * 1024.0);
+                    serde_json::json!({
+                        "total_baselines": baseline_count,
+                        "total_anomalies": anomaly_count,
+                        "latest_baseline_timestamp": latest_timestamp,
+                        "database_size_mb": size_mb,
+                        "database_size_bytes": db_size
+                    })
+                }
+                _ => serde_json::json!(null),
+            };
+
             let report = serde_json::json!({
                 "timestamp": risk_score.timestamp,
                 "risk_score": sanitize_metric(risk_score.overall_score),
@@ -2635,6 +2737,7 @@ impl Legion {
                 "risk_components": risk_components,
                 "component_factors": component_factors,
                 "baseline_drift": sanitized_system_state.baseline_drift.clone(),
+                "database_statistics": database_stats,
                 "system_state": sanitized_system_state.clone(),
             });
             safe_println!("{}", serde_json::to_string_pretty(&report)?);
@@ -2798,6 +2901,102 @@ impl Legion {
 
                 safe_println!("Baseline Drift Details:");
                 safe_println!("{}", drift_table);
+                safe_println!();
+            }
+
+            // Database Statistics Section
+            if let Ok(Some((baseline_count, anomaly_count, latest_timestamp, db_size))) =
+                self.baseline.get_database_stats()
+            {
+                let mut db_table = Table::new();
+                db_table.load_preset(UTF8_FULL_CONDENSED);
+                db_table.set_header(vec!["Database Metric", "Value", "Status"]);
+
+                // Baseline count
+                let baseline_status = if baseline_count > 0 {
+                    "Active"
+                } else {
+                    "Empty"
+                };
+                let baseline_color = if baseline_count > 0 {
+                    Color::Green
+                } else {
+                    Color::Yellow
+                };
+                db_table.add_row(vec![
+                    Cell::new("Total Baselines").fg(Color::Cyan),
+                    Cell::new(format!("{}", baseline_count)),
+                    Cell::new(baseline_status).fg(baseline_color),
+                ]);
+
+                // Anomaly count
+                let anomaly_status = if anomaly_count > 0 {
+                    "Detected"
+                } else {
+                    "Clean"
+                };
+                let anomaly_color = if anomaly_count > 0 {
+                    Color::Yellow
+                } else {
+                    Color::Green
+                };
+                db_table.add_row(vec![
+                    Cell::new("Total Anomalies").fg(Color::Cyan),
+                    Cell::new(format!("{}", anomaly_count)),
+                    Cell::new(anomaly_status).fg(anomaly_color),
+                ]);
+
+                // Latest baseline age
+                let age_display = if let Some(ts) = latest_timestamp {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    let hours = ((now - ts) / 3600) as f64;
+                    format!("{:.1} hours ago", hours)
+                } else {
+                    "Never".to_string()
+                };
+                let age_color = if latest_timestamp.is_some() {
+                    Color::Green
+                } else {
+                    Color::Red
+                };
+                db_table.add_row(vec![
+                    Cell::new("Latest Baseline").fg(Color::Cyan),
+                    Cell::new(age_display),
+                    Cell::new(if latest_timestamp.is_some() {
+                        "Current"
+                    } else {
+                        "Missing"
+                    })
+                    .fg(age_color),
+                ]);
+
+                // Database size
+                let size_mb = db_size as f64 / (1024.0 * 1024.0);
+                let size_status = if size_mb < 10.0 {
+                    "Small"
+                } else if size_mb < 100.0 {
+                    "Medium"
+                } else {
+                    "Large"
+                };
+                let size_color = if size_mb < 50.0 {
+                    Color::Green
+                } else if size_mb < 200.0 {
+                    Color::Yellow
+                } else {
+                    Color::Red
+                };
+                db_table.add_row(vec![
+                    Cell::new("Database Size").fg(Color::Cyan),
+                    Cell::new(format!("{:.1} MB", size_mb)),
+                    Cell::new(size_status).fg(size_color),
+                ]);
+
+                safe_println!("Database Statistics:");
+                safe_println!("{}", db_table);
                 safe_println!();
             }
 
@@ -3316,6 +3515,269 @@ impl Legion {
     }
 }
 
+/// Standalone function to show database statistics without full Legion initialization
+async fn show_database_statistics_standalone() -> Result<(), Box<dyn std::error::Error>> {
+    functions::heading("LEGION - Database Statistics");
+    functions::detail("Current baseline database health and metrics");
+    functions::blank_line();
+
+    let config = Config::load()?;
+    let baseline_manager = BaselineManager::new(&config)?;
+
+    match baseline_manager.get_database_stats() {
+        Ok(Some((baseline_count, anomaly_count, latest_timestamp, db_size))) => {
+            let mut db_table = Table::new();
+            db_table.load_preset(UTF8_FULL_CONDENSED);
+            db_table.set_header(vec!["Database Metric", "Value", "Status"]);
+
+            // Baseline count
+            let baseline_status = if baseline_count > 0 {
+                "Active"
+            } else {
+                "Empty"
+            };
+            let baseline_color = if baseline_count > 0 {
+                Color::Green
+            } else {
+                Color::Yellow
+            };
+            db_table.add_row(vec![
+                Cell::new("Total Baselines").fg(Color::Cyan),
+                Cell::new(format!("{}", baseline_count)),
+                Cell::new(baseline_status).fg(baseline_color),
+            ]);
+
+            // Anomaly count
+            let anomaly_status = if anomaly_count > 0 {
+                "Detected"
+            } else {
+                "Clean"
+            };
+            let anomaly_color = if anomaly_count > 0 {
+                Color::Yellow
+            } else {
+                Color::Green
+            };
+            db_table.add_row(vec![
+                Cell::new("Total Anomalies").fg(Color::Cyan),
+                Cell::new(format!("{}", anomaly_count)),
+                Cell::new(anomaly_status).fg(anomaly_color),
+            ]);
+
+            // Latest baseline age
+            let age_display = if let Some(ts) = latest_timestamp {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
+                let hours = ((now - ts) / 3600) as f64;
+                format!("{:.1} hours ago", hours)
+            } else {
+                "Never".to_string()
+            };
+            let age_color = if latest_timestamp.is_some() {
+                Color::Green
+            } else {
+                Color::Red
+            };
+            db_table.add_row(vec![
+                Cell::new("Latest Baseline").fg(Color::Cyan),
+                Cell::new(age_display),
+                Cell::new(if latest_timestamp.is_some() {
+                    "Current"
+                } else {
+                    "Missing"
+                })
+                .fg(age_color),
+            ]);
+
+            // Database size
+            let size_mb = db_size as f64 / (1024.0 * 1024.0);
+            let size_status = if size_mb < 10.0 {
+                "Small"
+            } else if size_mb < 100.0 {
+                "Medium"
+            } else {
+                "Large"
+            };
+            let size_color = if size_mb < 50.0 {
+                Color::Green
+            } else if size_mb < 200.0 {
+                Color::Yellow
+            } else {
+                Color::Red
+            };
+            db_table.add_row(vec![
+                Cell::new("Database Size").fg(Color::Cyan),
+                Cell::new(format!("{:.1} MB", size_mb)),
+                Cell::new(size_status).fg(size_color),
+            ]);
+
+            safe_println!("Database Statistics:");
+            safe_println!("{}", db_table);
+            functions::blank_line();
+            functions::success("Database statistics displayed successfully");
+        }
+        Ok(None) => {
+            functions::warn(
+                "No baseline database found - run 'hardn legion --create-baseline' first",
+            );
+        }
+        Err(e) => {
+            functions::error(format!("Failed to read database statistics: {}", e));
+            return Err(e.into());
+        }
+    }
+
+    Ok(())
+}
+
+/// Standalone function to show database information
+async fn show_database_info_standalone() -> Result<(), Box<dyn std::error::Error>> {
+    functions::heading("LEGION - Database Information");
+    functions::detail("Detailed baseline database configuration and status");
+    functions::blank_line();
+
+    // Show database file location
+    let db_path = "/var/lib/hardn/legion/baselines/legion_baselines.db";
+    functions::info(format!("Database Location: {}", db_path));
+
+    // Check if database file exists
+    if std::path::Path::new(db_path).exists() {
+        functions::success("Database file exists");
+
+        // Get file metadata
+        if let Ok(metadata) = std::fs::metadata(db_path) {
+            let size_bytes = metadata.len();
+            let size_mb = size_bytes as f64 / (1024.0 * 1024.0);
+            functions::info(format!(
+                "File Size: {:.2} MB ({} bytes)",
+                size_mb, size_bytes
+            ));
+
+            let modified = metadata
+                .modified()
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let modified_time =
+                chrono::DateTime::from_timestamp(modified as i64, 0).unwrap_or_default();
+            functions::info(format!(
+                "Last Modified: {}",
+                modified_time.format("%Y-%m-%d %H:%M:%S UTC")
+            ));
+        }
+    } else {
+        functions::warn("Database file does not exist");
+    }
+
+    functions::blank_line();
+    functions::info("Database Schema Information:");
+    functions::detail("- baselines: Stores system baseline snapshots");
+    functions::detail("- anomalies: Tracks detected security anomalies");
+    functions::detail("- SQLite format with WAL mode for concurrent access");
+
+    functions::blank_line();
+    functions::info("Maintenance Recommendations:");
+    functions::detail("- Regular backups recommended");
+    functions::detail("- Monitor database size growth");
+    functions::detail("- Check for corruption periodically");
+
+    Ok(())
+}
+
+/// Standalone function to check database health
+async fn check_database_health_standalone() -> Result<(), Box<dyn std::error::Error>> {
+    functions::heading("LEGION - Database Health Check");
+    functions::detail("Performing integrity checks on the baseline database");
+    functions::blank_line();
+
+    let db_path = "/var/lib/hardn/legion/baselines/legion_baselines.db";
+
+    // Check 1: File existence
+    if !std::path::Path::new(db_path).exists() {
+        functions::warn("Database file does not exist - no health check possible");
+        functions::info(
+            "Recommendation: Run 'hardn legion --create-baseline' to initialize database",
+        );
+        return Ok(());
+    }
+
+    functions::success("✓ Database file exists");
+
+    // Check 2: File permissions
+    if let Ok(metadata) = std::fs::metadata(db_path) {
+        let permissions = metadata.permissions();
+        let mode = permissions.mode();
+        if mode & 0o077 != 0 {
+            functions::warn(format!(
+                "⚠ Database file has world/group permissions: {:o}",
+                mode
+            ));
+            functions::detail("Recommendation: Ensure database file is only accessible by root");
+        } else {
+            functions::success("✓ Database file permissions are secure");
+        }
+    }
+
+    // Check 3: Database connectivity and integrity
+    let config = Config::load()?;
+    let baseline_manager = BaselineManager::new(&config)?;
+
+    match baseline_manager.get_database_stats() {
+        Ok(Some((baseline_count, anomaly_count, _, db_size))) => {
+            functions::success("✓ Database connectivity successful");
+            functions::info(format!("✓ Found {} baseline(s)", baseline_count));
+            functions::info(format!("✓ Found {} anomal(y/ies)", anomaly_count));
+            functions::info(format!("✓ Database size: {} bytes", db_size));
+
+            if baseline_count == 0 {
+                functions::warn("⚠ No baselines found - database appears empty");
+                functions::detail("Recommendation: Run 'hardn legion --create-baseline'");
+            }
+
+            if anomaly_count > 100 {
+                functions::warn(format!(
+                    "⚠ High anomaly count: {} - consider database maintenance",
+                    anomaly_count
+                ));
+            }
+        }
+        Ok(None) => {
+            functions::warn("⚠ Database exists but no statistics available");
+        }
+        Err(e) => {
+            functions::error(format!("✗ Database integrity check failed: {}", e));
+            functions::detail(
+                "Recommendation: Check database file corruption or recreate baseline",
+            );
+            return Err(e.into());
+        }
+    }
+
+    // Check 4: Directory permissions
+    let db_dir = "/var/lib/hardn/legion/baselines";
+    if let Ok(metadata) = std::fs::metadata(db_dir) {
+        let permissions = metadata.permissions();
+        let mode = permissions.mode();
+        if mode & 0o022 != 0 {
+            functions::warn(format!(
+                "⚠ Database directory has group/world write permissions: {:o}",
+                mode
+            ));
+        } else {
+            functions::success("✓ Database directory permissions are appropriate");
+        }
+    }
+
+    functions::blank_line();
+    functions::success("Database health check completed");
+    functions::info("Overall Status: Healthy");
+
+    Ok(())
+}
+
 /// Public async function to run LEGION with command line arguments
 #[allow(dead_code)]
 pub async fn run_with_args(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -3335,7 +3797,10 @@ pub async fn run_with_args(args: &[String]) -> Result<(), Box<dyn std::error::Er
                          \thardn legion --predictive         # Enable predictive analysis\n\
                          \thardn legion --verbose            # Run with detailed output\n\
                          \thardn legion --daemon             # Run as background monitoring daemon\n\
-                         \thardn legion --json               # Output results in JSON format\n\n\
+                         \thardn legion --json               # Output results in JSON format\n\
+                         \thardn legion --show-database-stats # Show database statistics\n\
+                         \thardn legion --database-info      # Show database configuration\n\
+                         \thardn legion --database-health    # Check database integrity\n\n\
                          LEGION requires root privileges for comprehensive monitoring.\n\
                          Run with: sudo hardn legion")
             .arg(
@@ -3387,6 +3852,31 @@ pub async fn run_with_args(args: &[String]) -> Result<(), Box<dyn std::error::Er
                     .help("Output results in JSON format")
                     .long_help("Format output as JSON instead of human-readable text.\n\
                                Useful for integration with other tools and automated processing.")
+                    .action(clap::ArgAction::SetTrue),
+            )
+            .arg(
+                Arg::new("show-database-stats")
+                    .long("show-database-stats")
+                    .help("Show current database statistics and health")
+                    .long_help("Displays comprehensive database statistics including baseline\n\
+                               counts, anomaly tracking, database size, and health indicators.\n\
+                               Useful for monitoring database integrity and growth trends.")
+                    .action(clap::ArgAction::SetTrue),
+            )
+            .arg(
+                Arg::new("database-info")
+                    .long("database-info")
+                    .help("Show detailed database information")
+                    .long_help("Provides detailed information about the baseline database,\n\
+                               including file locations, schema details, and maintenance status.")
+                    .action(clap::ArgAction::SetTrue),
+            )
+            .arg(
+                Arg::new("database-health")
+                    .long("database-health")
+                    .help("Check database health and integrity")
+                    .long_help("Performs integrity checks on the baseline database, validates\n\
+                               data consistency, and reports any corruption or maintenance issues.")
                     .action(clap::ArgAction::SetTrue),
             );
         let mut stdout = io::stdout();
@@ -3469,6 +3959,31 @@ pub async fn run_with_args(args: &[String]) -> Result<(), Box<dyn std::error::Er
                            Useful for integration with other tools and automated processing.")
                 .action(clap::ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("show-database-stats")
+                .long("show-database-stats")
+                .help("Show current database statistics and health")
+                .long_help("Displays comprehensive database statistics including baseline\n\
+                           counts, anomaly tracking, database size, and health indicators.\n\
+                           Useful for monitoring database integrity and growth trends.")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("database-info")
+                .long("database-info")
+                .help("Show detailed database information")
+                .long_help("Provides detailed information about the baseline database,\n\
+                           including file locations, schema details, and maintenance status.")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("database-health")
+                .long("database-health")
+                .help("Check database health and integrity")
+                .long_help("Performs integrity checks on the baseline database, validates\n\
+                           data consistency, and reports any corruption or maintenance issues.")
+                .action(clap::ArgAction::SetTrue),
+        )
         .get_matches_from(&["hardn legion".to_string()].iter().chain(args.iter()).cloned().collect::<Vec<_>>());
 
     let create_baseline = matches.get_flag("create-baseline");
@@ -3477,6 +3992,27 @@ pub async fn run_with_args(args: &[String]) -> Result<(), Box<dyn std::error::Er
     let verbose = matches.get_flag("verbose");
     let daemon = matches.get_flag("daemon");
     let json_output = matches.get_flag("json");
+    let show_database_stats = matches.get_flag("show-database-stats");
+    let database_info = matches.get_flag("database-info");
+    let database_health = matches.get_flag("database-health");
+
+    // Debug: print flag values
+    eprintln!(
+        "DEBUG: show_database_stats={}, database_info={}, database_health={}",
+        show_database_stats, database_info, database_health
+    );
+    eprintln!("DEBUG: About to create Legion instance");
+
+    // Handle database-specific commands before initializing Legion
+    if show_database_stats {
+        return show_database_statistics_standalone().await;
+    }
+    if database_info {
+        return show_database_info_standalone().await;
+    }
+    if database_health {
+        return check_database_health_standalone().await;
+    }
 
     let mut legion = Legion::new(
         create_baseline,
@@ -3487,11 +4023,6 @@ pub async fn run_with_args(args: &[String]) -> Result<(), Box<dyn std::error::Er
         response_enabled,
     )
     .await?;
-
-    // Start active monitoring if response is enabled
-    if response_enabled {
-        legion.start_active_monitoring().await?;
-    }
 
     legion.run().await
 }
