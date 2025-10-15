@@ -346,7 +346,7 @@ jobs:
             git tag "$NEW_TAG"
             git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/Security-International-Group/HARDN.git "$NEW_TAG"
           fi
-
+          
       - name: Generate release notes
         id: notes
         run: |
@@ -374,14 +374,6 @@ jobs:
           - **Architecture**: `$ARCH`
           - **Size**: `$SIZE`
           - **SHA256**: `$SHA256`
-
-          ## What's Inside
-          - HARDN SIEM monitoring service, and GTK-based GUI
-          - Systemd service units and baseline configuration
-          - Legion security modules and automated hardening utilities
-
-          ## Documentation
-          Explore the docs: $DOCS_URL
 
           ---
 
@@ -432,6 +424,7 @@ jobs:
             else
               DESCRIPTION=" **Latest Release Update Failed**\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`"
             fi
+          fi
 
             curl -H "Content-Type: application/json" -X POST "$WEBHOOK" \
               -d "{\"embeds\":[{\"title\":\"HARDN Latest Release Pipeline • ${{ github.repository }}\",\"description\":\"$DESCRIPTION\",\"color\":$COLOR,\"url\":\"$MSG\"}]}" || true
