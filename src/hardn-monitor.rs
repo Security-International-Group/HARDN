@@ -539,6 +539,84 @@ fn log_metrics_from_api() {
     }
 }
 
+fn log_database_metrics() {
+    // Query journalctl for recent LEGION SUMMARY lines to extract database metrics
+    let output = Command::new("journalctl")
+        .args(&["-u", "legion-daemon", "-n", "10", "-o", "cat", "--no-pager"])
+        .output();
+
+    if let Ok(result) = output {
+        if result.status.success() {
+            if let Ok(logs) = String::from_utf8(result.stdout) {
+                // Look for the most recent LEGION SUMMARY line
+                for line in logs.lines().rev() {
+                    if line.contains("LEGION SUMMARY:") && line.contains(" db=[") {
+                        if let Some(db_part) = line.split(" db=[").nth(1) {
+                            if let Some(db_info) = db_part.split(']').next() {
+                                if db_info == "not_initialized" {
+                                    log_message("INFO", "Database - status=not_initialized (waiting for first baseline)");
+                                } else {
+                                    // Parse database info: baselines=X,anomalies=Y,latest_age=Z,size=W
+                                    let mut baselines = 0i64;
+                                    let mut anomalies = 0i64;
+                                    let mut db_size_mb = 0.0f64;
+
+                                    for part in db_info.split(',') {
+                                        if let Some((key, value)) = part.split_once('=') {
+                                            match key {
+                                                "baselines" => {
+                                                    if let Ok(val) = value.parse::<i64>() {
+                                                        baselines = val;
+                                                    }
+                                                }
+                                                "anomalies" => {
+                                                    if let Ok(val) = value.parse::<i64>() {
+                                                        anomalies = val;
+                                                    }
+                                                }
+                                                "size" => {
+                                                    if let Some(size_str) = value.strip_suffix("MB")
+                                                    {
+                                                        if let Ok(val) = size_str.parse::<f64>() {
+                                                            db_size_mb = val;
+                                                        }
+                                                    }
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+
+                                    log_message(
+                                        "INFO",
+                                        &format!(
+                                            "Database - status=healthy baselines={} anomalies={} size={:.1}MB",
+                                            baselines, anomalies, db_size_mb
+                                        ),
+                                    );
+                                }
+                                return; // Found and processed the most recent summary
+                            }
+                        }
+                    }
+                }
+                // If we get here, no database info was found in recent logs
+                log_message(
+                    "DEBUG",
+                    "Database - no recent summary found in legion-daemon logs",
+                );
+            }
+        } else {
+            log_message("WARN", "Failed to query legion-daemon journal logs");
+        }
+    } else {
+        log_message(
+            "WARN",
+            "Failed to execute journalctl for legion-daemon logs",
+        );
+    }
+}
+
 fn main() {
     log_message("INFO", "HARDN Centralized Monitor starting");
 
@@ -571,6 +649,9 @@ fn main() {
 
         // Log metrics summary for GUI consumption
         log_metrics_from_api();
+
+        // Log database metrics
+        log_database_metrics();
 
         // Check for inter-service communication (placeholder)
         log_message("DEBUG", "Monitoring inter-service communication channels");

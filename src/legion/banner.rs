@@ -18,5 +18,5 @@ pub fn display_banner() {
     "#;
     println!("{}", banner);
     println!("LEGION - Linux Security Heuristics Engine");
-    println!("Version 1.0.0");
+    println!("Version 1.0.0-1");
 }

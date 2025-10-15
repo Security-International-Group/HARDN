@@ -1,6 +1,6 @@
 #!/bin/bash
 # HARDN Enhanced Security Hardening Module
-# Author: Chris Bingham 
+
 
 set -euo pipefail
 
@@ -223,8 +223,8 @@ if [ -f /etc/login.defs ]; then
     sed -i 's/^PASS_MIN_DAYS.*/PASS_MIN_DAYS   1/' /etc/login.defs
     sed -i 's/^PASS_WARN_AGE.*/PASS_WARN_AGE   14/' /etc/login.defs
     
-    # Set secure umask
-    sed -i 's/^UMASK.*/UMASK           027/' /etc/login.defs
+    # Set reasonable default umask that balances security with usability
+    sed -i 's/^UMASK.*/UMASK           022/' /etc/login.defs
     
     # Set minimum UID for regular users
     sed -i 's/^UID_MIN.*/UID_MIN          1000/' /etc/login.defs
@@ -1341,8 +1341,8 @@ fi
 # umask
 # ==========================================
 HARDN_STATUS "Setting secure umask in system files..."
-if ! grep -q "umask 027" /etc/bash.bashrc 2>/dev/null; then
-    echo "umask 027" >> /etc/bash.bashrc
+if ! grep -q "umask 022" /etc/bash.bashrc 2>/dev/null; then
+    echo "umask 022" >> /etc/bash.bashrc
 fi
 
 # ==========================================

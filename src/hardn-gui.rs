@@ -3,10 +3,14 @@ use std::time::{Duration, SystemTime};
 
 use gtk4::glib::{timeout_add_local, ControlFlow};
 use gtk4::prelude::{ApplicationExt, ApplicationExtManual};
-use gtk4::{prelude::*, Application, ApplicationWindow, ScrolledWindow, TextBuffer, TextView, Notebook, Paned, Orientation, Box as GtkBox, CssProvider, gdk, STYLE_PROVIDER_PRIORITY_APPLICATION, Label, Picture, TextMark};
+use gtk4::{
+    gdk, prelude::*, Application, ApplicationWindow, Box as GtkBox, CssProvider, Label, Notebook,
+    Orientation, Paned, Picture, ScrolledWindow, TextBuffer, TextMark, TextView,
+    STYLE_PROVIDER_PRIORITY_APPLICATION,
+};
 use std::cell::RefCell;
 use std::rc::Rc;
-use vte4::{Terminal as VteTerminal, TerminalExt, TerminalExtManual, PtyFlags};
+use vte4::{PtyFlags, Terminal as VteTerminal, TerminalExt, TerminalExtManual};
 
 // Simple normalized event structure
 #[derive(Clone, Debug)]
@@ -49,7 +53,9 @@ impl EventBuffer {
         out
     }
 
-    fn len(&self) -> usize { self.items.len() }
+    fn len(&self) -> usize {
+        self.items.len()
+    }
 }
 
 // Very small journald tailer via `journalctl -fu` spawned process.
@@ -80,6 +86,7 @@ struct AlertsState {
     journal_metrics: Option<String>, // e.g., "disk_usage_mb=12.3"
     network_metrics: Option<String>, // e.g., "links=3 online=3 degraded=0"
     metrics: Option<String>,       // e.g., "cpu=12% mem=34% load=0.50,0.40,0.30"
+    database_metrics: Option<String>, // e.g., "status=healthy baselines=5 anomalies=2 size=1.2MB"
     legion_summary: Option<String>, // e.g., "risk=0.123 level=Low indicators=2 issues=1"
 }
 
@@ -144,6 +151,14 @@ fn parse_journal_metrics(line: &str) -> Option<String> {
 fn parse_networkd_metrics(line: &str) -> Option<String> {
     if let Some(idx) = line.find("Networkd Metrics - ") {
         return Some(line[idx + "Networkd Metrics - ".len()..].trim().to_string());
+    }
+    None
+}
+
+fn parse_database_metrics(line: &str) -> Option<String> {
+    // From monitor: "Database - status=healthy baselines=X anomalies=Y size=Z"
+    if let Some(idx) = line.find("Database - ") {
+        return Some(line[idx + "Database - ".len()..].trim().to_string());
     }
     None
 }
@@ -552,6 +567,7 @@ fn main() {
                 if let Some(ref sys) = a.systemd_metrics { s.push_str(&format!("Systemd: {}\n", sys)); }
                 if let Some(ref journal) = a.journal_metrics { s.push_str(&format!("Journal: {}\n", journal)); }
                 if let Some(ref network) = a.network_metrics { s.push_str(&format!("Networkd: {}\n", network)); }
+                if let Some(ref db) = a.database_metrics { s.push_str(&format!("Database: {}\n", db)); }
                 if let Some(ref l) = a.legion_summary { s.push_str(&format!("LEGION: {}\n", l)); }
                 if !s.is_empty() { s.push('\n'); }
                 s
@@ -634,6 +650,9 @@ fn main() {
                             }
                             if let Some(m) = parse_metrics(&line) {
                                 if let Ok(mut a) = alerts_local.lock() { a.metrics = Some(m); }
+                            }
+                            if let Some(db) = parse_database_metrics(&line) {
+                                if let Ok(mut a) = alerts_local.lock() { a.database_metrics = Some(db); }
                             }
                             if let Some(ls) = parse_legion_summary(&line) {
                                 if let Ok(mut a) = alerts_local.lock() { a.legion_summary = Some(ls); }

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="HARDN API",
     description="HARDN API for overwatch and health monitoring of endpoints",
-    version="1.0.0",
+    version="1.0.0-1",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -179,7 +179,7 @@ def health_check():
     return {
         "status": "healthy",
         "service": "hardn-api",
-        "version": "1.0.0",
+    "version": "1.0.0-1",
         "timestamp": datetime.now().isoformat(),
     }
 

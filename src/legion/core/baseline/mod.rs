@@ -1,4 +1,6 @@
+use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
@@ -83,14 +85,26 @@ pub struct KernelInfo {
 pub struct BaselineManager {
     config: std::sync::Arc<super::config::Config>,
     current_baseline: Option<Baseline>,
+    database: Option<BaselineDatabase>,
 }
 
 impl BaselineManager {
     pub fn new(config: &super::config::Config) -> Result<Self, Box<dyn std::error::Error>> {
         fs::create_dir_all(&config.baseline_dir)?;
+
+        // Initialize database if possible
+        let database = match BaselineDatabase::new("/var/lib/hardn/baselines/legion_baselines.db") {
+            Ok(db) => Some(db),
+            Err(e) => {
+                eprintln!("Warning: Could not initialize baseline database: {}", e);
+                None
+            }
+        };
+
         Ok(Self {
             config: std::sync::Arc::new(config.clone()),
             current_baseline: None,
+            database,
         })
     }
 
@@ -98,17 +112,36 @@ impl BaselineManager {
         let timestamp = baseline.timestamp;
         let filename = format!("{}/baseline_{}.json", self.config.baseline_dir, timestamp);
         let json = serde_json::to_string_pretty(baseline)?;
-        fs::write(&filename, json)?;
+        fs::write(&filename, &json)?;
         eprintln!(" Baseline saved to: {}", filename);
-        
+
+        // Store in database if available
+        if let Some(ref db) = self.database {
+            let json_value: Value =
+                serde_json::from_str(&json).map_err(|e| format!("JSON parse error: {}", e))?;
+            if let Err(e) = db.store_baseline(timestamp, &json_value) {
+                eprintln!("Warning: Failed to store baseline in database: {}", e);
+            } else {
+                eprintln!(" Baseline stored in database");
+            }
+        }
+
         // Clean up old baselines, keeping only the last 30 days
         self.cleanup_old_baselines()?;
-        
+
         Ok(())
     }
 
     /// Clean up baseline files older than 30 days
     fn cleanup_old_baselines(&self) -> Result<(), Box<dyn std::error::Error>> {
+        // Clean up database baselines
+        if let Some(ref db) = self.database {
+            if let Err(e) = db.cleanup_old_baselines(30) {
+                eprintln!("Warning: Failed to cleanup old database baselines: {}", e);
+            }
+        }
+
+        // Clean up file baselines
         let pattern = format!("{}/baseline_*.json", self.config.baseline_dir);
         let paths = glob::glob(&pattern)?;
 
@@ -117,12 +150,19 @@ impl BaselineManager {
 
         for path in paths.filter_map(Result::ok) {
             if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                if let Some(timestamp_str) = filename.strip_prefix("baseline_").and_then(|s| s.strip_suffix(".json")) {
+                if let Some(timestamp_str) = filename
+                    .strip_prefix("baseline_")
+                    .and_then(|s| s.strip_suffix(".json"))
+                {
                     if let Ok(timestamp) = timestamp_str.parse::<u64>() {
                         let file_time = UNIX_EPOCH + Duration::from_secs(timestamp);
                         if file_time < thirty_days_ago {
                             if let Err(e) = fs::remove_file(&path) {
-                                eprintln!("Failed to remove old baseline {}: {}", path.display(), e);
+                                eprintln!(
+                                    "Failed to remove old baseline {}: {}",
+                                    path.display(),
+                                    e
+                                );
                             } else {
                                 eprintln!("Removed old baseline: {}", path.display());
                             }
@@ -187,6 +227,36 @@ impl BaselineManager {
                 tags,
             }
         })
+    }
+
+    /// Detect anomalies by comparing current state with historical baselines
+    #[allow(dead_code)]
+    pub fn detect_anomalies(
+        &self,
+        current: &Value,
+    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        if let Some(ref db) = self.database {
+            Ok(db.detect_anomalies(current)?)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    pub fn get_database_stats(&self) -> Result<Option<(i64, i64, Option<i64>, u64)>> {
+        if let Some(ref db) = self.database {
+            let baseline_count = db.get_baseline_count()?;
+            let anomaly_count = db.get_anomaly_count()?;
+            let latest_timestamp = db.get_latest_baseline_timestamp()?;
+            let db_size = db.get_database_size()?;
+            Ok(Some((
+                baseline_count,
+                anomaly_count,
+                latest_timestamp,
+                db_size,
+            )))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -500,5 +570,180 @@ impl Baseline {
         }
 
         Ok(KernelInfo { modules, sysctl })
+    }
+}
+
+/// Baseline database for storing and analyzing baseline snapshots
+#[derive(Debug)]
+pub struct BaselineDatabase {
+    conn: Connection,
+}
+
+impl BaselineDatabase {
+    pub fn new<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
+        let conn = Connection::open(path)?;
+
+        // Create tables
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS baselines (
+                id INTEGER PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                data TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS anomalies (
+                id INTEGER PRIMARY KEY,
+                baseline_id INTEGER,
+                anomaly_type TEXT NOT NULL,
+                description TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                detected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(baseline_id) REFERENCES baselines(id)
+            )",
+            [],
+        )?;
+
+        Ok(Self { conn })
+    }
+
+    pub fn store_baseline(&self, timestamp: u64, data: &Value) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO baselines (timestamp, data) VALUES (?1, ?2)",
+            params![timestamp as i64, data.to_string()],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    #[allow(dead_code)]
+    pub fn get_recent_baselines(&self, limit: usize) -> Result<Vec<(i64, u64, Value)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, timestamp, data FROM baselines ORDER BY timestamp DESC LIMIT ?")?;
+
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            let id: i64 = row.get(0)?;
+            let timestamp: i64 = row.get(1)?;
+            let data_str: String = row.get(2)?;
+            let data: Value = serde_json::from_str(&data_str).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?;
+            Ok((id, timestamp as u64, data))
+        })?;
+
+        rows.collect()
+    }
+
+    #[allow(dead_code)]
+    pub fn detect_anomalies(&self, current: &Value) -> Result<Vec<String>> {
+        let mut anomalies = Vec::new();
+        let recent = self.get_recent_baselines(5)?;
+
+        if recent.len() < 2 {
+            return Ok(anomalies);
+        }
+
+        // Simple heuristic: check for significant changes in process count
+        let baseline_avg = recent
+            .iter()
+            .map(|(_, _, data)| data["processes"].as_array().map(|a| a.len()).unwrap_or(0))
+            .sum::<usize>() as f64
+            / recent.len() as f64;
+
+        let current_count = current["processes"]
+            .as_array()
+            .map(|a| a.len())
+            .unwrap_or(0);
+
+        if (current_count as f64 - baseline_avg).abs() > baseline_avg * 0.2 {
+            anomalies.push(format!(
+                "Process count anomaly: {} vs baseline {}",
+                current_count, baseline_avg as usize
+            ));
+        }
+
+        // Check for significant changes in network connections
+        let baseline_net_avg = recent
+            .iter()
+            .map(|(_, _, data)| {
+                data["network"]["connections"]
+                    .as_array()
+                    .map(|a| a.len())
+                    .unwrap_or(0)
+            })
+            .sum::<usize>() as f64
+            / recent.len() as f64;
+
+        let current_net_count = current["network"]["connections"]
+            .as_array()
+            .map(|a| a.len())
+            .unwrap_or(0);
+
+        if (current_net_count as f64 - baseline_net_avg).abs() > baseline_net_avg * 0.3 {
+            anomalies.push(format!(
+                "Network connections anomaly: {} vs baseline {}",
+                current_net_count, baseline_net_avg as usize
+            ));
+        }
+
+        Ok(anomalies)
+    }
+
+    pub fn cleanup_old_baselines(&self, max_age_days: u64) -> Result<usize> {
+        let now = SystemTime::now();
+        let thirty_days_ago = now - Duration::from_secs(max_age_days * 24 * 60 * 60);
+        let cutoff_timestamp = thirty_days_ago
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| rusqlite::Error::InvalidQuery)?
+            .as_secs() as i64;
+
+        let rows_affected = self.conn.execute(
+            "DELETE FROM baselines WHERE timestamp < ?",
+            params![cutoff_timestamp],
+        )?;
+
+        Ok(rows_affected)
+    }
+
+    pub fn get_baseline_count(&self) -> Result<i64> {
+        let mut stmt = self.conn.prepare("SELECT COUNT(*) FROM baselines")?;
+        let count: i64 = stmt.query_row([], |row| row.get(0))?;
+        Ok(count)
+    }
+
+    pub fn get_anomaly_count(&self) -> Result<i64> {
+        let mut stmt = self.conn.prepare("SELECT COUNT(*) FROM anomalies")?;
+        let count: i64 = stmt.query_row([], |row| row.get(0))?;
+        Ok(count)
+    }
+
+    pub fn get_latest_baseline_timestamp(&self) -> Result<Option<i64>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT timestamp FROM baselines ORDER BY timestamp DESC LIMIT 1")?;
+        let result = stmt.query_row([], |row| row.get(0));
+        match result {
+            Ok(timestamp) => Ok(Some(timestamp)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn get_database_size(&self) -> Result<u64> {
+        let path = self.conn.path().unwrap_or(":memory:");
+        if path == ":memory:" {
+            return Ok(0);
+        }
+        match std::fs::metadata(path) {
+            Ok(metadata) => Ok(metadata.len()),
+            Err(_) => Err(rusqlite::Error::InvalidQuery),
+        }
     }
 }

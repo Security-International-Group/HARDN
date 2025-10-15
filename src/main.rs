@@ -15,10 +15,11 @@ use crate::execution::run_script;
 use crate::utils::{detect_debian_version, log_message, LogLevel};
 use crate::utils::{env_or_defaults, find_script, join_paths, list_modules};
 use chrono::{DateTime, Utc};
+use comfy_table::{presets::UTF8_FULL, Table};
 use ctrlc;
 use glob::glob;
-use serde::Serialize;
-use std::collections::BTreeSet;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeSet, HashMap};
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -353,7 +354,9 @@ fn get_tool_status_detail(tool_name: &str) -> ToolStatusDetail {
             match output {
                 Ok(o) => {
                     let status = String::from_utf8_lossy(&o.stdout);
-                    if status.contains("SELinux status:\tenabled") && status.contains("Current mode:\tenforcing") {
+                    if status.contains("SELinux status:\tenabled")
+                        && status.contains("Current mode:\tenforcing")
+                    {
                         tool_detail(ToolStatusType::Active, true, true)
                     } else if status.contains("SELinux status:\tenabled") {
                         tool_detail(ToolStatusType::Enabled, true, true)
@@ -408,40 +411,39 @@ fn get_tool_status_detail(tool_name: &str) -> ToolStatusDetail {
     }
 }
 
-/// Display Lynis audit report
-fn display_lynis_report() {
-    println!("\n\x1b[1;36m▶ LYNIS AUDIT REPORT:\x1b[0m\n");
+/// Display HARDN audit report
+fn display_hardn_audit_report(report_path_hint: Option<String>) {
+    println!("\n\x1b[1;36m▶ HARDN AUDIT REPORT:\x1b[0m\n");
 
-    let report_path = "/var/log/lynis/lynis-report-concise.log";
-    let alt_report_path = "/var/log/lynis/report.log";
+    let default_path = "/var/log/hardn/hardn_audit_report.json";
+    let resolved_path = report_path_hint
+        .filter(|path| Path::new(path).exists())
+        .unwrap_or_else(|| default_path.to_string());
 
-    // Try the concise report first, then the regular report
-    let path_to_use = if Path::new(report_path).exists() {
-        report_path
-    } else if Path::new(alt_report_path).exists() {
-        alt_report_path
-    } else {
-        println!("  \x1b[33m⚠\x1b[0m No Lynis report found.");
-        println!("  Run 'sudo lynis audit system' to generate a report.");
+    if !Path::new(&resolved_path).exists() {
+        println!(
+            "  \x1b[33m⚠\x1b[0m No hardn-audit report found at {}.",
+            resolved_path
+        );
+        println!("  Run 'sudo hardn audit' or rerun the compliance report to generate one.");
         println!("\nPress Enter to continue...");
         let mut input = String::new();
         let _ = std::io::stdin().read_line(&mut input);
         return;
-    };
+    }
 
-    // Display the report using less or cat
-    let output = Command::new("less").arg(path_to_use).status().or_else(|_| {
-        // Fallback to cat if less is not available
-        Command::new("cat").arg(path_to_use).status()
-    });
+    let viewer = Command::new("less")
+        .arg(&resolved_path)
+        .status()
+        .or_else(|_| Command::new("cat").arg(&resolved_path).status());
 
-    match output {
+    match viewer {
         Ok(_) => {
             println!("\n\x1b[1;32m✓\x1b[0m Report displayed successfully.");
         }
         Err(e) => {
             println!("  \x1b[31m✗\x1b[0m Error displaying report: {}", e);
-            println!("  You can manually view the report at: {}", path_to_use);
+            println!("  You can manually view the report at: {}", resolved_path);
         }
     }
 
@@ -464,13 +466,14 @@ struct HardnMonitorSnapshot {
     hardn_processes: Vec<String>,
     recommendations: Vec<String>,
     status_note: Option<String>,
+    audit: Option<HardnAuditSummary>,
 }
 
 #[derive(Serialize)]
 struct HardnScoreBreakdown {
     tools: f64,
     modules: f64,
-    lynis: f64,
+    audit: f64,
 }
 
 #[derive(Serialize)]
@@ -497,11 +500,48 @@ struct HardnServiceStatusEntry {
     pid: Option<u32>,
 }
 
+#[derive(Serialize, Clone)]
+struct HardnAuditRuleResult {
+    id: String,
+    title: String,
+    category: String,
+    severity: String,
+    status: String,
+    evidence: String,
+}
+
+#[derive(Serialize, Clone)]
+struct HardnAuditSummary {
+    report_version: String,
+    generated_at: String,
+    counts: HashMap<String, u32>,
+    rules: Vec<HardnAuditRuleResult>,
+    report_path: Option<String>,
+    stderr: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct HardnAuditRaw {
+    report_version: String,
+    generated_at: String,
+    rules: Vec<HardnAuditRawRule>,
+}
+
+#[derive(Deserialize)]
+struct HardnAuditRawRule {
+    id: String,
+    title: String,
+    category: String,
+    severity: String,
+    status: String,
+    evidence: String,
+}
+
 impl HardnMonitorSnapshot {
     fn new(
         tool_score: f64,
         module_score: f64,
-        lynis_score: f64,
+        audit_score: f64,
         total_score: f64,
         grade: &str,
         tool_summary: HardnToolSummary,
@@ -510,6 +550,7 @@ impl HardnMonitorSnapshot {
         hardn_processes: Vec<String>,
         recommendations: Vec<String>,
         status_note: Option<String>,
+        audit: Option<HardnAuditSummary>,
     ) -> Self {
         Self {
             timestamp: Utc::now(),
@@ -518,7 +559,7 @@ impl HardnMonitorSnapshot {
             component_scores: HardnScoreBreakdown {
                 tools: sanitize_score(tool_score),
                 modules: sanitize_score(module_score),
-                lynis: sanitize_score(lynis_score),
+                audit: sanitize_score(audit_score),
             },
             tool_summary,
             module_logs,
@@ -526,6 +567,7 @@ impl HardnMonitorSnapshot {
             hardn_processes,
             recommendations,
             status_note,
+            audit,
         }
     }
 }
@@ -570,10 +612,12 @@ fn generate_security_report() {
     // Track scoring components
     let tool_score: f64;
     let module_score: f64;
-    let mut lynis_score: f64;
+    let mut audit_score: f64 = 0.0;
     let mut recommendations: Vec<String> = Vec::new();
     let mut status_note: Option<String> = None;
     let mut tool_status_entries: Vec<HardnToolStatusEntry> = Vec::new();
+    let mut audit_summary: Option<HardnAuditSummary> = None;
+    let mut has_recommendations = false;
 
     // 1. Check active security tools (40% of total score)
     println!("\x1b[1;36m▶ SECURITY TOOLS ASSESSMENT (40% weight):\x1b[0m");
@@ -758,98 +802,142 @@ fn generate_security_report() {
     );
     println!("  \x1b[1;33mModule Score: {:.1}/20\x1b[0m\n", module_score);
 
-    // 3. Run Lynis audit and get score (40% of total score)
-    println!("\x1b[1;36m▶ LYNIS SECURITY AUDIT (40% weight):\x1b[0m");
-    println!("  Running Lynis security audit (this may take a moment)...\n");
+    // 3. Run HARDN audit and get score (40% of total score)
+    println!("\x1b[1;36m▶ HARDN AUDIT (40% weight):\x1b[0m");
 
-    // Create log directory if it doesn't exist
-    let _ = fs::create_dir_all("/var/log/lynis");
+    match run_hardn_audit() {
+        Ok(summary) => {
+            let total_rules = summary.rules.len();
+            println!("  Rules evaluated: {}", total_rules);
 
-    // Initialize lynis_score
-    lynis_score = 0.0;
+            if !summary.counts.is_empty() {
+                let mut status_counts: Vec<_> = summary.counts.iter().collect();
+                status_counts.sort_by(|a, b| a.0.cmp(b.0));
+                let counts_line = status_counts
+                    .into_iter()
+                    .map(|(status, count)| format!("{}: {}", status.to_uppercase(), count))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                println!("  Status counts: {}", counts_line);
+            }
 
-    // Run Lynis audit
-    let lynis_output = Command::new("lynis")
-        .args(&["audit", "system", "--quick", "--quiet", "--no-colors"])
-        .output();
+            if let Some(path) = summary.report_path.as_deref() {
+                println!("  Report saved to: {}", path);
+            }
 
-    match lynis_output {
-        Ok(output) => {
-            let output_str = String::from_utf8_lossy(&output.stdout);
+            if let Some(stderr) = summary.stderr.as_ref() {
+                if !stderr.is_empty() {
+                    println!("  \x1b[33m⚠ hardn-audit warnings:\x1b[0m {}", stderr);
+                }
+            }
 
-            // Extract hardening index using regex-like pattern matching
-            let hardening_index = output_str
-                .lines()
-                .find(|line| line.contains("Hardening index"))
-                .and_then(|line| {
-                    // Extract number between brackets
-                    line.find('[').and_then(|start| {
-                        line[start + 1..].find(']').and_then(|end| {
-                            line[start + 1..start + 1 + end].trim().parse::<f64>().ok()
-                        })
-                    })
-                })
-                .unwrap_or(0.0);
+            let mut weighted_sum = 0.0;
+            let mut failing_rules: Vec<HardnAuditRuleResult> = Vec::new();
+            let pass_rules: Vec<&HardnAuditRuleResult> = summary
+                .rules
+                .iter()
+                .filter(|rule| rule.status == "pass")
+                .collect();
 
-            // If we couldn't get it from quick scan, try checking the log file
-            let hardening_index = if hardening_index == 0.0 {
-                // Try to get from existing log file using ripgrep if available
-                Command::new("rg")
-                    .args(&["-i", "Hardening index", "/var/log/lynis/hardn-audit.log"])
-                    .output()
-                    .ok()
-                    .and_then(|rg_output| {
-                        String::from_utf8_lossy(&rg_output.stdout)
-                            .lines()
-                            .find(|line| line.contains("Hardening index"))
-                            .and_then(|line| {
-                                // Extract the number
-                                line.split('[')
-                                    .nth(1)
-                                    .and_then(|s| s.split(']').next())
-                                    .and_then(|s| s.trim().parse::<f64>().ok())
-                            })
-                    })
-                    .unwrap_or(hardening_index)
+            for rule in &summary.rules {
+                let status = rule.status.as_str();
+                let weight = match status {
+                    "pass" => 1.0,
+                    "not_applicable" => 1.0,
+                    "not_implemented" => 0.4,
+                    "fail" | "error" => 0.0,
+                    _ => 0.5,
+                };
+                weighted_sum += weight;
+                if matches!(status, "fail" | "error") {
+                    failing_rules.push(rule.clone());
+                }
+            }
+
+            if total_rules > 0 {
+                audit_score = (weighted_sum / total_rules as f64 * 40.0).min(40.0);
             } else {
-                hardening_index
-            };
+                println!("  \x1b[33m⚠\x1b[0m Audit returned no rules");
+            }
 
-            // Lynis score is 40% of its hardening index
-            lynis_score = (hardening_index / 100.0 * 40.0).min(40.0);
+            println!("  \x1b[1;33mAudit Score: {:.1}/40\x1b[0m", audit_score);
 
-            if hardening_index > 0.0 {
-                println!("  \x1b[32m✓\x1b[0m Lynis audit completed successfully");
+            if !pass_rules.is_empty() {
                 println!(
-                    "  Hardening Index: \x1b[1;33m{}\x1b[0m/100",
-                    hardening_index
+                    "\n  Passing rules logged: {} (showing first 10)",
+                    pass_rules.len()
+                );
+                for rule in pass_rules.iter().take(10) {
+                    println!("    • {} [{}]", rule.title, rule.severity);
+                }
+                if pass_rules.len() > 10 {
+                    println!("    ... {} additional passing rules", pass_rules.len() - 10);
+                }
+                println!();
+            }
+
+            if failing_rules.is_empty() {
+                println!("  \x1b[32m✓ All audit checks passed\x1b[0m\n");
+            } else {
+                println!(
+                    "  \x1b[33m⚠ Issues detected in {} rule(s)\x1b[0m",
+                    failing_rules.len()
                 );
 
-                // Show security status indicator
-                let status_msg = match hardening_index as i32 {
-                    0..=49 => "\x1b[1;31mCRITICAL - Immediate attention required\x1b[0m",
-                    50..=64 => "\x1b[1;31mPOOR - Significant improvements needed\x1b[0m",
-                    65..=74 => "\x1b[1;33mFAIR - Some improvements recommended\x1b[0m",
-                    75..=84 => "\x1b[1;32mGOOD - Minor improvements possible\x1b[0m",
-                    85..=94 => "\x1b[1;32mEXCELLENT - Well hardened system\x1b[0m",
-                    _ => "\x1b[1;32mOUTSTANDING - Exceptional security posture\x1b[0m",
-                };
-                println!("  Security Level: {}", status_msg);
-            } else {
-                println!("  \x1b[33m⚠\x1b[0m Could not determine Lynis hardening index");
-                println!("  Run 'sudo lynis audit system' for detailed results");
+                let mut table = Table::new();
+                table.load_preset(UTF8_FULL);
+                table.set_header(vec!["Rule", "Severity", "Status", "Evidence"]);
+                for rule in &failing_rules {
+                    let mut evidence = rule.evidence.clone();
+                    if evidence.len() > 96 {
+                        evidence.truncate(93);
+                        evidence.push_str("...");
+                    }
+                    table.add_row(vec![
+                        rule.title.clone(),
+                        rule.severity.clone(),
+                        rule.status.to_uppercase(),
+                        evidence,
+                    ]);
+                }
+                println!("{}\n", table);
+
+                for rule in failing_rules.iter().take(5) {
+                    let rec = format!(
+                        "Address audit finding for '{}' (status: {})",
+                        rule.title, rule.status
+                    );
+                    recommendations.push(rec);
+                    has_recommendations = true;
+                }
+                if failing_rules.len() > 5 {
+                    let rec = format!(
+                        "Review remaining {} audit findings in the detailed report",
+                        failing_rules.len() - 5
+                    );
+                    recommendations.push(rec);
+                    has_recommendations = true;
+                }
+                if let Some(path) = summary.report_path.as_deref() {
+                    let rec = format!("Review detailed audit report at {}", path);
+                    recommendations.push(rec);
+                    has_recommendations = true;
+                }
             }
+            audit_summary = Some(summary.clone());
         }
-        Err(_) => {
-            println!("  \x1b[31m✗\x1b[0m Lynis not installed or not accessible");
-            println!("  Install with: sudo apt install lynis");
+        Err(err) => {
+            println!("  \x1b[31m✗ Failed to run hardn-audit:\x1b[0m {}", err);
+            recommendations.push(
+                "Install and configure the hardn-audit binary to enable compliance evaluation"
+                    .to_string(),
+            );
+            has_recommendations = true;
         }
     }
 
-    println!("  \x1b[1;33mLynis Score: {:.1}/40\x1b[0m\n", lynis_score);
-
     // Calculate total score
-    let total_score = tool_score + module_score + lynis_score;
+    let total_score = tool_score + module_score + audit_score;
 
     // Display final report
     println!("╔════════════════════════════════════════════════════════════════════════════════╗");
@@ -872,9 +960,9 @@ fn generate_security_report() {
     } else {
         "✗"
     };
-    let lynis_status = if lynis_score >= 30.0 {
+    let audit_status = if audit_score >= 30.0 {
         "✓"
-    } else if lynis_score >= 20.0 {
+    } else if audit_score >= 20.0 {
         "●"
     } else {
         "✗"
@@ -889,8 +977,8 @@ fn generate_security_report() {
         module_score, module_status
     );
     println!(
-        "║  Lynis Audit              │  {:>6.1}/40  │  40%   │             {}               ║",
-        lynis_score, lynis_status
+        "║  HARDN Audit              │  {:>6.1}/40  │  40%   │             {}               ║",
+        audit_score, audit_status
     );
     println!("╠═══════════════════════════╧═════════════╧════════╧═════════════════════════════╣");
 
@@ -923,8 +1011,6 @@ fn generate_security_report() {
     // Recommendations
     println!("\n\x1b[1;36m▶ RECOMMENDATIONS:\x1b[0m\n");
 
-    let mut has_recommendations = false;
-
     if tool_score < 30.0 {
         let rec = "Enable more security tools to improve protection (Run: sudo hardn run-tool <tool-name>)";
         recommendations.push(rec.to_string());
@@ -942,11 +1028,18 @@ fn generate_security_report() {
         has_recommendations = true;
     }
 
-    if lynis_score < 30.0 {
-        let rec = "Review Lynis audit findings and apply recommendations (View: /var/log/lynis/lynis-report-concise.log)";
-        recommendations.push(rec.to_string());
-        println!("  • Review Lynis audit findings and apply recommendations");
-        println!("    View: /var/log/lynis/lynis-report-concise.log\n");
+    if audit_score < 30.0 {
+        let report_hint = audit_summary
+            .as_ref()
+            .and_then(|summary| summary.report_path.clone())
+            .unwrap_or_else(|| "/var/log/hardn/hardn_audit_report.json".to_string());
+        let rec = format!(
+            "Review hardn-audit findings and apply recommendations (View: {})",
+            report_hint
+        );
+        recommendations.push(rec.clone());
+        println!("  • Review hardn-audit findings and apply recommendations");
+        println!("    View: {}\n", report_hint);
         has_recommendations = true;
     }
 
@@ -973,7 +1066,7 @@ fn generate_security_report() {
     let snapshot = HardnMonitorSnapshot::new(
         tool_score,
         module_score,
-        lynis_score,
+        audit_score,
         total_score,
         grade,
         tool_summary_snapshot,
@@ -982,6 +1075,7 @@ fn generate_security_report() {
         hardn_processes_snapshot,
         recommendations_snapshot,
         status_note_snapshot,
+        audit_summary.clone(),
     );
 
     if let Err(e) = persist_hardn_monitor_snapshot(&snapshot) {
@@ -998,8 +1092,8 @@ fn generate_security_report() {
         if module_score < 15.0 {
             println!("  b) Execute HARDN modules for system hardening?");
         }
-        if lynis_score < 30.0 {
-            println!("  c) Review Lynis audit findings and apply recommendations?");
+        if audit_score < 30.0 {
+            println!("  c) Review hardn-audit findings and apply recommendations?");
         }
         println!("  d) None, return to the main menu.");
 
@@ -1022,10 +1116,14 @@ fn generate_security_report() {
                 // Run module selection menu
                 select_and_run_module();
             }
-            "c" if lynis_score < 30.0 => {
+            "c" if audit_score < 30.0 => {
                 println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
-                // Display Lynis report
-                display_lynis_report();
+                // Display HARDN audit report
+                display_hardn_audit_report(
+                    audit_summary
+                        .as_ref()
+                        .and_then(|summary| summary.report_path.clone()),
+                );
             }
             "d" => {
                 println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
@@ -1041,6 +1139,154 @@ fn generate_security_report() {
             "\n═══════════════════════════════════════════════════════════════════════════════\n"
         );
     }
+}
+
+fn run_hardn_audit() -> Result<HardnAuditSummary, String> {
+    let binary_path = find_hardn_audit_binary()
+        .ok_or_else(|| "hardn-audit binary not found in PATH or HARDN directories".to_string())?;
+
+    let output = Command::new(&binary_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("failed to execute {}: {}", binary_path.display(), e))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "{} exited with status {}",
+            binary_path.display(),
+            output.status
+        ));
+    }
+
+    let stdout_str = String::from_utf8(output.stdout.clone())
+        .map_err(|e| format!("invalid UTF-8 from hardn-audit: {}", e))?;
+
+    let raw: HardnAuditRaw = serde_json::from_str(&stdout_str)
+        .map_err(|e| format!("failed to parse hardn-audit JSON: {}", e))?;
+
+    let HardnAuditRaw {
+        report_version,
+        generated_at,
+        rules: raw_rules,
+    } = raw;
+
+    let mut counts: HashMap<String, u32> = HashMap::new();
+    let mut rules: Vec<HardnAuditRuleResult> = Vec::with_capacity(raw_rules.len());
+
+    for raw_rule in raw_rules {
+        let status = raw_rule.status.to_lowercase();
+        *counts.entry(status.clone()).or_insert(0) += 1;
+        rules.push(HardnAuditRuleResult {
+            id: raw_rule.id,
+            title: raw_rule.title,
+            category: raw_rule.category,
+            severity: raw_rule.severity,
+            status,
+            evidence: raw_rule.evidence,
+        });
+    }
+
+    let report_path = persist_hardn_audit_report(stdout_str.as_bytes());
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stderr = if stderr.is_empty() {
+        None
+    } else {
+        Some(stderr)
+    };
+
+    Ok(HardnAuditSummary {
+        report_version,
+        generated_at,
+        counts,
+        rules,
+        report_path,
+        stderr,
+    })
+}
+
+fn persist_hardn_audit_report(contents: &[u8]) -> Option<String> {
+    let report_dir = Path::new(DEFAULT_LOG_DIR);
+    if fs::create_dir_all(report_dir).is_err() {
+        return None;
+    }
+
+    let report_path = report_dir.join("hardn_audit_report.json");
+    if fs::write(&report_path, contents).is_ok() {
+        let _ = fs::set_permissions(&report_path, fs::Permissions::from_mode(0o640));
+        Some(report_path.display().to_string())
+    } else {
+        None
+    }
+}
+
+fn find_hardn_audit_binary() -> Option<PathBuf> {
+    if let Some(path) = env::var_os("HARDN_AUDIT_BIN") {
+        let candidate = PathBuf::from(path);
+        if is_executable(&candidate) {
+            return Some(candidate);
+        }
+    }
+
+    for dir in env_or_defaults("HARDN_TOOL_PATH", DEFAULT_TOOL_DIRS) {
+        for name in ["hardn-audit", "hardn_audit"] {
+            let candidate = Path::new(&dir).join(name);
+            if is_executable(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+
+    let mut known_dirs: Vec<PathBuf> = vec![
+        PathBuf::from("/usr/lib/hardn"),
+        PathBuf::from("/usr/libexec/hardn"),
+        PathBuf::from("/usr/local/lib/hardn"),
+        PathBuf::from("/usr/local/libexec/hardn"),
+        PathBuf::from(DEFAULT_LIB_DIR).join("bin"),
+    ];
+
+    if let Ok(cwd) = env::current_dir() {
+        known_dirs.push(cwd.join("debian/hardn/usr/lib/hardn"));
+        known_dirs.push(cwd.join("target/release"));
+    }
+
+    known_dirs.push(PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/debian/hardn/usr/lib/hardn"
+    )));
+
+    for dir in known_dirs {
+        for name in ["hardn-audit", "hardn_audit"] {
+            let candidate = dir.join(name);
+            if is_executable(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+
+    if let Some(path_var) = env::var_os("PATH") {
+        for dir in env::split_paths(&path_var) {
+            for name in ["hardn-audit", "hardn_audit"] {
+                let candidate = dir.join(name);
+                if is_executable(&candidate) {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn is_executable(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+
+    path.metadata()
+        .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
 }
 
 /// Run all available modules

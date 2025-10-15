@@ -38,6 +38,7 @@ jobs:
             dpkg-dev \
             pkg-config \
             libssl-dev \
+            libsqlite3-dev \
             libvte-2.91-gtk4-dev \
             python3-all \
             python3-requests \

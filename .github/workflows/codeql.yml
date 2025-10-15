@@ -48,6 +48,9 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install GLib dependencies
+        run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev pkg-config pkg-config libgtk-4-dev libglib2.0-dev libvte-2.91-gtk4-dev libssl-dev cargo rustc 
+
       - name: Build Rust project
         if: matrix.language == 'rust'
         run: |

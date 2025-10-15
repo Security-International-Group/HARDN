@@ -55,7 +55,7 @@ echo $SSH_KEY
 
 # 3. Use in curl command
 curl -H "Authorization: Bearer $SSH_KEY" http://localhost:8000/health
-# Response: {"status":"healthy","service":"hardn-api","version":"1.0.0","timestamp":"2025-09-24T18:21:04.055365"}
+# Response: {"status":"healthy","service":"hardn-api","version":"1.0.0-1","timestamp":"2025-09-24T18:21:04.055365"}
 
 # 4. Get system health data
 curl -H "Authorization: Bearer $SSH_KEY" http://localhost:8000/overwatch/system | jq '.system_health.cpu_percent'

@@ -30,6 +30,13 @@ pub enum TelemetryPayload {
     },
     Text(String),
     Binary(Vec<u8>),
+    DatabaseStatus {
+        status: String,
+        baselines: i64,
+        anomalies: i64,
+        latest_age: Option<f64>,
+        size_mb: f64,
+    },
 }
 
 /// Atomic telemetry datum gathered during a monitoring pass.
