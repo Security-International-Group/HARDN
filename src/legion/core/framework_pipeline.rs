@@ -70,4 +70,5 @@ fn pipeline_runs_collection_cycle() {
         1,
         "noop responder emits a single response outcome"
     );
+  }
 }
