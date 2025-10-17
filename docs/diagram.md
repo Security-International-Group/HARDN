@@ -74,19 +74,63 @@ graph TD
 
 ```mermaid
 graph TD
-    A[Client] --> B[HARDN API]
-    B --> C[Monitor Service]
-    C --> D[Logging Service]
-    C --> E[Alert Service]
-    B --> F[Data Processor]
-    F --> G[Database]
-    F --> H[Cache]
-    C --> I[systemd]
-    C --> J[Network Manager]
-    C --> K[systemctl]
-    C --> L[Other Linux Services<br/>(e.g., journald, udev, cron)]
-    B --> M[systemd Commands]
-    B --> N[Network Manager Queries]
+  CL[Clients] -->|REST or CLI| HAPI[HARDN API Gateway]
+
+  %% ========= HARDN CORE =========
+  subgraph HCORE[HARDN Core]
+    direction TB
+    HD[HARDN Daemon]:::proc
+    HM[Monitor Service]:::proc
+    HLOG[Logging Service]:::proc
+    HALR[Alert Service]:::proc
+    HP[Data Processor]:::proc
+    HDB[(HARDN DB)]:::store
+    HC[(Cache)]:::store
+    HCFG[Config Loader]:::cfg
+    HSEC[Secrets and TLS]:::sec
+
+    HAPI -->|RBAC| HD
+    HAPI --> HP
+    HP --> HDB
+    HP --> HC
+    HM --> HLOG
+    HM --> HALR
+    HD -->|load| HCFG
+    HD -->|certs keys| HSEC
+  end
+
+  %% ========= LINUX BACKEND =========
+  subgraph HLNX[Linux Backend Services]
+    direction TB
+    HSYS[systemd]:::os
+    HNMM[NetworkManager]:::os
+    HSCT[systemctl CLI]:::os
+    HJRN[journald]:::os
+    HUDV[udev]:::os
+    HCRN[cron]:::os
+  end
+
+  %% ========= TELEMETRY =========
+  HM -. metrics events .-> HSYS
+  HM -. link metrics .-> HNMM
+  HM -. logs .-> HJRN
+  HM -. device events .-> HUDV
+  HM -. schedule results .-> HCRN
+  HM -. command results .-> HSCT
+
+  %% ========= CONTROL =========
+  HAPI -->|service lifecycle| HSYS
+  HAPI -->|network query cfg| HNMM
+  HAPI -->|system control| HSCT
+
+  %% ========= ALERTS OUT =========
+  HALR -->|notify| CL
+
+  classDef proc fill:#f8f9ff,stroke:#5b7fff,color:#173166;
+  classDef store fill:#eef7ff,stroke:#2083c7,color:#0a3a55;
+  classDef os fill:#fafafa,stroke:#9aa0a6,color:#333,stroke-dasharray:3 3;
+  classDef sec fill:#fff5f5,stroke:#e53e3e,color:#7b1e1e;
+  classDef cfg fill:#f7fee7,stroke:#65a30d,color:#2a3c09;
 ```
 
 ## HARDN Monitor
@@ -95,13 +139,42 @@ graph TD
 
 ```mermaid
 graph TD
-    A[HARDN Service] --> E[HARDN Monitor]
-    B[LEGION] --> E
-    C[HARDN API] --> E
-    D[Grafana] --> E
-    E --> F[Data Normalizer]
-    F --> G[Read-Only Dataset]
-    G --> H[HARDN GUI]
+  %% ========= SOURCES =========
+  subgraph SRC[Data Sources]
+    HS[HARDN Service]:::src
+    LG[LEGION]:::src
+    API[HARDN API]:::src
+    GF[Grafana]:::src
+  end
+
+  %% ========= MONITOR =========
+  subgraph MON[HARDN Monitor]
+    direction TB
+    COL[Collectors]:::proc
+    NORM[Data Normalizer]:::proc
+    SCH[Schema Registry]:::proc
+    RODS[(Read-Only Dataset)]:::store
+    EXP[RO Endpoints (REST WS Files)]:::proc
+    LCL[(Local Cache)]:::store
+  end
+
+  %% ========= FLOWS =========
+  HS -->|telemetry| COL
+  LG -->|telemetry| COL
+  API -->|status metrics| COL
+  GF -->|dash meta health| COL
+
+  COL --> NORM
+  NORM --> SCH
+  NORM --> RODS
+  RODS --> LCL
+  EXP -->|serve RO data| GUI[HARDN GUI]:::ext
+  GUI -. view only .-> RODS
+
+  classDef src fill:#eefaf2,stroke:#2c7a3f,color:#1f4729;
+  classDef proc fill:#f5f3ff,stroke:#7c3aed,color:#3b1e74;
+  classDef store fill:#e5f6ff,stroke:#0369a1,color:#0c4a6e;
+  classDef ext fill:#f3f7ff,stroke:#6b8cff,color:#1a2b6b;
 ```
 
 ## Grafana
@@ -110,12 +183,34 @@ graph TD
 
 ```mermaid
 graph TD
-    A[Users] --> B[Grafana UI]
-    B --> C[Auth Service]
-    B --> D[Dashboard Engine]
-    D --> E[Data Source Proxy]
-    E --> F[Time-Series DB]
-    E --> G[Log Store]
-    D --> H[Alert Rule Engine]
-    H --> I[Notification Channels]
+  USR[Users] -->|HTTP| UI[Grafana UI]
+
+  %% ========= CORE =========
+  subgraph GCORE[Grafana Core]
+    direction TB
+    AUTH[Auth Service (OAuth SSO Token)]:::proc
+    DENG[Dashboard Engine]:::proc
+    ARE[Alert Rule Engine]:::proc
+  end
+
+  UI --> AUTH
+  UI --> DENG
+
+  %% ========= DATA SOURCES =========
+  subgraph GDS[Data Source Proxy]
+    direction TB
+    TS[(Time-Series DB)]:::store
+    LOGS[(Log Store)]:::store
+    HRO[(HARDN Monitor Read-Only)]:::store
+  end
+
+  DENG -->|queries| TS
+  DENG -->|queries| LOGS
+  DENG -->|queries| HRO
+
+  ARE -->|notifications| NTF[Notification Channels]:::ext
+
+  classDef proc fill:#f8f9ff,stroke:#5b7fff,color:#173166;
+  classDef store fill:#eef7ff,stroke:#2083c7,color:#0a3a55;
+  classDef ext fill:#fff1f2,stroke:#e11d48,color:#7f1d1d;
 ```
