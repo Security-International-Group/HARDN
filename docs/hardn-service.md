@@ -1,306 +1,114 @@
-# HARDN Security Service
+# HARDN Security Service – Full Architecture Overview
 
-## Purpose
+```mermaid
+graph TD
 
-HARDN (Hardened Detection and Response Network) is a comprehensive STIG-compliant security hardening and monitoring system for Linux systems. It provides automated security hardening, continuous monitoring, intrusion detection, and incident response capabilities. HARDN integrates multiple security tools and services to create a layered defense approach for endpoint protection.
+%% ===================== ENTRYPOINTS =====================
+U[User / Admin / GUI] -->|commands & monitoring| API[HARDN API Service]
+CLI[hardn CLI] -->|manual execution| CORE[HARDN Core Service]
+API -->|remote trigger| CORE
 
-## Architecture Overview
+%% ===================== SERVICE COMPONENTS =====================
+subgraph HARDN Core Framework
+  direction TB
+  MOD[Hardening Modules]
+  TOOLS[Security Tools Layer]
+  CFG[Configuration Engine]
+  AUD[Audit and Compliance Engine]
+  LOG[System Logger]
+  RPT[Security Report Generator]
 
-HARDN consists of two main components:
+  CORE --> MOD
+  CORE --> TOOLS
+  CORE --> CFG
+  CORE --> AUD
+  CORE --> LOG
+  CORE --> RPT
+end
 
-### 1. HARDN Core Service (`hardn.service`)
-- **Type**: One-shot systemd service
-- **Purpose**: Automated security hardening and configuration
-- **Execution**: Runs hardening modules on system startup or manual trigger
-- **Scope**: System-wide security configuration and hardening
+subgraph HARDN API Layer
+  direction TB
+  SRV[REST API Server]
+  MON[Monitoring Endpoints]
+  AUTH[Authentication Manager]
+  DATA[Data Aggregator]
+  SRV --> MON
+  SRV --> AUTH
+  SRV --> DATA
+end
 
-### 2. HARDN API (`hardn-api.service`)
-- **Type**: REST API server
-- **Purpose**: Remote monitoring and management interface
-- **Execution**: HTTP server providing overwatch capabilities
-- **Scope**: Remote access to system health and security status
+%% ===================== SECURITY TOOL INTEGRATIONS =====================
+subgraph Security Tools
+  direction TB
+  APP[AppArmor - Access Control]
+  F2B[Fail2Ban - Intrusion Prevention]
+  UFW[UFW - Firewall]
+  AUDD[Auditd - System Auditing]
+  CLAM[ClamAV - Antivirus]
+  RKH[rkhunter - Rootkit Detection]
+  LYN[Lynis - Security Auditing]
+  AIDE[AIDE - File Integrity Monitor]
+  TOOLS --> APP
+  TOOLS --> F2B
+  TOOLS --> UFW
+  TOOLS --> AUDD
+  TOOLS --> CLAM
+  TOOLS --> RKH
+  TOOLS --> LYN
+  TOOLS --> AIDE
+end
 
-## Service Components
+%% ===================== SYSTEM SERVICES =====================
+subgraph Linux Services
+  direction TB
+  SYSMD[systemd]
+  JRN[journald]
+  CRN[cron]
+  NETM[NetworkManager]
+end
 
-### HARDN Core Service
+CORE --> SYSMD
+CORE --> JRN
+CORE --> CRN
+API --> JRN
+API --> NETM
 
-The main HARDN service performs comprehensive system hardening:
+%% ===================== DATA FLOWS =====================
+U -->|status / reports| API
+API -->|invoke hardening / scan| CORE
+CORE -->|telemetry / logs| API
+LOG -->|journal logs| JRN
+AUD -->|compliance reports| RPT
+RPT -->|security score & findings| API
 
-**Security Hardening Tasks:**
-- SSH root login disablement
-- Secure umask configuration for system files
-- Critical file permission hardening
-- Password quality enforcement (pwquality)
-- Antivirus installation (ClamAV)
-- Rootkit detection (rkhunter)
-- Security auditing (Lynis)
-- Intrusion prevention (Fail2Ban)
-- System auditing (auditd)
-- System logging (rsyslog)
-- Automatic updates (unattended-upgrades)
-- Firewall configuration (UFW)
-- Kernel security parameter tuning
+%% ===================== CLASSES =====================
+classDef entry fill:#f0f4ff,stroke:#3b82f6,color:#1e3a8a;
+classDef daemon fill:#fef9c3,stroke:#ca8a04,color:#713f12;
+classDef layer fill:#ecfccb,stroke:#84cc16,color:#365314;
+classDef tools fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e;
+classDef os fill:#f9fafb,stroke:#9ca3af,color:#374151,stroke-dasharray:3 3;
 
-**Service Configuration:**
-```ini
-[Unit]
-Description=HARDN Security Hardening Service
-After=network.target
-Wants=network.target
-
-[Service]
-Type=oneshot
-User=root
-Group=root
-ExecStart=/usr/local/bin/hardn --run-all-modules
-RemainAfterExit=no
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=hardn
-SuccessExitStatus=0 1
-
-# Security settings
-NoNewPrivileges=yes
-ProtectHome=yes
-ProtectSystem=strict
+class U,API,CLI entry
+class CORE,SRV daemon
+class MOD,TOOLS,CFG,AUD,LOG,RPT,MON,AUTH,DATA layer
+class APP,F2B,UFW,AUDD,CLAM,RKH,LYN,AIDE tools
+class SYSMD,JRN,CRN,NETM os
 ```
 
-## Usage Commands
+---
 
-### Service Management
+### Architecture Summary
 
-```bash
-# Check overall HARDN status
-sudo hardn --status
+| Component | Role |
+|------------|------|
+| **HARDN Core Service** | Executes system-wide security hardening modules and configuration routines. |
+| **HARDN API Service** | REST API providing remote control, status queries, and security telemetry aggregation. |
+| **Hardening Modules** | Individual system-hardening scripts enforcing STIG/CIS standards. |
+| **Security Tools Layer** | Integrates AppArmor, Fail2Ban, UFW, Auditd, ClamAV, Lynis, rkhunter, and AIDE under one orchestration layer. |
+| **Audit & Compliance Engine** | Ensures continuous monitoring and reporting against NIST/STIG benchmarks. |
+| **Configuration Engine** | Manages service policies, kernel parameters, and system-level security defaults. |
+| **System Logger** | Centralized structured journaling for all modules and API events. |
+| **Security Report Generator** | Produces human-readable and machine-readable summaries for audits. |
+| **Linux Services Integration** | Uses systemd for orchestration, journald for logging, cron for scheduling, and NetworkManager for connectivity. |
 
-# Enable HARDN services
-sudo hardn --service-enable
-
-# Start HARDN services
-sudo hardn --service-start
-
-# Check service status
-sudo hardn --service-status
-```
-
-### Module Execution
-
-```bash
-# Run all available modules
-sudo hardn --run-all-modules
-
-# Run specific module
-sudo hardn run-module hardening
-
-# List available modules
-hardn --list-modules
-```
-
-### Tool Execution
-
-```bash
-# Run all security tools
-sudo hardn --run-all-tools
-
-# Run specific tool
-sudo hardn run-tool lynis
-
-# List available tools
-hardn --list-tools
-```
-
-### System Hardening
-
-```bash
-# Run complete hardening suite
-sudo hardn --run-everything
-
-# Enable sandbox mode (disconnects network)
-sudo hardn --sandbox-on
-
-# Disable sandbox mode
-sudo hardn --sandbox-off
-```
-
-## Security Tools Integration
-
-HARDN integrates and manages multiple security tools:
-
-### Mandatory Access Control
-- **AppArmor**: Application-level access control
-- **Status**: Active by default on Ubuntu/Debian systems
-
-### Network Security
-- **UFW (Uncomplicated Firewall)**: Host-based firewall
-- **Fail2Ban**: Intrusion prevention system
-- **Legion Network Sensor**: Built-in anomaly and network telemetry detection
-
-### System Integrity
-- **AIDE**: File integrity monitoring
-- **Auditd**: System call auditing
-- **Lynis**: Security auditing and hardening
-
-### Malware Protection
-- **ClamAV**: Antivirus engine
-- **rkhunter**: Rootkit detection
-
-## Command Line Interface
-
-### General Options
-
-```bash
-hardn --help              # Show help information
-hardn --about             # Show information about HARDN
-hardn --version           # Show version information
-hardn --security-report   # Generate security score report
-```
-
-### Status Commands
-
-```bash
-hardn status              # Show current system status
-hardn --status            # Same as above
-hardn --service-status    # Show service status only
-```
-
-### Execution Commands
-
-```bash
-# Module operations
-hardn --run-all-modules   # Run all hardening modules
-hardn run-module <name>   # Run specific module
-
-# Tool operations
-hardn --run-all-tools     # Run all security tools
-hardn run-tool <name>     # Run specific tool
-
-# Combined operations
-hardn --run-everything    # Run modules and tools
-```
-
-### Service Management
-
-```bash
-hardn service enable      # Enable HARDN services
-hardn service start       # Start HARDN services
-hardn service stop        # Stop HARDN services
-hardn service restart     # Restart HARDN services
-hardn service status      # Show service status
-```
-
-## System Status Output
-
-### HARDN System Status
-
-```
-═══════════════════════════════════════════════════════════════════════════════
-                          HARDN SYSTEM STATUS
-═════════════════════════════════════════════════════════════════════════════════
-
-SYSTEM INFORMATION:
-  OS: Debian 24.04 (noble)
-  HARDN Version: 2.2.0
-  Timestamp: 1758752537 (Unix epoch)
-
-HARDN SERVICES:
-  [DOWN] hardn         [INACTIVE] [enabled]
-
-SECURITY TOOLS STATUS:
-  [OK] AppArmor     - Mandatory Access Control system for applications
-  [OK] Fail2Ban     [PID: 1578] - Intrusion prevention - Bans IPs with multiple auth failures
-  [OK] UFW          - Uncomplicated Firewall - Network traffic filtering
-  [OK] Auditd       [PID: 1014] - Linux Audit Framework - Security event logging
-  [OK] ClamAV       [PID: 1318] - Antivirus engine for detecting trojans and malware
-
-  Total active security tools: 5/10
-```
-
-### Module Execution Output
-
-```
-HARDN Security Hardening Module
-==================================
-[2025-09-24 18:22:25] Starting basic security hardening...
-[2025-09-24 18:22:25] Setting secure umask in system files...
-[2025-09-24 18:22:27] Setting secure permissions on critical files...
-[2025-09-24 18:22:31] Installing ClamAV antivirus...
-[2025-09-24 18:22:35] Installing rkhunter...
-[2025-09-24 18:22:36] Installing Lynis...
-[2025-09-24 18:22:39] Installing Fail2Ban...
-[2025-09-24 18:22:41] Installing auditd...
-[2025-09-24 18:23:30] Setting up UFW firewall...
-[2025-09-24 18:23:38] Configuring kernel security parameters...
-[2025-09-24 18:23:38] Basic hardening completed successfully!
-
- Module 'hardening' completed
-   - SSH root login disabled
-   - Secure umask configured
-   - Critical file permissions set
-[PASS] module completed successfully
-```
-
-## Integration with HARDN API
-
-The HARDN services provide data to the HARDN API for remote monitoring:
-
-- **Service Status**: `/overwatch/services` endpoint monitors HARDN service health
-- **System Health**: `/overwatch/system` includes security tool status
-- **Command Execution**: `/hardn/execute` allows remote triggering of HARDN commands
-
-## Security Considerations
-
-### Service Isolation
-- HARDN services run with minimal privileges where possible
-- API service uses SSH key authentication
-- Systemd security hardening applied to all services
-
-### Monitoring and Alerting
-- Systemd journaling for comprehensive logging
-- Integration with system audit framework
-- Automatic security tool health checking
-
-### Compliance and Standards
-- STIG-compliant hardening configurations
-- CIS benchmark alignment
-- NIST security control implementation
-- Regular security updates and patches
-
-## Troubleshooting
-
-### Common Issues
-
-**Service won't start:**
-```bash
-# Check service status
-systemctl status hardn.service
-
-# Check logs
-journalctl -u hardn.service -n 50
-```
-
-**Module execution fails:**
-```bash
-# Run with verbose output
-sudo hardn run-module hardening
-
-# Check system resources
-df -h && free -h
-```
-
-### Log Locations
-
-- **System logs**: `/var/log/syslog` or `journalctl`
-- **HARDN logs**: `journalctl -u hardn.service`
-- **API logs**: `journalctl -u hardn-api.service`
-
-## Performance Impact
-
-### Resource Usage
-- **HARDN service**: Minimal (one-time execution)
-- **Security tools**: Variable based on scanning frequency
-- **API service**: Minimal web server load
-
-### Optimization
-- Security scanning can be scheduled during off-hours
-- Memory limits applied to prevent resource exhaustion
-- CPU nice levels for background processing
+---
