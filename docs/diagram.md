@@ -139,7 +139,6 @@ graph TD
 
 ```mermaid
 graph TD
-graph TD
     subgraph Data Sources
         HS[HARDN Service]
         LG[LEGION]
