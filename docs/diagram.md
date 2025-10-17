@@ -175,34 +175,28 @@ graph TD
 
 ```mermaid
 graph TD
-  USR[Users] -->|HTTP| UI[Grafana UI]
+  graph TD
+    U[Users] -->|HTTP| UI[Grafana UI]
 
-  %% ========= CORE =========
-  subgraph GCORE[Grafana Core]
-    direction TB
-    AUTH[Auth Service (OAuth SSO Token)]:::proc
-    DENG[Dashboard Engine]:::proc
-    ARE[Alert Rule Engine]:::proc
-  end
+    subgraph Grafana Core
+        direction TB
+        AUTH[Authentication Service]
+        DASH[Dashboard Engine]
+        ALERT[Alert Rule Engine]
+    end
 
-  UI --> AUTH
-  UI --> DENG
+    UI --> AUTH
+    UI --> DASH
 
-  %% ========= DATA SOURCES =========
-  subgraph GDS[Data Source Proxy]
-    direction TB
-    TS[(Time-Series DB)]:::store
-    LOGS[(Log Store)]:::store
-    HRO[(HARDN Monitor Read-Only)]:::store
-  end
+    subgraph Data Sources
+        TS[(Time-Series Database)]
+        LOG[(Log Store)]
+        RO[(HARDN Monitor Read-Only Data)]
+    end
 
-  DENG -->|queries| TS
-  DENG -->|queries| LOGS
-  DENG -->|queries| HRO
+    DASH --> TS
+    DASH --> LOG
+    DASH --> RO
 
-  ARE -->|notifications| NTF[Notification Channels]:::ext
-
-  classDef proc fill:#f8f9ff,stroke:#5b7fff,color:#173166;
-  classDef store fill:#eef7ff,stroke:#2083c7,color:#0a3a55;
-  classDef ext fill:#fff1f2,stroke:#e11d48,color:#7f1d1d;
+    ALERT --> NTF[Notification Channels]
 ```
