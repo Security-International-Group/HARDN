@@ -6,19 +6,66 @@
 
 ```mermaid
 graph TD
-    A[Client] --> B[LEGION API]
-    B --> C[Monitor Service]
-    C --> D[Logging Service]
-    C --> E[Alert Service]
-    B --> F[Data Processor]
-    F --> G[Database]
-    F --> H[Cache]
-    C --> I[systemd]
-    C --> J[Network Manager]
-    C --> K[systemctl]
-    C --> L[Other Linux Services<br/>(e.g., journald, udev, cron)]
-    B --> M[systemd Commands]
-    B --> N[Network Manager Queries]
+  %% ========= EXTERNAL CLIENTS =========
+  U[Clients] -->|REST or gRPC| API[LEGION API Gateway]
+
+  %% ========= CORE =========
+  subgraph CORE[LEGION Core]
+    direction TB
+    D[LEGION Daemon]:::proc
+    M[Monitor Service]:::proc
+    WQ[Worker Queue]:::store
+    DP[Data Processor]:::proc
+    CFG[Config Loader]:::cfg
+    SEC[Secrets and TLS]:::sec
+    LOG[Logging Service]:::proc
+    ALR[Alert Service]:::proc
+    DB[(Operational DB)]:::store
+    CCH[(Ephemeral Cache)]:::store
+
+    API -->|authz RBAC| D
+    API -->|enqueue jobs| WQ
+    WQ -->|dispatch| DP
+    D -->|load| CFG
+    D -->|certs keys| SEC
+    DP -->|persist| DB
+    DP -->|cache| CCH
+    M --> LOG
+    M --> ALR
+  end
+
+  %% ========= LINUX BACKEND INTEGRATIONS =========
+  subgraph LNX[Linux Backend Services]
+    direction TB
+    SYS[systemd]:::os
+    NMM[NetworkManager]:::os
+    SCT[systemctl CLI]:::os
+    JRN[journald]:::os
+    UDV[udev]:::os
+    CRN[cron]:::os
+  end
+
+  %% ========= TELEMETRY PATHS =========
+  M -. metrics events .-> SYS
+  M -. link metrics .-> NMM
+  M -. logs .-> JRN
+  M -. device events .-> UDV
+  M -. schedule results .-> CRN
+  M -. command results .-> SCT
+
+  %% ========= CONTROL PATHS =========
+  API -->|start stop restart| SYS
+  API -->|apply network cfg| NMM
+  API -->|system control| SCT
+
+  %% ========= ALERTS OUT =========
+  ALR -->|notify| U
+
+  classDef proc fill:#f8f9ff,stroke:#5b7fff,color:#173166;
+  classDef store fill:#eef7ff,stroke:#2083c7,color:#0a3a55;
+  classDef os fill:#fafafa,stroke:#9aa0a6,color:#333,stroke-dasharray:3 3;
+  classDef sec fill:#fff5f5,stroke:#e53e3e,color:#7b1e1e;
+  classDef cfg fill:#f7fee7,stroke:#65a30d,color:#2a3c09;
 ```
 
 ## HARDN
