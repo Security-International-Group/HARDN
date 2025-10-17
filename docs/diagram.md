@@ -175,7 +175,6 @@ graph TD
 
 ```mermaid
 graph TD
-  graph TD
     U[Users] -->|HTTP| UI[Grafana UI]
 
     subgraph Grafana Core
