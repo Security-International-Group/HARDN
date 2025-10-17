@@ -24,6 +24,7 @@ jobs:
         uses: actions/checkout@ff7abcd0c3c05ccf6adc123a8cd1fd4fb30fb493
         with:
           fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: Install build dependencies
         run: |
@@ -206,6 +207,7 @@ jobs:
         uses: actions/checkout@ff7abcd0c3c05ccf6adc123a8cd1fd4fb30fb493
         with:
           fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: Download Debian package artifact
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
@@ -284,6 +286,7 @@ jobs:
         uses: actions/checkout@ff7abcd0c3c05ccf6adc123a8cd1fd4fb30fb493
         with:
           fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: Download Debian package artifact
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
@@ -364,6 +367,7 @@ jobs:
           SIZE=$(du -h "$DEB_FILE" | cut -f1)
           SHA256=$(sha256sum "$DEB_FILE" | awk '{print $1}')
           BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC)')
+          COMMIT_SHA="${{ github.sha }}"
           DOCS_URL="https://github.com/${{ github.repository }}/tree/main/docs"
 
           cat > RELEASE_NOTES.md <<EOF
@@ -371,7 +375,7 @@ jobs:
 
           # HARDN $TAG
 
-          > Automated release generated on $BUILD_DATE.
+          > Automated release generated on $BUILD_DATE from commit $COMMIT_SHA.
 
           ## Package Details
           - **Debian package**: `$DEB_NAME`
@@ -379,6 +383,7 @@ jobs:
           - **Architecture**: `$ARCH`
           - **Size**: `$SIZE`
           - **SHA256**: `$SHA256`
+          - **Commit**: `$COMMIT_SHA`
 
           ---
 
