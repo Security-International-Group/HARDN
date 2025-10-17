@@ -178,7 +178,7 @@ def health_check():
     return {
         "status": "healthy",
         "service": "hardn-api",
-    "version": "1.0.0-1",
+        "version": "1.0.0-1",
         "timestamp": datetime.now().isoformat(),
     }
 
