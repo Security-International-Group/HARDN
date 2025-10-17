@@ -139,42 +139,35 @@ graph TD
 
 ```mermaid
 graph TD
-  %% ========= SOURCES =========
-  subgraph SRC[Data Sources]
-    HS[HARDN Service]:::src
-    LG[LEGION]:::src
-    API[HARDN API]:::src
-    GF[Grafana]:::src
-  end
+graph TD
+    subgraph Data Sources
+        HS[HARDN Service]
+        LG[LEGION]
+        API[HARDN API]
+        GF[Grafana]
+    end
 
-  %% ========= MONITOR =========
-  subgraph MON[HARDN Monitor]
-    direction TB
-    COL[Collectors]:::proc
-    NORM[Data Normalizer]:::proc
-    SCH[Schema Registry]:::proc
-    RODS[(Read-Only Dataset)]:::store
-    EXP[RO Endpoints (REST WS Files)]:::proc
-    LCL[(Local Cache)]:::store
-  end
+    subgraph HARDN Monitor
+        direction TB
+        COL[Collector]
+        NORM[Data Normalizer]
+        SCH[Schema Registry]
+        DS[(Read-Only Dataset)]
+        EXP[Read-Only Endpoints]
+        LCL[(Local Cache)]
+    end
 
-  %% ========= FLOWS =========
-  HS -->|telemetry| COL
-  LG -->|telemetry| COL
-  API -->|status metrics| COL
-  GF -->|dash meta health| COL
+    HS --> COL
+    LG --> COL
+    API --> COL
+    GF --> COL
 
-  COL --> NORM
-  NORM --> SCH
-  NORM --> RODS
-  RODS --> LCL
-  EXP -->|serve RO data| GUI[HARDN GUI]:::ext
-  GUI -. view only .-> RODS
-
-  classDef src fill:#eefaf2,stroke:#2c7a3f,color:#1f4729;
-  classDef proc fill:#f5f3ff,stroke:#7c3aed,color:#3b1e74;
-  classDef store fill:#e5f6ff,stroke:#0369a1,color:#0c4a6e;
-  classDef ext fill:#f3f7ff,stroke:#6b8cff,color:#1a2b6b;
+    COL --> NORM
+    NORM --> SCH
+    NORM --> DS
+    DS --> LCL
+    EXP -->|Read-Only Data| GUI[HARDN GUI]
+    GUI --> DS
 ```
 
 ## Grafana
