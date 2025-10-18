@@ -28,23 +28,23 @@ sudo make build
 sudo make hardn
 ```
 - This launches the service manager automatically and builds the Debian package. 
-- To move forward, use the serivce manager chaoces to launch the hardeing script or other options as needed. 
+- To move forward, use the service manager choices to launch the hardening script or other options as needed. 
 
 ### HARDN Usage
 
-- Upon using the standard `sudo make hardn` the graphic interface SIEM will launch automatically alongside the service manager. 
-- This apoplication provides real-time monitoring of your system's security status and places a local GTK4 Native app within your user environment.
+- Upon using the standard `sudo make hardn` the Security Information and Event Management (SIEM) graphic interface will launch automatically alongside the service manager. 
+- This application provides real-time monitoring of your system's security status and places a local GTK4 Native app within your user environment.
 
 **Service Manager**
 
-- This service manager allows you to manage HARDN services interactively both over CLI and the SIEM.
+- This service manager allows you to manage HARDN services interactively, through both a command line interface (CLI) and the SIEM.
 ```bash
 sudo hardn-service-manager
 ```
 
 - You can launch the module script or launch tools indivually. 
-- There is the ability to launch a security report based on a built in HARDN Compliance meter built in accordance to CIS standards. 
-- The Service Manager is there to monitor, launch and get the needed system data an Administraotr needs in times of monitoring and response. 
+- A security report can be launced based on a built in HARDN Compliance meter; built in accordance to CIS standards (Center for Internet Security). 
+- The Service Manager is there to monitor, launch and get the needed system data an administrator needs in times of monitoring and response. 
 
 ## What HARDN Does
 
