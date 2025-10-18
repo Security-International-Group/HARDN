@@ -33,23 +33,23 @@ sudo make hardn
 ### HARDN Usage
 
 - Upon using the standard `sudo make hardn` the Security Information and Event Management (SIEM) graphic interface will launch automatically alongside the service manager. 
-- This application provides real-time monitoring of your system's security status and places a local GTK4 Native app within your user environment.
+- This application provides real-time monitoring of a system's security status and places a local GTK4 Native app within the user's environment.
 
 **Service Manager**
 
-- This service manager allows you to manage HARDN services interactively, through both a command line interface (CLI) and the SIEM.
+- This service manager allows users to manage HARDN services interactively, through both a command line interface (CLI) and the SIEM.
 ```bash
 sudo hardn-service-manager
 ```
 
-- You can launch the module script or launch tools indivually. 
+- Users can choose to launch HARDN module scripts or run security tools indivually. 
 - A security report can be launced based on a built in HARDN Compliance meter; built in accordance to CIS standards (Center for Internet Security). 
 - The Service Manager is there to monitor, launch and get the needed system data an administrator needs in times of monitoring and response. 
 
 ## What HARDN Does
 
 ### Security Hardening
-Applies comprehensive security configurations to your system with a single command.
+Applies comprehensive security configurations to a system with a single command.
 
 ### Real-Time Monitoring
 Continuous security monitoring through the LEGION daemon, tracking system changes and potential threats.
