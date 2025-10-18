@@ -33,7 +33,7 @@ sudo make hardn
 ### HARDN Usage
 
 - Upon using the standard `sudo make hardn` the Security Information and Event Management (SIEM) graphic interface will launch automatically alongside the service manager. 
-- This application provides real-time monitoring of a system's security status and places a local GTK4 Native app within the user's environment.
+- This application provides real-time monitoring of a system's security status and places a local GTK4 Native app within the user's desktop environment.
 
 **Service Manager**
 
