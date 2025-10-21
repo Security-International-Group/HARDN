@@ -369,11 +369,12 @@ jobs:
           > Automated release generated on $BUILD_DATE.
 
           ## Package Details
-          - **Debian package**: `$DEB_NAME`
-          - **Project version**: `$VERSION`
-          - **Architecture**: `$ARCH`
-          - **Size**: `$SIZE`
-          - **SHA256**: `$SHA256`
+                - **Debian package**: \`$DEB_NAME\`
+                - **Project version**: \`$VERSION\`
+                - **Architecture**: \`$ARCH\`
+                - **Size**: \`$SIZE\`
+                - **SHA256**: \`$SHA256\`
+
 
           ---
 

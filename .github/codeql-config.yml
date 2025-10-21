@@ -4,9 +4,3 @@ queries:
   - exclude:
       problem.severity:
         - warning
-        - recommendation
-paths-ignore:
-  - "**/test/**"
-  - "**/tests/**"
-  - "**/*.test.*"
-  - "**/*.spec.*"
