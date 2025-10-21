@@ -16,7 +16,7 @@ pub mod kernel {
             eprintln!("    {} kernel modules loaded", module_count);
 
             // Check for suspicious modules
-            let suspicious_modules = vec![
+            let suspicious_modules = [
                 "cramfs", "freevxfs", "jffs2", "hfs", "hfsplus", "squashfs", "udf",
             ];
             let mut found_suspicious = Vec::new();

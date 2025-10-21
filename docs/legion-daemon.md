@@ -1,3 +1,4 @@
+![HARDN Logo](docs/assets/IMG_1233.jpeg)
 # HARDN Legion Daemon – Full Architecture (with SQLite Baseline System)
 
 ```mermaid

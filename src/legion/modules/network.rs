@@ -9,14 +9,14 @@ pub mod network {
         eprintln!("  Checking listening network sockets...");
 
         // Check listening ports
-        if let Ok(output) = Command::new("ss").args(&["-lntup", "--no-header"]).output() {
+    if let Ok(output) = Command::new("ss").args(["-lntup", "--no-header"]).output() {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let listening_count = output_str.lines().count();
 
             eprintln!("    {} listening sockets found", listening_count);
 
             // Check for suspicious ports
-            let suspicious_ports = vec![23, 21, 25, 53, 139, 445]; // telnet, ftp, smtp, dns, samba
+            let suspicious_ports = [23, 21, 25, 53, 139, 445]; // telnet, ftp, smtp, dns, samba
             let mut found_suspicious = Vec::new();
 
             for line in output_str.lines() {
@@ -60,7 +60,7 @@ pub mod network {
         }
 
         // Check iptables rules
-        if let Ok(output) = Command::new("iptables").args(&["-L", "-n"]).output() {
+    if let Ok(output) = Command::new("iptables").args(["-L", "-n"]).output() {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let rule_count = output_str
                 .lines()

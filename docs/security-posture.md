@@ -1,3 +1,4 @@
+![HARDN Logo](docs/assets/IMG_1233.jpeg)
 # HARDN Security Posture Overview
 
 ## Purpose
