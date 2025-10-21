@@ -86,6 +86,12 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install Rust system dependencies
+        if: matrix.language == 'rust'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libglib2.0-dev libgtk-4-dev libvte-2.91-gtk4-dev libssl-dev pkg-config
+
       - name: Run cargo clippy
         if: matrix.language == 'rust'
         run: cargo clippy --all-targets --all-features -- -D warnings
