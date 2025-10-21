@@ -1,0 +1,30 @@
+name: Generate GitHub Metrics
+
+on:
+  schedule: [{cron: "0 */12 * * *"}]  # every 12 hours
+  workflow_dispatch:
+
+permissions:
+  contents: read           # to read repo’s metadata (stars, commits, etc.)
+  actions: read            # to read Actions usage data 
+  issues: read             # to show issue stats
+  pull-requests: read      # to show PR stats
+
+jobs:
+  github-metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate metrics
+        uses: lowlighter/metrics@latest
+        with:
+          token: ${{ secrets.METRICS_TOKEN }}
+
+          # Base sections
+          base: header, repositories, activity
+
+          # Plugins
+          plugin_achievements: yes
+          plugin_achievements_display: detailed
+          plugin_activity: yes
+          plugin_contributors: yes
+          plugin_repositories: yes
