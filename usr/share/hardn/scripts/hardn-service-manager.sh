@@ -693,13 +693,17 @@ manage_services_menu() {
                 echo "1) hardn.service"
                 echo "2) hardn-api.service"
                 echo "3) legion-daemon.service"
-                read -p "Select [1-3]: " svc_num || { echo; continue; }
+                echo "0) Back to Previous Menu"
+                read -p "Select [0-3]: " svc_num || { echo; continue; }
 
                 local selected_service=""
                 case $svc_num in
                     1) selected_service="hardn.service" ;;
                     2) selected_service="hardn-api.service" ;;
                     3) selected_service="legion-daemon.service" ;;
+                    0)
+                        continue
+                        ;;
                 *) 
                         print_colored "$RED" "Invalid selection!"
                         sleep 1
@@ -714,7 +718,8 @@ manage_services_menu() {
                 echo "4) Enable"
                 echo "5) Disable"
                 echo "6) Status"
-                read -p "Select [1-6]: " action_num || { echo; continue; }
+                echo "0) Back to Previous Menu"
+                read -p "Select [0-6]: " action_num || { echo; continue; }
                 
                 case $action_num in
                     1) manage_service "$selected_service" "start" ;;
@@ -722,8 +727,13 @@ manage_services_menu() {
                     3) manage_service "$selected_service" "restart" ;;
                     4) manage_service "$selected_service" "enable" ;;
                     5) manage_service "$selected_service" "disable" ;;
-                    6) 
-                        systemctl status "$selected_service" --no-pager
+                    6)
+                        if ! systemctl status "$selected_service" --no-pager; then
+                            print_colored "$YELLOW" "Service '$selected_service' is inactive or disabled."
+                        fi
+                        ;;
+                    0)
+                        continue
                         ;;
                     *)
                         print_colored "$RED" "Invalid action!"
@@ -742,8 +752,9 @@ manage_services_menu() {
                 echo "4) Critical Errors Only"
                 echo "5) Performance Metrics"
                 echo "6) Custom journalctl command"
+                echo "0) Back to Previous Menu"
                 echo -e "${YELLOW}Note: Use Ctrl+C to exit live/following modes${NC}"
-                read -p $'\nSelect [1-6]: ' log_choice || { echo; continue; }
+                read -p $'\nSelect [0-6]: ' log_choice || { echo; continue; }
                 
                 case $log_choice in
                     1)
@@ -763,24 +774,36 @@ manage_services_menu() {
                         echo "2) hardn-api.service (REST API Server)"
                         echo "3) legion-daemon.service (LEGION Monitoring Daemon)"
                         echo "4) hardn-monitor.service (Centralized Monitoring)"
-                        read -p "Select [1-4]: " service_choice || { echo; continue; }
+                        echo "0) Back to Previous Menu"
+                        read -p "Select [0-4]: " service_choice || { echo; continue; }
                         
                         case $service_choice in
-                            1) 
+                            1)
                                 echo -e "\n${BOLD}HARDN Security Monitoring Service Logs${NC}"
-                                journalctl -u hardn.service -n 100 --no-pager -o short-iso
+                                if ! journalctl -u hardn.service -n 100 --no-pager -o short-iso; then
+                                    print_colored "$YELLOW" "No logs available for hardn.service (inactive or never started)."
+                                fi
                                 ;;
                             2)
                                 echo -e "\n${BOLD}HARDN API Service Logs${NC}"
-                                journalctl -u hardn-api.service -n 100 --no-pager -o short-iso
+                                if ! journalctl -u hardn-api.service -n 100 --no-pager -o short-iso; then
+                                    print_colored "$YELLOW" "No logs available for hardn-api.service (inactive or never started)."
+                                fi
                                 ;;
                             3)
                                 echo -e "\n${BOLD}LEGION Monitoring Daemon Logs${NC}"
-                                journalctl -u legion-daemon.service -n 100 --no-pager -o short-iso
+                                if ! journalctl -u legion-daemon.service -n 100 --no-pager -o short-iso; then
+                                    print_colored "$YELLOW" "No logs available for legion-daemon.service (inactive or never started)."
+                                fi
                                 ;;
                             4)
                                 echo -e "\n${BOLD}HARDN Monitor Service Logs${NC}"
-                                journalctl -u hardn-monitor.service -n 100 --no-pager -o short-iso
+                                if ! journalctl -u hardn-monitor.service -n 100 --no-pager -o short-iso; then
+                                    print_colored "$YELLOW" "No logs available for hardn-monitor.service (inactive or never started)."
+                                fi
+                                ;;
+                            0)
+                                continue
                                 ;;
                             *) print_colored "$RED" "Invalid service selection!" ;;
                         esac
@@ -814,6 +837,9 @@ manage_services_menu() {
                         else
                             print_colored "$YELLOW" "No arguments provided, skipping..."
                         fi
+                        ;;
+                    0)
+                        continue
                         ;;
                     *) print_colored "$RED" "Invalid log viewing option!" ;;
                 esac
