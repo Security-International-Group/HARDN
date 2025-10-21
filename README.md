@@ -1,5 +1,4 @@
 ![HARDN Logo](docs/assets/IMG_1233.jpeg)
-
 # HARDN
 **Linux Security Hardening and Extended Detection Response**
 
@@ -103,3 +102,10 @@ This is a demonstration version with core security features. For enterprise secu
 ## License
 
 MIT License - See LICENSE file for details
+
+
+# Metrics
+
+![GitHub Metrics](.github/metrics.svg)
+
+
