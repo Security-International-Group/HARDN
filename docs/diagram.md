@@ -6,19 +6,66 @@
 
 ```mermaid
 graph TD
-    A[Client] --> B[LEGION API]
-    B --> C[Monitor Service]
-    C --> D[Logging Service]
-    C --> E[Alert Service]
-    B --> F[Data Processor]
-    F --> G[Database]
-    F --> H[Cache]
-    C --> I[systemd]
-    C --> J[Network Manager]
-    C --> K[systemctl]
-    C --> L[Other Linux Services<br/>(e.g., journald, udev, cron)]
-    B --> M[systemd Commands]
-    B --> N[Network Manager Queries]
+  %% ========= EXTERNAL CLIENTS =========
+  U[Clients] -->|REST or gRPC| API[LEGION API Gateway]
+
+  %% ========= CORE =========
+  subgraph CORE[LEGION Core]
+    direction TB
+    D[LEGION Daemon]:::proc
+    M[Monitor Service]:::proc
+    WQ[Worker Queue]:::store
+    DP[Data Processor]:::proc
+    CFG[Config Loader]:::cfg
+    SEC[Secrets and TLS]:::sec
+    LOG[Logging Service]:::proc
+    ALR[Alert Service]:::proc
+    DB[(Operational DB)]:::store
+    CCH[(Ephemeral Cache)]:::store
+
+    API -->|authz RBAC| D
+    API -->|enqueue jobs| WQ
+    WQ -->|dispatch| DP
+    D -->|load| CFG
+    D -->|certs keys| SEC
+    DP -->|persist| DB
+    DP -->|cache| CCH
+    M --> LOG
+    M --> ALR
+  end
+
+  %% ========= LINUX BACKEND INTEGRATIONS =========
+  subgraph LNX[Linux Backend Services]
+    direction TB
+    SYS[systemd]:::os
+    NMM[NetworkManager]:::os
+    SCT[systemctl CLI]:::os
+    JRN[journald]:::os
+    UDV[udev]:::os
+    CRN[cron]:::os
+  end
+
+  %% ========= TELEMETRY PATHS =========
+  M -. metrics events .-> SYS
+  M -. link metrics .-> NMM
+  M -. logs .-> JRN
+  M -. device events .-> UDV
+  M -. schedule results .-> CRN
+  M -. command results .-> SCT
+
+  %% ========= CONTROL PATHS =========
+  API -->|start stop restart| SYS
+  API -->|apply network cfg| NMM
+  API -->|system control| SCT
+
+  %% ========= ALERTS OUT =========
+  ALR -->|notify| U
+
+  classDef proc fill:#f8f9ff,stroke:#5b7fff,color:#173166;
+  classDef store fill:#eef7ff,stroke:#2083c7,color:#0a3a55;
+  classDef os fill:#fafafa,stroke:#9aa0a6,color:#333,stroke-dasharray:3 3;
+  classDef sec fill:#fff5f5,stroke:#e53e3e,color:#7b1e1e;
+  classDef cfg fill:#f7fee7,stroke:#65a30d,color:#2a3c09;
 ```
 
 ## HARDN
@@ -27,19 +74,63 @@ graph TD
 
 ```mermaid
 graph TD
-    A[Client] --> B[HARDN API]
-    B --> C[Monitor Service]
-    C --> D[Logging Service]
-    C --> E[Alert Service]
-    B --> F[Data Processor]
-    F --> G[Database]
-    F --> H[Cache]
-    C --> I[systemd]
-    C --> J[Network Manager]
-    C --> K[systemctl]
-    C --> L[Other Linux Services<br/>(e.g., journald, udev, cron)]
-    B --> M[systemd Commands]
-    B --> N[Network Manager Queries]
+  CL[Clients] -->|REST or CLI| HAPI[HARDN API Gateway]
+
+  %% ========= HARDN CORE =========
+  subgraph HCORE[HARDN Core]
+    direction TB
+    HD[HARDN Daemon]:::proc
+    HM[Monitor Service]:::proc
+    HLOG[Logging Service]:::proc
+    HALR[Alert Service]:::proc
+    HP[Data Processor]:::proc
+    HDB[(HARDN DB)]:::store
+    HC[(Cache)]:::store
+    HCFG[Config Loader]:::cfg
+    HSEC[Secrets and TLS]:::sec
+
+    HAPI -->|RBAC| HD
+    HAPI --> HP
+    HP --> HDB
+    HP --> HC
+    HM --> HLOG
+    HM --> HALR
+    HD -->|load| HCFG
+    HD -->|certs keys| HSEC
+  end
+
+  %% ========= LINUX BACKEND =========
+  subgraph HLNX[Linux Backend Services]
+    direction TB
+    HSYS[systemd]:::os
+    HNMM[NetworkManager]:::os
+    HSCT[systemctl CLI]:::os
+    HJRN[journald]:::os
+    HUDV[udev]:::os
+    HCRN[cron]:::os
+  end
+
+  %% ========= TELEMETRY =========
+  HM -. metrics events .-> HSYS
+  HM -. link metrics .-> HNMM
+  HM -. logs .-> HJRN
+  HM -. device events .-> HUDV
+  HM -. schedule results .-> HCRN
+  HM -. command results .-> HSCT
+
+  %% ========= CONTROL =========
+  HAPI -->|service lifecycle| HSYS
+  HAPI -->|network query cfg| HNMM
+  HAPI -->|system control| HSCT
+
+  %% ========= ALERTS OUT =========
+  HALR -->|notify| CL
+
+  classDef proc fill:#f8f9ff,stroke:#5b7fff,color:#173166;
+  classDef store fill:#eef7ff,stroke:#2083c7,color:#0a3a55;
+  classDef os fill:#fafafa,stroke:#9aa0a6,color:#333,stroke-dasharray:3 3;
+  classDef sec fill:#fff5f5,stroke:#e53e3e,color:#7b1e1e;
+  classDef cfg fill:#f7fee7,stroke:#65a30d,color:#2a3c09;
 ```
 
 ## HARDN Monitor
@@ -48,13 +139,34 @@ graph TD
 
 ```mermaid
 graph TD
-    A[HARDN Service] --> E[HARDN Monitor]
-    B[LEGION] --> E
-    C[HARDN API] --> E
-    D[Grafana] --> E
-    E --> F[Data Normalizer]
-    F --> G[Read-Only Dataset]
-    G --> H[HARDN GUI]
+    subgraph Data Sources
+        HS[HARDN Service]
+        LG[LEGION]
+        API[HARDN API]
+        GF[Grafana]
+    end
+
+    subgraph HARDN Monitor
+        direction TB
+        COL[Collector]
+        NORM[Data Normalizer]
+        SCH[Schema Registry]
+        DS[(Read-Only Dataset)]
+        EXP[Read-Only Endpoints]
+        LCL[(Local Cache)]
+    end
+
+    HS --> COL
+    LG --> COL
+    API --> COL
+    GF --> COL
+
+    COL --> NORM
+    NORM --> SCH
+    NORM --> DS
+    DS --> LCL
+    EXP -->|Read-Only Data| GUI[HARDN GUI]
+    GUI --> DS
 ```
 
 ## Grafana
@@ -63,12 +175,27 @@ graph TD
 
 ```mermaid
 graph TD
-    A[Users] --> B[Grafana UI]
-    B --> C[Auth Service]
-    B --> D[Dashboard Engine]
-    D --> E[Data Source Proxy]
-    E --> F[Time-Series DB]
-    E --> G[Log Store]
-    D --> H[Alert Rule Engine]
-    H --> I[Notification Channels]
+    U[Users] -->|HTTP| UI[Grafana UI]
+
+    subgraph Grafana Core
+        direction TB
+        AUTH[Authentication Service]
+        DASH[Dashboard Engine]
+        ALERT[Alert Rule Engine]
+    end
+
+    UI --> AUTH
+    UI --> DASH
+
+    subgraph Data Sources
+        TS[(Time-Series Database)]
+        LOG[(Log Store)]
+        RO[(HARDN Monitor Read-Only Data)]
+    end
+
+    DASH --> TS
+    DASH --> LOG
+    DASH --> RO
+
+    ALERT --> NTF[Notification Channels]
 ```

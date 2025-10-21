@@ -79,14 +79,6 @@ curl -H "Authorization: Bearer $SSH_KEY" http://localhost:8000/overwatch/system 
 - `GET /hardn/status` - HARDN service status
 - `GET /legion/status` - Legion daemon status
 
-### LEGION Operations
-- `POST /legion/scan` - Run Legion security scan with options
-- `POST /legion/baseline` - Create new Legion system baseline
-- `GET /legion/logs` - Get recent Legion daemon logs
-
-### Command Execution
-- `POST /hardn/execute` - Execute limited HARDN commands (admin only)
-
 ### Diagnostics
 - `GET /diagnostics/full` - Full system diagnostics and information
 
@@ -141,24 +133,6 @@ curl -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" http://localhost:8000/overwa
 
 # Monitor CPU/memory usage
 curl -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" http://localhost:8000/overwatch/system | jq '.system_health.cpu_percent, .system_health.memory.percent'
-```
-
-### LEGION Operations
-
-```bash
-# Run Legion security scan
-curl -X POST -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"verbose": true, "json": true}' \
-  http://localhost:8000/legion/scan
-
-# Create Legion baseline
-curl -X POST -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" \
-  http://localhost:8000/legion/baseline
-
-# Get Legion logs
-curl -H "Authorization: Bearer YOUR_SSH_PUBLIC_KEY" \
-  "http://localhost:8000/legion/logs?lines=100"
 ```
 
 ### Service Management
