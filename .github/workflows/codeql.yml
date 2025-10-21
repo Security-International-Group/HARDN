@@ -11,6 +11,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  VERSION_COMMIT_SHA: ${{ github.sha }}
 
 permissions:
   contents: read
@@ -24,9 +25,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       security-events: write
-      packages: read
+      packages: write
       actions: read
-      contents: read
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -55,7 +56,17 @@ jobs:
           components: rustfmt, clippy
 
       - name: Install GLib dependencies
-        run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev pkg-config pkg-config libgtk-4-dev libglib2.0-dev libvte-2.91-gtk4-dev libssl-dev cargo rustc 
+        if: matrix.language == 'rust'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            libsqlite3-dev \
+            libglib2.0-dev \
+            libgtk-4-dev \
+            libvte-2.91-gtk4-dev
 
       - name: Build Rust project
         if: matrix.language == 'rust'

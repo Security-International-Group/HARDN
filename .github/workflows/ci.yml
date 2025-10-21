@@ -24,6 +24,7 @@ jobs:
         uses: actions/checkout@ff7abcd0c3c05ccf6adc123a8cd1fd4fb30fb493
         with:
           fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: Install build dependencies
         run: |
@@ -78,6 +79,11 @@ jobs:
           test -f target/release/hardn || { echo "hardn binary not found"; exit 1; }
           test -f target/release/hardn-monitor || { echo "hardn-monitor binary not found"; exit 1; }
           test -f target/release/hardn-gui || { echo "hardn-gui binary not found"; exit 1; }
+
+      - name: Prepare baseline directories for tests
+        run: |
+          sudo mkdir -p /var/lib/hardn/baselines
+          sudo chown "$USER":"$USER" /var/lib/hardn /var/lib/hardn/baselines
 
       - name: Run Rust tests
         run: cargo test --all --all-features --verbose
@@ -201,6 +207,7 @@ jobs:
         uses: actions/checkout@ff7abcd0c3c05ccf6adc123a8cd1fd4fb30fb493
         with:
           fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: Download Debian package artifact
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
@@ -279,6 +286,7 @@ jobs:
         uses: actions/checkout@ff7abcd0c3c05ccf6adc123a8cd1fd4fb30fb493
         with:
           fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: Download Debian package artifact
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
@@ -346,7 +354,7 @@ jobs:
             git tag "$NEW_TAG"
             git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/Security-International-Group/HARDN.git "$NEW_TAG"
           fi
-          
+
       - name: Generate release notes
         id: notes
         run: |
@@ -359,6 +367,7 @@ jobs:
           SIZE=$(du -h "$DEB_FILE" | cut -f1)
           SHA256=$(sha256sum "$DEB_FILE" | awk '{print $1}')
           BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC)')
+          COMMIT_SHA="${{ github.sha }}"
           DOCS_URL="https://github.com/${{ github.repository }}/tree/main/docs"
 
           cat > RELEASE_NOTES.md <<EOF
@@ -366,7 +375,7 @@ jobs:
 
           # HARDN $TAG
 
-          > Automated release generated on $BUILD_DATE.
+          > Automated release generated on $BUILD_DATE from commit $COMMIT_SHA.
 
           ## Package Details
                 - **Debian package**: \`$DEB_NAME\`

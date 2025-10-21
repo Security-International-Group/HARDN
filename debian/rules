@@ -4,6 +4,13 @@
 binary:
 	dh binary --buildsystem=none
 
+override_dh_auto_build:
+	# Build Rust binaries
+	cargo build --release --quiet
+	# Build the compliance auditor
+	mkdir -p target/release
+	cc -std=c11 -O2 -Wall -Wextra -pedantic src/audit/hardn_audit.c -o target/release/hardn-audit
+
 override_dh_auto_install:
 	# Install the main binary
 	install -D -m 755 target/release/hardn debian/hardn/usr/bin/hardn

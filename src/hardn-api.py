@@ -1,13 +1,12 @@
-from fastapi import FastAPI, HTTPException, Depends, Header, Request
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import subprocess
-import json
 import psutil
 import os
 import time
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -179,7 +178,7 @@ def health_check():
     return {
         "status": "healthy",
         "service": "hardn-api",
-    "version": "1.0.0-1",
+        "version": "1.0.0-1",
         "timestamp": datetime.now().isoformat(),
     }
 
