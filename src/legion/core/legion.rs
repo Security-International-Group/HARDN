@@ -33,10 +33,10 @@ use crate::legion::modules::risk_scoring::{
     BaselineDriftSummary, RiskScore, RiskScoringManager, ScriptResult, ScriptStatus,
     SecurityPlatformStatus, SystemState, ThreatIndicator as RiskThreatIndicator,
 };
-use crate::legion::modules::services::services as services_mod;
+use crate::legion::modules::services as services_mod;
 use crate::legion::modules::threat_intel::{SecurityIndicator, Severity, ThreatIntelManager};
-use crate::legion::modules::usb::usb as usb_mod;
-use crate::legion::modules::vulnerabilities::vulnerabilities as vulnerabilities_mod;
+use crate::legion::modules::usb as usb_mod;
+use crate::legion::modules::vulnerabilities as vulnerabilities_mod;
 use chrono::{DateTime, Utc};
 use clap::{Arg, Command as ClapCommand};
 use comfy_table::{presets::UTF8_FULL_CONDENSED, Attribute, Cell, Color, Table};
