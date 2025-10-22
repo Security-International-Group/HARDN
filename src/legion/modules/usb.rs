@@ -1,4 +1,4 @@
-use super::*;
+use crate::legion::safe_println;
 use std::process::Command;
 
 /// USB device and peripheral monitoring utilities
