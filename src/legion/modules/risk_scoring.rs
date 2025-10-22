@@ -648,47 +648,36 @@ impl RiskScoringEngine {
         for (component_name, adjustment) in adjustments {
             match component_name {
                 "anomaly" => {
-                    self.weights.anomaly_weight = (self.weights.anomaly_weight + adjustment)
-                        .max(0.01)
-                        .min(0.5)
+                    self.weights.anomaly_weight =
+                        (self.weights.anomaly_weight + adjustment).clamp(0.01, 0.5)
                 }
                 "threat_intel" => {
-                    self.weights.threat_intel_weight = (self.weights.threat_intel_weight
-                        + adjustment)
-                        .max(0.01)
-                        .min(0.5)
+                    self.weights.threat_intel_weight =
+                        (self.weights.threat_intel_weight + adjustment).clamp(0.01, 0.5)
                 }
                 "behavioral" => {
-                    self.weights.behavioral_weight = (self.weights.behavioral_weight + adjustment)
-                        .max(0.01)
-                        .min(0.5)
+                    self.weights.behavioral_weight =
+                        (self.weights.behavioral_weight + adjustment).clamp(0.01, 0.5)
                 }
                 "network" => {
-                    self.weights.network_weight = (self.weights.network_weight + adjustment)
-                        .max(0.01)
-                        .min(0.5)
+                    self.weights.network_weight =
+                        (self.weights.network_weight + adjustment).clamp(0.01, 0.5)
                 }
                 "process" => {
-                    self.weights.process_weight = (self.weights.process_weight + adjustment)
-                        .max(0.01)
-                        .min(0.5)
+                    self.weights.process_weight =
+                        (self.weights.process_weight + adjustment).clamp(0.01, 0.5)
                 }
                 "file_integrity" => {
-                    self.weights.file_integrity_weight = (self.weights.file_integrity_weight
-                        + adjustment)
-                        .max(0.01)
-                        .min(0.5)
+                    self.weights.file_integrity_weight =
+                        (self.weights.file_integrity_weight + adjustment).clamp(0.01, 0.5)
                 }
                 "system_health" => {
-                    self.weights.system_health_weight = (self.weights.system_health_weight
-                        + adjustment)
-                        .max(0.01)
-                        .min(0.5)
+                    self.weights.system_health_weight =
+                        (self.weights.system_health_weight + adjustment).clamp(0.01, 0.5)
                 }
                 "temporal" => {
-                    self.weights.temporal_weight = (self.weights.temporal_weight + adjustment)
-                        .max(0.01)
-                        .min(0.5)
+                    self.weights.temporal_weight =
+                        (self.weights.temporal_weight + adjustment).clamp(0.01, 0.5)
                 }
                 _ => {}
             }

@@ -316,7 +316,7 @@ impl Baseline {
     fn capture_packages() -> Result<HashMap<String, PackageInfo>, Box<dyn std::error::Error>> {
         // Try to use dpkg-query to get installed packages on Debian-based systems
         let output = std::process::Command::new("dpkg-query")
-            .args(&["-W", "-f=${Package}\t${Version}\t${Status}\n"])
+            .args(["-W", "-f=${Package}\t${Version}\t${Status}\n"])
             .output()?;
 
         if !output.status.success() {
@@ -443,7 +443,7 @@ impl Baseline {
                 // Try to get IPv4/IPv6 addresses from /proc/net/f or /proc/net/if_inet6
                 // For simplicity, just use `ip addr show` if available
                 let output = std::process::Command::new("ip")
-                    .args(&["addr", "show", &name])
+                    .args(["addr", "show", &name])
                     .output();
 
                 if let Ok(output) = output {
@@ -476,11 +476,11 @@ impl Baseline {
         let mut listening_ports = Vec::new();
         // Use `ss` if available, fallback to `netstat`
         let output = std::process::Command::new("ss")
-            .args(&["-tulnp"])
+            .args(["-tulnp"])
             .output()
             .or_else(|_| {
                 std::process::Command::new("netstat")
-                    .args(&["-tulnp"])
+                    .args(["-tulnp"])
                     .output()
             });
 

@@ -27,7 +27,7 @@ fn log_message(level: &str, message: &str) {
 
 fn check_service_status(service: &str) -> Result<String, std::io::Error> {
     let output = Command::new("systemctl")
-        .args(&["is-active", "--quiet", service])
+        .args(["is-active", "--quiet", service])
         .output()?;
 
     if output.status.success() {
@@ -44,7 +44,7 @@ fn restart_service(service: &str) -> Result<(), std::io::Error> {
     );
 
     let output = Command::new("systemctl")
-        .args(&["restart", service])
+        .args(["restart", service])
         .output()?;
 
     if output.status.success() {
@@ -332,7 +332,7 @@ fn monitor_services() {
 fn check_api_health() -> Result<(), std::io::Error> {
     // Simple health check for the API
     let output = Command::new("curl")
-        .args(&["-s", "--max-time", "5", "http://localhost:8000/health"])
+        .args(["-s", "--max-time", "5", "http://localhost:8000/health"])
         .output();
 
     match output {
@@ -473,7 +473,7 @@ fn log_metrics_from_api() {
         }
     }
     args.push(api.into());
-    let output = Command::new("curl").args(&args).output();
+    let output = Command::new("curl").args(args).output();
 
     let mut logged = false;
 
@@ -542,7 +542,7 @@ fn log_metrics_from_api() {
 fn log_database_metrics() {
     // Query journalctl for recent LEGION SUMMARY lines to extract database metrics
     let output = Command::new("journalctl")
-        .args(&["-u", "legion-daemon", "-n", "10", "-o", "cat", "--no-pager"])
+        .args(["-u", "legion-daemon", "-n", "10", "-o", "cat", "--no-pager"])
         .output();
 
     if let Ok(result) = output {

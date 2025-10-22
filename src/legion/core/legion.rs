@@ -1482,7 +1482,7 @@ impl Legion {
 
         // Check for recent SSH authentication failures
         let output = std::process::Command::new("journalctl")
-            .args(&["-u", "sshd", "--since", "1 hour ago", "-p", "warning..err"])
+            .args(["-u", "sshd", "--since", "1 hour ago", "-p", "warning..err"])
             .output()?;
 
         let output_str = String::from_utf8(output.stdout)?;
@@ -1533,7 +1533,7 @@ impl Legion {
 
         // Check for SUID/SGID files
         let output = std::process::Command::new("find")
-            .args(&["/", "-type", "f", "-perm", "/6000", "-ls"])
+            .args(["/", "-type", "f", "-perm", "/6000", "-ls"])
             .output()?;
 
         let output_str = String::from_utf8(output.stdout)?;
@@ -1575,7 +1575,7 @@ impl Legion {
 
         // Check sysctl parameters
         let sysctl_output = std::process::Command::new("sysctl")
-            .args(&["kernel.kptr_restrict"])
+            .args(["kernel.kptr_restrict"])
             .output()?;
         let sysctl_str = String::from_utf8(sysctl_output.stdout)?;
         if sysctl_str.contains("kernel.kptr_restrict = 1") {
@@ -1593,7 +1593,7 @@ impl Legion {
         let docker_result = std::process::Command::new("which").arg("docker").output()?;
         if docker_result.status.success() {
             let docker_ps = std::process::Command::new("docker")
-                .args(&["ps", "-q"])
+                .args(["ps", "-q"])
                 .output()?;
             let container_count = String::from_utf8(docker_ps.stdout)?.lines().count();
             safe_println!("    {} Docker containers running", container_count);
@@ -2415,7 +2415,7 @@ impl Legion {
 
         // Get process list
         let output = tokio::process::Command::new("ps")
-            .args(&["-eo", "pid,ppid,cmd"])
+            .args(["-eo", "pid,ppid,cmd"])
             .output()
             .await?;
 
@@ -2448,7 +2448,7 @@ impl Legion {
 
         // Get network connections
         let output = tokio::process::Command::new("netstat")
-            .args(&["-tuln"])
+            .args(["-tuln"])
             .output()
             .await?;
 
@@ -2492,19 +2492,19 @@ impl Legion {
 
         for (name, unit) in platforms {
             let active = Command::new("systemctl")
-                .args(&["is-active", unit])
+                .args(["is-active", unit])
                 .output()
                 .map(|output| output.status.success())
                 .unwrap_or(false);
 
             let enabled = Command::new("systemctl")
-                .args(&["is-enabled", unit])
+                .args(["is-enabled", unit])
                 .output()
                 .map(|output| output.status.success())
                 .unwrap_or(false);
 
             let journal_output = Command::new("journalctl")
-                .args(&[
+                .args([
                     "-u",
                     unit,
                     "--since",
@@ -3092,7 +3092,7 @@ impl Legion {
         sender: mpsc::UnboundedSender<SecurityEvent>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut cmd = tokio::process::Command::new("journalctl")
-            .args(&["--follow", "--lines", "0", "-t", "kernel", "-t", "systemd"])
+            .args(["--follow", "--lines", "0", "-t", "kernel", "-t", "systemd"])
             .stdout(std::process::Stdio::piped())
             .spawn()?;
 
@@ -3126,7 +3126,7 @@ impl Legion {
             });
 
             let output = tokio::process::Command::new("ss")
-                .args(&["-tunaH"])
+                .args(["-tunaH"])
                 .output()
                 .await;
 
@@ -3238,7 +3238,7 @@ impl Legion {
         loop {
             // Check for suspicious processes
             let output = tokio::process::Command::new("ps")
-                .args(&["-eo", "pid,ppid,cmd"])
+                .args(["-eo", "pid,ppid,cmd"])
                 .output()
                 .await?;
 

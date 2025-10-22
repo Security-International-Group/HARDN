@@ -573,10 +573,10 @@ fn run_everything() -> i32 {
 /// This is a critical safety feature to prevent accidental network isolation during automated runs
 fn sandbox_on() -> i32 {
     println!("\n╔═══════════════════════════════════════╗");
-    println!("║         ENABLING SANDBOX MODE          ║");
+    println!("║         ENABLING SANDBOX MODE         ║");
     println!("╚═══════════════════════════════════════╝\n");
     
-    log_message(LogLevel::Warning, "⚠️  SANDBOX MODE - Manual activation only");
+    log_message(LogLevel::Warning, "  SANDBOX MODE - Manual activation only");
     log_message(LogLevel::Warning, "This command must be run independently");
     log_message(LogLevel::Warning, "Activating network isolation...");
     
@@ -602,7 +602,7 @@ fn sandbox_on() -> i32 {
     
     // Backup current network interfaces state
     let _ = Command::new("ip")
-        .args(&["addr", "show"])
+        .args(["addr", "show"])
         .output()
         .and_then(|output| {
             fs::write(format!("{}/network-interfaces.txt", backup_dir), output.stdout)
@@ -620,7 +620,7 @@ fn sandbox_on() -> i32 {
     
     for (chain, policy) in policies {
         match Command::new("iptables")
-            .args(&["-P", chain, policy])
+            .args(["-P", chain, policy])
             .status()
         {
             Ok(status) if status.success() => {
@@ -641,13 +641,13 @@ fn sandbox_on() -> i32 {
     
     for rule in loopback_rules {
         let _ = Command::new("iptables")
-            .args(&rule)
+            .args(rule)
             .status();
     }
     
     // Disable all network interfaces except loopback
     let interfaces_output = Command::new("ip")
-        .args(&["link", "show"])
+        .args(["link", "show"])
         .output();
     
     if let Ok(output) = interfaces_output {
@@ -657,7 +657,7 @@ fn sandbox_on() -> i32 {
                 let iface = iface_name.trim();
                 if iface != "lo" && !iface.starts_with("@") {
                     match Command::new("ip")
-                        .args(&["link", "set", iface, "down"])
+                        .args(["link", "set", iface, "down"])
                         .status()
                     {
                         Ok(status) if status.success() => {
@@ -789,24 +789,24 @@ fn sandbox_off() -> i32 {
                 success = false;
                 
                 // Fallback: set default ACCEPT policies
-                let _ = Command::new("iptables").args(&["-P", "INPUT", "ACCEPT"]).status();
-                let _ = Command::new("iptables").args(&["-P", "OUTPUT", "ACCEPT"]).status();
-                let _ = Command::new("iptables").args(&["-P", "FORWARD", "ACCEPT"]).status();
-                let _ = Command::new("iptables").args(&["-F"]).status();
+                let _ = Command::new("iptables").args(["-P", "INPUT", "ACCEPT"]).status();
+                let _ = Command::new("iptables").args(["-P", "OUTPUT", "ACCEPT"]).status();
+                let _ = Command::new("iptables").args(["-P", "FORWARD", "ACCEPT"]).status();
+                let _ = Command::new("iptables").args(["-F"]).status();
             }
         }
     } else {
         // No backup found, set permissive defaults
         log_message(LogLevel::Warning, "No firewall backup found, setting default policies");
-        let _ = Command::new("iptables").args(&["-P", "INPUT", "ACCEPT"]).status();
-        let _ = Command::new("iptables").args(&["-P", "OUTPUT", "ACCEPT"]).status();
-        let _ = Command::new("iptables").args(&["-P", "FORWARD", "DROP"]).status();
-        let _ = Command::new("iptables").args(&["-F"]).status();
+    let _ = Command::new("iptables").args(["-P", "INPUT", "ACCEPT"]).status();
+    let _ = Command::new("iptables").args(["-P", "OUTPUT", "ACCEPT"]).status();
+    let _ = Command::new("iptables").args(["-P", "FORWARD", "DROP"]).status();
+    let _ = Command::new("iptables").args(["-F"]).status();
     }
     
     // Re-enable network interfaces
     let interfaces_output = Command::new("ip")
-        .args(&["link", "show"])
+        .args(["link", "show"])
         .output();
     
     if let Ok(output) = interfaces_output {
@@ -816,7 +816,7 @@ fn sandbox_off() -> i32 {
                 let iface = iface_name.trim();
                 if iface != "lo" && !iface.starts_with("@") && !iface.starts_with("veth") {
                     match Command::new("ip")
-                        .args(&["link", "set", iface, "up"])
+                        .args(["link", "set", iface, "up"])
                         .status()
                     {
                         Ok(status) if status.success() => {
@@ -833,7 +833,7 @@ fn sandbox_off() -> i32 {
     
     // Restart networking service
     let _ = Command::new("systemctl")
-        .args(&["restart", "networking"])
+        .args(["restart", "networking"])
         .status();
     
     // Remove sandbox marker
@@ -1060,7 +1060,7 @@ fn get_security_tools() -> Vec<SecurityToolInfo> {
 fn check_service_status(service_name: &str) -> ServiceStatus {
     // Check if service is active
     let active_output = match Command::new("systemctl")
-        .args(&["is-active", service_name])
+        .args(["is-active", service_name])
         .output() 
     {
         Ok(output) => output,
@@ -1077,7 +1077,7 @@ fn check_service_status(service_name: &str) -> ServiceStatus {
     
     // Check if service is enabled
     let enabled_output = match Command::new("systemctl")
-        .args(&["is-enabled", service_name])
+        .args(["is-enabled", service_name])
         .output()
     {
         Ok(output) => output,
@@ -1095,7 +1095,7 @@ fn check_service_status(service_name: &str) -> ServiceStatus {
     // Get PID if service is active
     let pid = if active {
         Command::new("systemctl")
-            .args(&["show", service_name, "--property=MainPID"])
+            .args(["show", service_name, "--property=MainPID"])
             .output()
             .ok()
             .and_then(|output| {
@@ -1121,7 +1121,7 @@ fn check_service_status(service_name: &str) -> ServiceStatus {
 /// Check for running HARDN processes
 fn check_hardn_processes() -> Vec<String> {
     let output = match Command::new("ps")
-        .args(&["aux"])
+        .arg("aux")
         .output()
     {
         Ok(output) => output,
@@ -1225,7 +1225,8 @@ fn enable_systemd_service(service_name: &str, optional: bool) {
     print!("  Enabling {}... ", service_name);
     
     let output = Command::new("systemctl")
-        .args(&["enable", &format!("{}.service", service_name)])
+        .arg("enable")
+        .arg(format!("{}.service", service_name))
         .output();
     
     match output {
@@ -1257,7 +1258,8 @@ fn disable_systemd_service(service_name: &str, optional: bool) {
     print!("  Disabling {}... ", service_name);
     
     let output = Command::new("systemctl")
-        .args(&["disable", &format!("{}.service", service_name)])
+        .arg("disable")
+        .arg(format!("{}.service", service_name))
         .output();
     
     match output {
@@ -1289,7 +1291,8 @@ fn start_systemd_service(service_name: &str, optional: bool) {
     print!("  Starting {}... ", service_name);
     
     let output = Command::new("systemctl")
-        .args(&["start", &format!("{}.service", service_name)])
+        .arg("start")
+        .arg(format!("{}.service", service_name))
         .output();
     
     match output {
@@ -1321,7 +1324,8 @@ fn stop_systemd_service(service_name: &str, optional: bool) {
     print!("  Stopping {}... ", service_name);
     
     let output = Command::new("systemctl")
-        .args(&["stop", &format!("{}.service", service_name)])
+        .arg("stop")
+        .arg(format!("{}.service", service_name))
         .output();
     
     match output {
@@ -1353,7 +1357,8 @@ fn restart_systemd_service(service_name: &str, optional: bool) {
     print!("  Restarting {}... ", service_name);
     
     let output = Command::new("systemctl")
-        .args(&["restart", &format!("{}.service", service_name)])
+        .arg("restart")
+        .arg(format!("{}.service", service_name))
         .output();
     
     match output {
@@ -1472,7 +1477,9 @@ fn show_status() {
     println!("▶ RECENT ACTIVITY:");
     if Path::new(DEFAULT_LOG_DIR).exists() {
         let log_output = Command::new("tail")
-            .args(&["-n", "5", &format!("{}/hardn.log", DEFAULT_LOG_DIR)])
+            .arg("-n")
+            .arg("5")
+            .arg(format!("{}/hardn.log", DEFAULT_LOG_DIR))
             .output();
         
         match log_output {

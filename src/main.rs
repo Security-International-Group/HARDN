@@ -1664,7 +1664,7 @@ fn sandbox_on() -> i32 {
     ];
 
     for rule in loopback_rules {
-        let _ = Command::new("iptables").args(&rule).status();
+        let _ = Command::new("iptables").args(rule).status();
     }
 
     // Disable all network interfaces except loopback

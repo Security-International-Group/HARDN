@@ -272,8 +272,10 @@ impl ResponseEngine {
         eprintln!("Isolating process {}", pid);
 
         // In a real implementation, this would use cgroups, namespaces, or other isolation
+        let pid_str = pid.to_string();
         let output = Command::new("kill")
-            .args(&["-STOP", &pid.to_string()])
+            .arg("-STOP")
+            .arg(&pid_str)
             .output()
             .map_err(|e| {
                 ResponseError::ExecutionFailed(format!("Failed to stop process: {}", e))
@@ -293,19 +295,18 @@ impl ResponseEngine {
 
         // Use iptables to block the connection
         let _rule = format!("-A INPUT -s {} -p tcp --dport {} -j DROP", ip, port);
+        let port_str = port.to_string();
         let output = Command::new("iptables")
-            .args(&[
-                "-I",
-                "INPUT",
-                "-s",
-                ip,
-                "-p",
-                "tcp",
-                "--dport",
-                &port.to_string(),
-                "-j",
-                "DROP",
-            ])
+            .arg("-I")
+            .arg("INPUT")
+            .arg("-s")
+            .arg(ip)
+            .arg("-p")
+            .arg("tcp")
+            .arg("--dport")
+            .arg(&port_str)
+            .arg("-j")
+            .arg("DROP")
             .output()
             .map_err(|e| {
                 ResponseError::ExecutionFailed(format!("Failed to block network: {}", e))
@@ -350,8 +351,10 @@ impl ResponseEngine {
     async fn kill_process(&self, pid: u32) -> Result<(), ResponseError> {
         eprintln!("Killing process {}", pid);
 
+        let pid_str = pid.to_string();
         let output = Command::new("kill")
-            .args(&["-9", &pid.to_string()])
+            .arg("-9")
+            .arg(&pid_str)
             .output()
             .map_err(|e| {
                 ResponseError::ExecutionFailed(format!("Failed to kill process: {}", e))
@@ -370,7 +373,8 @@ impl ResponseEngine {
         eprintln!("Disabling service: {}", name);
 
         let output = Command::new("systemctl")
-            .args(&["stop", name])
+            .arg("stop")
+            .arg(name)
             .output()
             .map_err(|e| {
                 ResponseError::ExecutionFailed(format!("Failed to stop service: {}", e))
@@ -379,7 +383,8 @@ impl ResponseEngine {
         if output.status.success() {
             // Also disable the service
             Command::new("systemctl")
-                .args(&["disable", name])
+                .arg("disable")
+                .arg(name)
                 .output()
                 .map_err(|e| {
                     ResponseError::ExecutionFailed(format!("Failed to disable service: {}", e))

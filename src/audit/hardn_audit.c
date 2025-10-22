@@ -176,7 +176,7 @@ static void free_lines(char **lines, size_t count) {
     free(lines);
 }
 
-/* ---------- Helper parsing for PAM pwquality ---------- */
+//////// Helper parsing for PAM pwquality 
 
 typedef struct {
     bool found;
@@ -267,7 +267,7 @@ static void load_pwquality_config(pam_pwquality_config_t *cfg) {
         }
     }
 
-    /* Also parse /etc/security/pwquality.conf for overrides */
+    ///////////////// Also parse /etc/security/pwquality.conf for overrides */
     char **conf_lines = NULL;
     size_t conf_count = 0;
     if (load_file_lines("/etc/security/pwquality.conf", &conf_lines, &conf_count) == 0) {
@@ -298,7 +298,7 @@ static void load_pwquality_config(pam_pwquality_config_t *cfg) {
     *cfg = cached;
 }
 
-/* ---------- Specific rule checks (initial subset) ---------- */
+///////////////Specific rule checks (initial subset) ---------- */
 
 static rule_result_t check_accounts_password_pam_minlen(const rule_definition_t *rule) {
     (void)rule;
@@ -773,7 +773,7 @@ static rule_result_t check_ensure_shadow_group_empty(const rule_definition_t *ru
     return result;
 }
 
-/* ---------- Rule table ---------- */
+////////////// Rule table 
 
 #define RULE_DEF(ID, TITLE, CATEGORY, SEVERITY, CHECK) \
     { (ID), (TITLE), (CATEGORY), (SEVERITY), (CHECK) }

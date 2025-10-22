@@ -10,7 +10,7 @@ pub mod processes {
 
         // Check for processes with PPID 1 (init) that might be suspicious
         if let Ok(output) = Command::new("ps")
-            .args(&["-eo", "pid,ppid,cmd", "--no-headers"])
+            .args(["-eo", "pid,ppid,cmd", "--no-headers"])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);
@@ -40,7 +40,7 @@ pub mod processes {
 
         // Check for executables running from /tmp or other suspicious locations
         if let Ok(output) = Command::new("lsof")
-            .args(&["-c", "", "+D", "/tmp", "-F", "n"])
+            .args(["-c", "", "+D", "/tmp", "-F", "n"])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);

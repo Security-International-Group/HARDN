@@ -22,7 +22,7 @@ pub mod crypto {
         }
 
         // Check for expiring certificates
-        if let Ok(_output) = Command::new("openssl").args(&["version"]).output() {
+    if let Ok(_output) = Command::new("openssl").arg("version").output() {
             safe_println!("    OpenSSL available for certificate validation");
         }
 
@@ -35,7 +35,7 @@ pub mod crypto {
 
         // Check for LUKS encrypted devices
         if let Ok(output) = Command::new("lsblk")
-            .args(&["-f", "|", "grep", "crypto_LUKS"])
+            .args(["-f", "|", "grep", "crypto_LUKS"])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);
@@ -53,7 +53,7 @@ pub mod crypto {
 
         // Check for dm-crypt mappings
         if let Ok(output) = Command::new("dmsetup")
-            .args(&["ls", "--target", "crypt"])
+            .args(["ls", "--target", "crypt"])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);
@@ -76,7 +76,7 @@ pub mod crypto {
 
         // Check for GPG keys
         if let Ok(output) = Command::new("gpg")
-            .args(&["--list-keys", "--with-colons"])
+            .args(["--list-keys", "--with-colons"])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);
@@ -93,7 +93,7 @@ pub mod crypto {
         }
 
         // Check GPG agent status
-        if let Ok(_output) = Command::new("gpg-agent").args(&["--version"]).output() {
+    if let Ok(_output) = Command::new("gpg-agent").arg("--version").output() {
             safe_println!("    GPG agent available");
         }
 
@@ -106,7 +106,7 @@ pub mod crypto {
 
         // Check for weak SSL/TLS configurations
         if let Ok(_output) = Command::new("ss")
-            .args(&["-lnt", "|", "grep", ":443"])
+            .args(["-lnt", "|", "grep", ":443"])
             .output()
         {
             let _ssl_services = 0; // Would count SSL services
@@ -116,7 +116,7 @@ pub mod crypto {
 
         // Check for suspicious cryptographic operations
         if let Ok(output) = Command::new("lsof")
-            .args(&["-c", "openssl,gpg,gnupg", "-F", "c"])
+            .args(["-c", "openssl,gpg,gnupg", "-F", "c"])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);

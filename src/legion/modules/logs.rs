@@ -10,7 +10,7 @@ pub mod logs {
 
         // Check for authentication failures
         if let Ok(output) = Command::new("journalctl")
-            .args(&[
+            .args([
                 "--since",
                 "1 hour ago",
                 "--grep",
@@ -31,7 +31,7 @@ pub mod logs {
 
         // Check for sudo usage
         if let Ok(output) = Command::new("journalctl")
-            .args(&["--since", "1 hour ago", "--grep", "sudo", "--no-pager"])
+            .args(["--since", "1 hour ago", "--grep", "sudo", "--no-pager"])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);
@@ -43,7 +43,7 @@ pub mod logs {
 
         // Check for kernel security events
         if let Ok(output) = Command::new("journalctl")
-            .args(&["--since", "1 hour ago", "--grep", "security", "--no-pager"])
+            .args(["--since", "1 hour ago", "--grep", "security", "--no-pager"])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);
@@ -94,7 +94,7 @@ pub mod logs {
 
         // Check for gaps in syslog timestamps
         if let Ok(output) = Command::new("journalctl")
-            .args(&[
+            .args([
                 "--since",
                 "1 day ago",
                 "--output",
