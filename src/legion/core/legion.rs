@@ -33,10 +33,10 @@ use crate::legion::modules::risk_scoring::{
     BaselineDriftSummary, RiskScore, RiskScoringManager, ScriptResult, ScriptStatus,
     SecurityPlatformStatus, SystemState, ThreatIndicator as RiskThreatIndicator,
 };
-use crate::legion::modules::services::services as services_mod;
+use crate::legion::modules::services as services_mod;
 use crate::legion::modules::threat_intel::{SecurityIndicator, Severity, ThreatIntelManager};
-use crate::legion::modules::usb::usb as usb_mod;
-use crate::legion::modules::vulnerabilities::vulnerabilities as vulnerabilities_mod;
+use crate::legion::modules::usb as usb_mod;
+use crate::legion::modules::vulnerabilities as vulnerabilities_mod;
 use chrono::{DateTime, Utc};
 use clap::{Arg, Command as ClapCommand};
 use comfy_table::{presets::UTF8_FULL_CONDENSED, Attribute, Cell, Color, Table};
@@ -46,6 +46,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -213,7 +214,7 @@ impl LegionMonitorSnapshot {
             .iter()
             .filter(|result| !matches!(result.status, ScriptStatus::Success))
             .map(|result| {
-                let detail = result.details.as_ref().map(|s| s.as_str()).unwrap_or("-");
+                let detail = result.details.as_deref().unwrap_or("-");
                 format!(
                     "{}::{} [{}] {}",
                     result.domain, result.name, result.status, detail
@@ -252,7 +253,7 @@ impl LegionMonitorSnapshot {
                 });
 
         Self {
-            timestamp: risk_score.timestamp.clone(),
+            timestamp: risk_score.timestamp,
             risk_score: sanitize_metric(risk_score.overall_score),
             risk_level: risk_score.risk_level.to_string(),
             confidence: sanitize_metric(risk_score.confidence),
@@ -351,10 +352,10 @@ fn classify_contributing_factor(factor: &str) -> (&'static str, String) {
         }
     } else if normalized.contains("not installed") {
         category = "Platform Coverage";
-    } else if normalized.contains("warning") || normalized.contains("not active") {
-        if normalized.contains("wazuh") {
-            category = "Security Platform";
-        }
+    } else if (normalized.contains("warning") || normalized.contains("not active"))
+        && normalized.contains("wazuh")
+    {
+        category = "Security Platform";
     }
 
     (category, tidy_text(&summary, 140))
@@ -492,7 +493,7 @@ fn collect_current_listening_ports() -> io::Result<HashMap<String, String>> {
                 .map(|column| column.chars().all(|c| c.is_alphabetic()))
                 .unwrap_or(false);
 
-            let proto = parts.get(0).copied().unwrap_or("");
+            let proto = parts.first().copied().unwrap_or("");
             let local_addr = if looks_like_ss {
                 parts.get(4).copied().unwrap_or("")
             } else {
@@ -758,8 +759,7 @@ impl Legion {
         response_enabled: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let config = Config::load()?;
-        let baseline = BaselineManager::new(&config)?;
-        let baseline_arc = Arc::new(BaselineManager::new(&config)?);
+    let baseline = BaselineManager::new(&config)?;
 
         // Initialize threat intelligence
         let threat_intel_path = std::path::PathBuf::from("/var/lib/hardn/legion/threat_intel.json");
@@ -781,7 +781,7 @@ impl Legion {
         let core = framework_pipeline::build_default_core(
             baseline.snapshot(),
             response_enabled,
-            Arc::clone(&baseline_arc),
+            Rc::new(BaselineManager::new(&config)?),
         );
 
         Ok(Self {
@@ -870,7 +870,10 @@ impl Legion {
 
             // Enhanced daemon mode: run checks in a loop with adjustable intensity
             loop {
-                let profile = if self.loop_iteration % FULL_SCAN_INTERVAL_CYCLES == 0 {
+                let profile = if self
+                    .loop_iteration
+                    .is_multiple_of(FULL_SCAN_INTERVAL_CYCLES)
+                {
                     ScanProfile::Full
                 } else {
                     ScanProfile::Quick
@@ -1482,7 +1485,7 @@ impl Legion {
 
         // Check for recent SSH authentication failures
         let output = std::process::Command::new("journalctl")
-            .args(&["-u", "sshd", "--since", "1 hour ago", "-p", "warning..err"])
+            .args(["-u", "sshd", "--since", "1 hour ago", "-p", "warning..err"])
             .output()?;
 
         let output_str = String::from_utf8(output.stdout)?;
@@ -1533,7 +1536,7 @@ impl Legion {
 
         // Check for SUID/SGID files
         let output = std::process::Command::new("find")
-            .args(&["/", "-type", "f", "-perm", "/6000", "-ls"])
+            .args(["/", "-type", "f", "-perm", "/6000", "-ls"])
             .output()?;
 
         let output_str = String::from_utf8(output.stdout)?;
@@ -1575,7 +1578,7 @@ impl Legion {
 
         // Check sysctl parameters
         let sysctl_output = std::process::Command::new("sysctl")
-            .args(&["kernel.kptr_restrict"])
+            .args(["kernel.kptr_restrict"])
             .output()?;
         let sysctl_str = String::from_utf8(sysctl_output.stdout)?;
         if sysctl_str.contains("kernel.kptr_restrict = 1") {
@@ -1593,7 +1596,7 @@ impl Legion {
         let docker_result = std::process::Command::new("which").arg("docker").output()?;
         if docker_result.status.success() {
             let docker_ps = std::process::Command::new("docker")
-                .args(&["ps", "-q"])
+                .args(["ps", "-q"])
                 .output()?;
             let container_count = String::from_utf8(docker_ps.stdout)?.lines().count();
             safe_println!("    {} Docker containers running", container_count);
@@ -1668,8 +1671,8 @@ impl Legion {
         if total_diff == 0 {
             return Ok(0.0);
         }
-        let usage = (total_diff - idle_diff) as f64 / total_diff as f64;
-        Ok(usage.min(1.0).max(0.0)) // Clamp to 0.0-1.0
+    let usage = (total_diff - idle_diff) as f64 / total_diff as f64;
+    Ok(usage.clamp(0.0, 1.0))
     }
 
     /// Get current memory usage as a percentage (0.0 to 1.0)
@@ -2415,7 +2418,7 @@ impl Legion {
 
         // Get process list
         let output = tokio::process::Command::new("ps")
-            .args(&["-eo", "pid,ppid,cmd"])
+            .args(["-eo", "pid,ppid,cmd"])
             .output()
             .await?;
 
@@ -2448,7 +2451,7 @@ impl Legion {
 
         // Get network connections
         let output = tokio::process::Command::new("netstat")
-            .args(&["-tuln"])
+            .args(["-tuln"])
             .output()
             .await?;
 
@@ -2492,19 +2495,19 @@ impl Legion {
 
         for (name, unit) in platforms {
             let active = Command::new("systemctl")
-                .args(&["is-active", unit])
+                .args(["is-active", unit])
                 .output()
                 .map(|output| output.status.success())
                 .unwrap_or(false);
 
             let enabled = Command::new("systemctl")
-                .args(&["is-enabled", unit])
+                .args(["is-enabled", unit])
                 .output()
                 .map(|output| output.status.success())
                 .unwrap_or(false);
 
             let journal_output = Command::new("journalctl")
-                .args(&[
+                .args([
                     "-u",
                     unit,
                     "--since",
@@ -3092,7 +3095,7 @@ impl Legion {
         sender: mpsc::UnboundedSender<SecurityEvent>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut cmd = tokio::process::Command::new("journalctl")
-            .args(&["--follow", "--lines", "0", "-t", "kernel", "-t", "systemd"])
+            .args(["--follow", "--lines", "0", "-t", "kernel", "-t", "systemd"])
             .stdout(std::process::Stdio::piped())
             .spawn()?;
 
@@ -3126,7 +3129,7 @@ impl Legion {
             });
 
             let output = tokio::process::Command::new("ss")
-                .args(&["-tunaH"])
+                .args(["-tunaH"])
                 .output()
                 .await;
 
@@ -3238,7 +3241,7 @@ impl Legion {
         loop {
             // Check for suspicious processes
             let output = tokio::process::Command::new("ps")
-                .args(&["-eo", "pid,ppid,cmd"])
+                .args(["-eo", "pid,ppid,cmd"])
                 .output()
                 .await?;
 
@@ -3984,7 +3987,10 @@ pub async fn run_with_args(args: &[String]) -> Result<(), Box<dyn std::error::Er
                            data consistency, and reports any corruption or maintenance issues.")
                 .action(clap::ArgAction::SetTrue),
         )
-        .get_matches_from(&["hardn legion".to_string()].iter().chain(args.iter()).cloned().collect::<Vec<_>>());
+        .get_matches_from(["hardn legion".to_string()]
+            .into_iter()
+            .chain(args.iter().cloned())
+            .collect::<Vec<_>>());
 
     let create_baseline = matches.get_flag("create-baseline");
     let predictive_enabled = matches.get_flag("predictive");

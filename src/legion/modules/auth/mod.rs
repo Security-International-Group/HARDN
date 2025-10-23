@@ -2,6 +2,7 @@ use std::fs;
 use std::process::Command;
 
 /// Authentication and account security checks
+#[allow(clippy::module_inception)]
 pub mod auth {
     use super::*;
 
@@ -11,7 +12,7 @@ pub mod auth {
 
         // Check recent failed login attempts
         if let Ok(output) = Command::new("journalctl")
-            .args(&["-u", "sshd", "--since", "1 hour ago", "-g", "Failed"])
+            .args(["-u", "sshd", "--since", "1 hour ago", "-g", "Failed"])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);

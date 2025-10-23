@@ -2,6 +2,7 @@ use std::path::Path;
 use std::process::Command;
 
 /// Filesystem and persistence monitoring
+#[allow(clippy::module_inception)]
 pub mod filesystem {
     use super::*;
 
@@ -11,7 +12,7 @@ pub mod filesystem {
 
         // Find SUID/SGID files in system directories
         if let Ok(output) = Command::new("find")
-            .args(&[
+            .args([
                 "/usr", "/bin", "/sbin", "/lib", "-type", "f", "-perm", "/6000", "-ls",
             ])
             .output()
@@ -39,7 +40,7 @@ pub mod filesystem {
 
         // Check systemd services
         if let Ok(output) = Command::new("systemctl")
-            .args(&[
+            .args([
                 "list-units",
                 "--type=service",
                 "--state=active",

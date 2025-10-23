@@ -3,7 +3,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Process behavior analysis for anomaly detection
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,7 +54,7 @@ pub struct SystemCall {
     pub timestamp: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MemoryStats {
     pub rss: u64,    // Resident Set Size
     pub vsz: u64,    // Virtual Memory Size
@@ -63,7 +63,7 @@ pub struct MemoryStats {
     pub data: u64,   // Data + stack
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CpuStats {
     pub user_time: u64,
     pub system_time: u64,
@@ -134,9 +134,7 @@ impl ProcessBehavior {
         // Classification logic
         if malicious_indicators > 0 {
             BehaviorClassification::Malicious
-        } else if suspicious_indicators >= 2 {
-            BehaviorClassification::Suspicious
-        } else if suspicious_indicators == 1 {
+        } else if suspicious_indicators >= 1 {
             BehaviorClassification::Suspicious
         } else {
             BehaviorClassification::Normal
@@ -149,7 +147,7 @@ impl ProcessBehavior {
         if let Ok(port) = conn
             .remote_addr
             .split(':')
-            .last()
+            .next_back()
             .unwrap_or("")
             .parse::<u16>()
         {
@@ -183,12 +181,11 @@ impl ProcessBehavior {
                 }
                 IpAddr::V6(_) => {
                     // IPv6 private connections - simplified check
-                    if conn.remote_addr.starts_with("fc00:")
-                        || conn.remote_addr.starts_with("fd00:")
+                    if (conn.remote_addr.starts_with("fc00:")
+                        || conn.remote_addr.starts_with("fd00:"))
+                        && !self.is_expected_private_connection(&self.name)
                     {
-                        if !self.is_expected_private_connection(&self.name) {
-                            return true;
-                        }
+                        return true;
                     }
                 }
             }
@@ -248,7 +245,7 @@ impl ProcessBehavior {
         read_sensitive && write_system // Both reading sensitive files and writing to system files
     }
 
-    fn is_sensitive_file(&self, path: &PathBuf) -> bool {
+    fn is_sensitive_file(&self, path: &Path) -> bool {
         let sensitive_paths = [
             "/etc/passwd",
             "/etc/shadow",
@@ -261,7 +258,7 @@ impl ProcessBehavior {
         path.to_string_lossy().starts_with_any(&sensitive_paths)
     }
 
-    fn is_system_file(&self, path: &PathBuf) -> bool {
+    fn is_system_file(&self, path: &Path) -> bool {
         let system_paths = ["/etc", "/usr", "/bin", "/sbin", "/lib"];
 
         path.to_string_lossy().starts_with_any(&system_paths)
@@ -325,30 +322,6 @@ impl ProcessBehavior {
             BehaviorClassification::Malicious => 0.9,
             BehaviorClassification::Unknown => 0.5,
         };
-    }
-}
-
-impl Default for MemoryStats {
-    fn default() -> Self {
-        Self {
-            rss: 0,
-            vsz: 0,
-            shared: 0,
-            text: 0,
-            data: 0,
-        }
-    }
-}
-
-impl Default for CpuStats {
-    fn default() -> Self {
-        Self {
-            user_time: 0,
-            system_time: 0,
-            total_time: 0,
-            priority: 0,
-            nice: 0,
-        }
     }
 }
 

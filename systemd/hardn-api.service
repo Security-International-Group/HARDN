@@ -1,7 +1,7 @@
 [Unit]
 Description=HARDN API Server
-After=network.target
-Wants=network.target hardn.service hardn-monitor.service
+After=network.target hardn.service hardn-monitor.service
+Wants=network.target
 StartLimitIntervalSec=300
 StartLimitBurst=5
 

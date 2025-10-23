@@ -2,6 +2,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 
 /// File permissions and access control monitoring
+#[allow(clippy::module_inception)]
 pub mod permissions {
     use super::*;
 
@@ -11,7 +12,7 @@ pub mod permissions {
 
         // Find world-writable files in system directories
         if let Ok(output) = Command::new("find")
-            .args(&["/etc", "/usr", "/var", "-type", "f", "-perm", "-002", "-ls"])
+            .args(["/etc", "/usr", "/var", "-type", "f", "-perm", "-002", "-ls"])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);
@@ -42,7 +43,7 @@ pub mod permissions {
 
         // Get detailed SUID/SGID file information
         if let Ok(output) = Command::new("find")
-            .args(&[
+            .args([
                 "/", "-type", "f", "-perm", "/6000", "-exec", "ls", "-la", "{}", ";",
             ])
             .output()
@@ -78,7 +79,7 @@ pub mod permissions {
 
         // Check for files owned by non-existent users
         if let Ok(output) = Command::new("find")
-            .args(&["/etc", "/home", "-nouser", "-o", "-nogroup", "-type", "f"])
+            .args(["/etc", "/home", "-nouser", "-o", "-nogroup", "-type", "f"])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);
@@ -123,7 +124,7 @@ pub mod permissions {
 
         // Check for unusual permission patterns
         if let Ok(output) = Command::new("find")
-            .args(&["/etc", "-type", "f", "-perm", "-777"])
+            .args(["/etc", "-type", "f", "-perm", "-777"])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);
@@ -142,7 +143,7 @@ pub mod permissions {
 
         // Check for executable files in unusual locations
         if let Ok(output) = Command::new("find")
-            .args(&["/etc", "-type", "f", "-executable"])
+            .args(["/etc", "-type", "f", "-executable"])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);

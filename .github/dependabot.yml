@@ -18,24 +18,46 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 1
+    versioning-strategy: "auto"
+    registries:
+      - pip-private
     labels:
       - "dependencies"
-      - "python"
     assignees:
-      - "OpenSource-For-Freedom"
+      - "@Orinax"
     commit-message:
-      prefix: "pip"
-      include: "scope"
+      prefix: "[deps]"
+    groups:
+      python-deps:
+        patterns:
+          - "*"
 
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
       interval: "weekly"
+    registries:
+      - cargo-private
+    open-pull-requests-limit: 1
+    versioning-strategy: "auto"
     labels:
       - "dependencies"
-      - "rust"
     assignees:
-      - "OpenSource-For-Freedom"
+      - "@Orinax"
     commit-message:
-      prefix: "cargo"
-      include: "scope"
+      prefix: "[deps]"
+    groups:
+      rust-deps:
+        patterns:
+          - "*"
+
+registries:
+  cargo-private:
+    type: "cargo-registry"
+    url: "https://github.com/Security-International-Group/HARDN"
+    token: "${{secrets.DEP_PAT}}"
+  pip-private:
+    type: "python-index"
+    url: "https://github.com/Security-International-Group/HARDN"
+    token: "${{secrets.DEP_PAT}}"

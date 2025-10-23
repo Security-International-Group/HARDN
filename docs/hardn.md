@@ -1,4 +1,5 @@
-# HARDN - Linux Security Hardening & Extended Detection Toolkit
+![HARDN Logo](docs/assets/IMG_1233.jpeg)
+# HARDN - Linux Security Hardening & Extended Detection Response Package
 
 ## Overview
 

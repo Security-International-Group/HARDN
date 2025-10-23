@@ -1,6 +1,7 @@
 use std::process::Command;
 
 /// Network and communications monitoring
+#[allow(clippy::module_inception)]
 pub mod network {
     use super::*;
 
@@ -9,20 +10,20 @@ pub mod network {
         eprintln!("  Checking listening network sockets...");
 
         // Check listening ports
-        if let Ok(output) = Command::new("ss").args(&["-lntup", "--no-header"]).output() {
+    if let Ok(output) = Command::new("ss").args(["-lntup", "--no-header"]).output() {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let listening_count = output_str.lines().count();
 
             eprintln!("    {} listening sockets found", listening_count);
 
             // Check for suspicious ports
-            let suspicious_ports = vec![23, 21, 25, 53, 139, 445]; // telnet, ftp, smtp, dns, samba
+            let suspicious_ports = [23, 21, 25, 53, 139, 445]; // telnet, ftp, smtp, dns, samba
             let mut found_suspicious = Vec::new();
 
             for line in output_str.lines() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 5 {
-                    if let Some(port_part) = parts[4].split(':').last() {
+                    if let Some(port_part) = parts[4].split(':').next_back() {
                         if let Ok(port) = port_part.parse::<u16>() {
                             if suspicious_ports.contains(&port) {
                                 found_suspicious.push(format!("Port {} ({})", port, parts[0]));
@@ -60,7 +61,7 @@ pub mod network {
         }
 
         // Check iptables rules
-        if let Ok(output) = Command::new("iptables").args(&["-L", "-n"]).output() {
+    if let Ok(output) = Command::new("iptables").args(["-L", "-n"]).output() {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let rule_count = output_str
                 .lines()

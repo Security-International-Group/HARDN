@@ -31,6 +31,6 @@ impl ToolCategory {
     }
 
     pub fn contains(&self, tool: &str) -> bool {
-        self.tools.iter().any(|&t| t == tool)
+        self.tools.contains(&tool)
     }
 }

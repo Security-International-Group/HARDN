@@ -1,6 +1,7 @@
 use std::process::Command;
 
 /// Kernel and low-level monitoring
+#[allow(clippy::module_inception)]
 pub mod kernel {
     use super::*;
 
@@ -16,7 +17,7 @@ pub mod kernel {
             eprintln!("    {} kernel modules loaded", module_count);
 
             // Check for suspicious modules
-            let suspicious_modules = vec![
+            let suspicious_modules = [
                 "cramfs", "freevxfs", "jffs2", "hfs", "hfsplus", "squashfs", "udf",
             ];
             let mut found_suspicious = Vec::new();

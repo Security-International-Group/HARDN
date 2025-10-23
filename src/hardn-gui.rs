@@ -241,7 +241,7 @@ fn main() {
                     )
                 })
             };
-            let _ = provider.load_from_data(&css_data);
+            provider.load_from_data(&css_data);
             gtk4::style_context_add_provider_for_display(&display, &provider, STYLE_PROVIDER_PRIORITY_APPLICATION);
         }
         if let Some(settings) = gtk4::Settings::default() {
@@ -370,11 +370,9 @@ fn main() {
                     terminal_tab_c.feed_child(LAUNCH_CMD);
                     *tab_flag_c.borrow_mut() = true;
                 }
-            } else if idx == 2 {
-                if !*split_flag_c.borrow() {
-                    terminal_split_c.feed_child(LAUNCH_CMD);
-                    *split_flag_c.borrow_mut() = true;
-                }
+            } else if idx == 2 && !*split_flag_c.borrow() {
+                terminal_split_c.feed_child(LAUNCH_CMD);
+                *split_flag_c.borrow_mut() = true;
             }
         });
 
@@ -601,7 +599,7 @@ fn main() {
                 std::thread::spawn(move || {
                     use std::io::{BufRead, BufReader};
                     let reader = BufReader::new(stdout);
-                    for line in reader.lines().flatten() {
+                    for line in reader.lines().map_while(Result::ok) {
                         if let Ok(mut guard) = rb_lines.lock() {
                             if let Some(item) = normalize_line(&line) {
                                 guard.push(item);
@@ -625,7 +623,7 @@ fn main() {
                 std::thread::spawn(move || {
                     use std::io::{BufRead, BufReader};
                     let reader = BufReader::new(stdout);
-                    for line in reader.lines().flatten() {
+                    for line in reader.lines().map_while(Result::ok) {
                         if let Ok(mut g) = rb_lines.lock() {
                             if let Some(h) = parse_service_status(&line) {
                                 if let Ok(mut hs) = service_health_ref.lock() {

@@ -7,12 +7,13 @@ use crate::legion::core::heuristics::{
     MemoryPressureHeuristic,
 };
 use crate::legion::core::responders::NoopResponder;
+use std::rc::Rc;
 
 /// Build the default sequential Legion pipeline with database telemetry support.
 pub fn build_default_core(
     baseline: Option<BaselineSnapshot>,
     allow_automatic_response: bool,
-    baseline_manager: std::sync::Arc<super::baseline::BaselineManager>,
+    baseline_manager: Rc<super::baseline::BaselineManager>,
 ) -> LegionCore {
     let mut builder = LegionCore::builder().allow_automatic_response(allow_automatic_response);
 
@@ -22,21 +23,21 @@ pub fn build_default_core(
 
     builder
         .with_source(CpuTelemetrySource::default())
-        .with_source(MemoryTelemetrySource::default())
+        .with_source(MemoryTelemetrySource)
         .with_source(DatabaseTelemetrySource::new(baseline_manager))
         .with_heuristic(CpuSaturationHeuristic::default())
         .with_heuristic(MemoryPressureHeuristic::default())
         .with_heuristic(DatabaseHealthHeuristic::default())
         .with_heuristic(DatabaseGrowthHeuristic::default())
         .with_heuristic(AnomalyRateHeuristic::default())
-        .with_responder(NoopResponder::default())
+        .with_responder(NoopResponder)
         .build()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
+    use std::rc::Rc;
 
    #[test]
 fn pipeline_runs_collection_cycle() {
@@ -55,7 +56,7 @@ fn pipeline_runs_collection_cycle() {
     config.baseline_dir = tmp_baseline_dir.to_string_lossy().into_owned();
 
     let baseline_manager =
-        Arc::new(crate::legion::core::baseline::BaselineManager::new(&config).unwrap());
+        Rc::new(crate::legion::core::baseline::BaselineManager::new(&config).unwrap());
     let mut core = build_default_core(None, false, baseline_manager);
     let report = core
         .run_cycle()

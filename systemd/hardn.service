@@ -1,7 +1,7 @@
 [Unit]
 Description=HARDN Security Monitoring and Response Service
 After=network.target hardn-monitor.service
-Wants=network.target hardn-monitor.service
+Wants=network.target
 StartLimitIntervalSec=300
 StartLimitBurst=5
 

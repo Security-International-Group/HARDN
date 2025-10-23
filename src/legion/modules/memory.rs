@@ -1,6 +1,7 @@
 use std::process::Command;
 
 /// Memory and resource monitoring
+#[allow(clippy::module_inception)]
 pub mod memory {
     use super::*;
 
@@ -19,7 +20,7 @@ pub mod memory {
 
         // Check for memory-intensive processes
         if let Ok(output) = Command::new("ps")
-            .args(&["aux", "--sort", "-%mem", "-h", "-n", "10"])
+            .args(["aux", "--sort", "-%mem", "-h", "-n", "10"])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);
@@ -69,7 +70,7 @@ pub mod memory {
 
         // Check for OOM killer activity
         if let Ok(output) = Command::new("journalctl")
-            .args(&[
+            .args([
                 "--since",
                 "1 hour ago",
                 "--grep",
@@ -90,7 +91,7 @@ pub mod memory {
 
         // Check for memory leaks (processes with growing memory usage)
         if let Ok(output) = Command::new("ps")
-            .args(&["-eo", "pid,cmd,rss,vsz", "--no-headers"])
+            .args(["-eo", "pid,cmd,rss,vsz", "--no-headers"])
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);

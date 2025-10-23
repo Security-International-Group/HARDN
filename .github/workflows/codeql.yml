@@ -13,6 +13,12 @@ env:
   CARGO_TERM_COLOR: always
   VERSION_COMMIT_SHA: ${{ github.sha }}
 
+permissions:
+  contents: read
+  actions: read
+  packages: read
+  security-events: write
+
 jobs:
   codeql:
     name: CodeQL Analysis (${{ matrix.language }})
@@ -25,13 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - language: actions
-            build-mode: none
-          - language: python
-            build-mode: none
-          - language: rust
-            build-mode: none
+        language: [python, rust]
     steps:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -40,12 +40,13 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.build-mode }}
+          build-mode: none
+          tools: latest
           queries: security-extended,security-and-quality
 
       - name: Set up Rust toolchain
         if: matrix.language == 'rust'
-        uses: actions-rust-lang/setup-rust-toolchain@v1.11.0
+        uses: actions-rust-lang/setup-rust-toolchain@1fbea72663f6d4c03efaab13560c8a24cfd2a7cc
         with:
           components: rustfmt, clippy
 
@@ -87,9 +88,15 @@ jobs:
 
       - name: Set up Rust toolchain
         if: matrix.language == 'rust'
-        uses: actions-rust-lang/setup-rust-toolchain@v1.11.0
+        uses: actions-rust-lang/setup-rust-toolchain@1fbea72663f6d4c03efaab13560c8a24cfd2a7cc
         with:
           components: rustfmt, clippy
+
+      - name: Install Rust system dependencies
+        if: matrix.language == 'rust'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libglib2.0-dev libgtk-4-dev libvte-2.91-gtk4-dev libssl-dev pkg-config
 
       - name: Run cargo clippy
         if: matrix.language == 'rust'

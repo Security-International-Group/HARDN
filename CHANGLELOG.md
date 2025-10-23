@@ -4,7 +4,20 @@ All notable changes to this project will be documented in this file.
 
 - SOURCE: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0/).
 
+![hardn](docs/assets/IMG_1233.jpeg)
+
 ## [Unreleased]
+
+### Added
+- Back-to-previous navigation entries on every `hardn-service-manager.sh` submenu so operators can exit nested views without relying on Ctrl+C.
+
+### Changed
+- Relaxed inter-service `Wants=` dependencies in HARDN systemd units, allowing individual services to start or stop without implicitly launching the rest of the stack.
+- Refined Dependabot configuration to consolidate Python and Rust dependency updates into single PRs while authenticating against the private registry.
+- Declared workflow-level permissions for the CodeQL pipeline to follow GitHub's least-privilege guidance.
+
+### Fixed
+- Hardened `hardn-service-manager.sh` status and log viewers to handle inactive services gracefully, preventing crashes and showing friendlier feedback when no data is available.
 
 ### What's Changed v1.0.0
 

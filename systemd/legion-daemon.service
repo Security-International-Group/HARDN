@@ -1,7 +1,7 @@
 [Unit]
 Description=HARDN LEGION Security Monitoring Daemon
 After=network.target hardn-monitor.service
-Wants=network.target hardn-monitor.service
+Wants=network.target
 StartLimitIntervalSec=300
 StartLimitBurst=5
 

@@ -74,6 +74,19 @@ impl CronSchedule {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct DailyTime {
+    pub hour: u32,
+    pub minute: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct WeeklyTime {
+    pub weekday: Weekday,
+    pub hour: u32,
+    pub minute: u32,
+}
+
 impl fmt::Display for CronSchedule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
@@ -107,15 +120,17 @@ impl CronJob {
         description: D,
         log_root: P,
         log_file: &str,
-        hour: u32,
-        minute: u32,
+        time: DailyTime,
         command: &str,
         args: &[&str],
     ) -> Self {
         Self::new(
             name,
             description,
-            CronSchedule::Daily { hour, minute },
+            CronSchedule::Daily {
+                hour: time.hour,
+                minute: time.minute,
+            },
             log_root,
             log_file,
             command,
@@ -128,9 +143,7 @@ impl CronJob {
         description: D,
         log_root: P,
         log_file: &str,
-        weekday: Weekday,
-        hour: u32,
-        minute: u32,
+        schedule: WeeklyTime,
         command: &str,
         args: &[&str],
     ) -> Self {
@@ -138,9 +151,9 @@ impl CronJob {
             name,
             description,
             CronSchedule::Weekly {
-                weekday,
-                hour,
-                minute,
+                weekday: schedule.weekday,
+                hour: schedule.hour,
+                minute: schedule.minute,
             },
             log_root,
             log_file,
@@ -395,113 +408,117 @@ impl CronOrchestrator {
         let log_root = log_root.as_ref().to_path_buf();
         let state_path = state_path.as_ref().to_path_buf();
         let summary = Arc::new(Mutex::new(HashMap::new()));
-        let mut jobs: Vec<Arc<ScheduledJob>> = Vec::new();
-
-        // Weekly posture and tooling maintenance
-        jobs.push(Arc::new(ScheduledJob::new(CronJob::weekly_job(
-            "hardn-security-report",
-            "Generate HARDN security snapshot",
-            &log_root,
-            "hardn-security-report.log",
-            Weekday::Sun,
-            2,
-            0,
-            "/usr/bin/hardn",
-            &["--security-report", "--json"],
-        ))));
-
-        jobs.push(Arc::new(ScheduledJob::new(CronJob::weekly_job(
-            "hardn-run-modules",
-            "Execute HARDN hardening modules",
-            &log_root,
-            "hardn-run-modules.log",
-            Weekday::Sun,
-            3,
-            0,
-            "/usr/bin/hardn",
-            &["--run-all-modules", "--noninteractive"],
-        ))));
-
-        jobs.push(Arc::new(ScheduledJob::new(CronJob::weekly_job(
-            "aide-check",
-            "Run AIDE integrity verification",
-            &log_root,
-            "aide-check.log",
-            Weekday::Sun,
-            4,
-            0,
-            "/usr/bin/aide",
-            &["--check"],
-        ))));
-
-        jobs.push(Arc::new(ScheduledJob::new(CronJob::weekly_job(
-            "rkhunter",
-            "Update and execute RKHunter",
-            &log_root,
-            "rkhunter.log",
-            Weekday::Sun,
-            5,
-            0,
-            "/bin/bash",
-            &["-c", "rkhunter --update && rkhunter --check --sk --cronjob"],
-        ))));
-
-        jobs.push(Arc::new(ScheduledJob::new(CronJob::weekly_job(
-            "lynis-audit",
-            "Run Lynis hardening audit",
-            &log_root,
-            "lynis-audit.log",
-            Weekday::Sun,
-            6,
-            0,
-            "/usr/local/bin/lynis-audit.sh",
-            &[],
-        ))));
-
-        jobs.push(Arc::new(ScheduledJob::new(CronJob::weekly_job(
-            "fail2ban-health",
-            "Capture Fail2Ban service status",
-            &log_root,
-            "fail2ban-status.log",
-            Weekday::Sun,
-            7,
-            0,
-            "/bin/bash",
-            &[
-                "-c",
-                "systemctl status --no-pager fail2ban && fail2ban-client status || true",
-            ],
-        ))));
-
         let clamscan_log = log_root.join("clamav-weekly.log");
         let clamscan_arg = format!(
             "clamscan -ri / --log=\"{}\" --exclude-dir=\"^/sys\" --exclude-dir=\"^/proc\" --exclude-dir=\"^/run\"",
             clamscan_log.display()
         );
 
-        jobs.push(Arc::new(ScheduledJob::new(CronJob::weekly_job(
-            "clamav-scan",
-            "Run full ClamAV malware scan",
-            &log_root,
-            "clamav-scan.log",
-            Weekday::Sun,
-            23,
-            30,
-            "/bin/bash",
-            &["-c", &clamscan_arg],
-        ))));
-
-        // Daily Legion baseline snapshot (lightweight report)
-        jobs.push(Arc::new(ScheduledJob::new(CronJob::daily_job(
-            "legion-daily-baseline",
-            "Create daily Legion baseline snapshot",
-            &log_root,
-            "legion-daily-baseline.log",
-            1,
-            30,
-            "/usr/bin/hardn",
-            &["legion", "--create-baseline", "--json"],
-        ))));
+    let jobs: Vec<Arc<ScheduledJob>> = vec![
+            Arc::new(ScheduledJob::new(CronJob::weekly_job(
+                "hardn-security-report",
+                "Generate HARDN security snapshot",
+                &log_root,
+                "hardn-security-report.log",
+                WeeklyTime {
+                    weekday: Weekday::Sun,
+                    hour: 2,
+                    minute: 0,
+                },
+                "/usr/bin/hardn",
+                &["--security-report", "--json"],
+            ))),
+            Arc::new(ScheduledJob::new(CronJob::weekly_job(
+                "hardn-run-modules",
+                "Execute HARDN hardening modules",
+                &log_root,
+                "hardn-run-modules.log",
+                WeeklyTime {
+                    weekday: Weekday::Sun,
+                    hour: 3,
+                    minute: 0,
+                },
+                "/usr/bin/hardn",
+                &["--run-all-modules", "--noninteractive"],
+            ))),
+            Arc::new(ScheduledJob::new(CronJob::weekly_job(
+                "aide-check",
+                "Run AIDE integrity verification",
+                &log_root,
+                "aide-check.log",
+                WeeklyTime {
+                    weekday: Weekday::Sun,
+                    hour: 4,
+                    minute: 0,
+                },
+                "/usr/bin/aide",
+                &["--check"],
+            ))),
+            Arc::new(ScheduledJob::new(CronJob::weekly_job(
+                "rkhunter",
+                "Update and execute RKHunter",
+                &log_root,
+                "rkhunter.log",
+                WeeklyTime {
+                    weekday: Weekday::Sun,
+                    hour: 5,
+                    minute: 0,
+                },
+                "/bin/bash",
+                &["-c", "rkhunter --update && rkhunter --check --sk --cronjob"],
+            ))),
+            Arc::new(ScheduledJob::new(CronJob::weekly_job(
+                "lynis-audit",
+                "Run Lynis hardening audit",
+                &log_root,
+                "lynis-audit.log",
+                WeeklyTime {
+                    weekday: Weekday::Sun,
+                    hour: 6,
+                    minute: 0,
+                },
+                "/usr/local/bin/lynis-audit.sh",
+                &[],
+            ))),
+            Arc::new(ScheduledJob::new(CronJob::weekly_job(
+                "fail2ban-health",
+                "Capture Fail2Ban service status",
+                &log_root,
+                "fail2ban-status.log",
+                WeeklyTime {
+                    weekday: Weekday::Sun,
+                    hour: 7,
+                    minute: 0,
+                },
+                "/bin/bash",
+                &[
+                    "-c",
+                    "systemctl status --no-pager fail2ban && fail2ban-client status || true",
+                ],
+            ))),
+            Arc::new(ScheduledJob::new(CronJob::weekly_job(
+                "clamav-scan",
+                "Run full ClamAV malware scan",
+                &log_root,
+                "clamav-scan.log",
+                WeeklyTime {
+                    weekday: Weekday::Sun,
+                    hour: 23,
+                    minute: 30,
+                },
+                "/bin/bash",
+                &["-c", &clamscan_arg],
+            ))),
+            Arc::new(ScheduledJob::new(CronJob::daily_job(
+                "legion-daily-baseline",
+                "Create daily Legion baseline snapshot",
+                &log_root,
+                "legion-daily-baseline.log",
+                DailyTime { hour: 1, minute: 30 },
+                "/usr/bin/hardn",
+                &["legion", "--create-baseline", "--json"],
+            ))),
+        ];
 
         {
             let mut summary_guard = summary.lock().unwrap();
