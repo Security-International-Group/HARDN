@@ -2,6 +2,7 @@ use std::path::Path;
 use std::process::Command;
 
 /// Filesystem and persistence monitoring
+#[allow(clippy::module_inception)]
 pub mod filesystem {
     use super::*;
 

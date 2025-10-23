@@ -2,6 +2,7 @@ use std::fs;
 use std::process::Command;
 
 /// Authentication and account security checks
+#[allow(clippy::module_inception)]
 pub mod auth {
     use super::*;
 

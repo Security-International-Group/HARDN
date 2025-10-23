@@ -31,7 +31,7 @@ impl LogLevel {
 
 impl fmt::Display for LogLevel {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}{}{}", self.color_code(), self.prefix(), "\x1b[0m")
+    write!(f, "{}{}\x1b[0m", self.color_code(), self.prefix())
     }
 }
 

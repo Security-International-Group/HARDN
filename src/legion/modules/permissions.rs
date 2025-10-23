@@ -2,6 +2,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 
 /// File permissions and access control monitoring
+#[allow(clippy::module_inception)]
 pub mod permissions {
     use super::*;
 

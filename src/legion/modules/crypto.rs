@@ -2,6 +2,7 @@ use std::path::Path;
 use std::process::Command;
 
 /// Cryptography and certificate monitoring
+#[allow(clippy::module_inception)]
 pub mod crypto {
     use super::*;
 

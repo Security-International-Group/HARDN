@@ -299,7 +299,7 @@ impl IncidentCorrelator {
         let mut sequence_matched = true;
         let mut matched_events = Vec::new();
 
-        for (_i, condition) in rule.conditions.iter().enumerate() {
+    for condition in rule.conditions.iter() {
             let mut found = false;
             for event in events {
                 if self.condition_matches(condition, event) {
@@ -337,7 +337,7 @@ impl IncidentCorrelator {
             ConditionOperator::Equals => field_value == condition.value,
             ConditionOperator::Contains => field_value.contains(&condition.value),
             ConditionOperator::Regex => {
-                regex::Regex::new(&condition.value).map_or(false, |re| re.is_match(field_value))
+                regex::Regex::new(&condition.value).is_ok_and(|re| re.is_match(field_value))
             }
             ConditionOperator::GreaterThan => {
                 field_value.parse::<f64>().unwrap_or(0.0)

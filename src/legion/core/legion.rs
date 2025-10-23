@@ -46,6 +46,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -213,7 +214,7 @@ impl LegionMonitorSnapshot {
             .iter()
             .filter(|result| !matches!(result.status, ScriptStatus::Success))
             .map(|result| {
-                let detail = result.details.as_ref().map(|s| s.as_str()).unwrap_or("-");
+                let detail = result.details.as_deref().unwrap_or("-");
                 format!(
                     "{}::{} [{}] {}",
                     result.domain, result.name, result.status, detail
@@ -252,7 +253,7 @@ impl LegionMonitorSnapshot {
                 });
 
         Self {
-            timestamp: risk_score.timestamp.clone(),
+            timestamp: risk_score.timestamp,
             risk_score: sanitize_metric(risk_score.overall_score),
             risk_level: risk_score.risk_level.to_string(),
             confidence: sanitize_metric(risk_score.confidence),
@@ -351,10 +352,10 @@ fn classify_contributing_factor(factor: &str) -> (&'static str, String) {
         }
     } else if normalized.contains("not installed") {
         category = "Platform Coverage";
-    } else if normalized.contains("warning") || normalized.contains("not active") {
-        if normalized.contains("wazuh") {
-            category = "Security Platform";
-        }
+    } else if (normalized.contains("warning") || normalized.contains("not active"))
+        && normalized.contains("wazuh")
+    {
+        category = "Security Platform";
     }
 
     (category, tidy_text(&summary, 140))
@@ -492,7 +493,7 @@ fn collect_current_listening_ports() -> io::Result<HashMap<String, String>> {
                 .map(|column| column.chars().all(|c| c.is_alphabetic()))
                 .unwrap_or(false);
 
-            let proto = parts.get(0).copied().unwrap_or("");
+            let proto = parts.first().copied().unwrap_or("");
             let local_addr = if looks_like_ss {
                 parts.get(4).copied().unwrap_or("")
             } else {
@@ -758,8 +759,7 @@ impl Legion {
         response_enabled: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let config = Config::load()?;
-        let baseline = BaselineManager::new(&config)?;
-        let baseline_arc = Arc::new(BaselineManager::new(&config)?);
+    let baseline = BaselineManager::new(&config)?;
 
         // Initialize threat intelligence
         let threat_intel_path = std::path::PathBuf::from("/var/lib/hardn/legion/threat_intel.json");
@@ -781,7 +781,7 @@ impl Legion {
         let core = framework_pipeline::build_default_core(
             baseline.snapshot(),
             response_enabled,
-            Arc::clone(&baseline_arc),
+            Rc::new(BaselineManager::new(&config)?),
         );
 
         Ok(Self {
@@ -870,7 +870,10 @@ impl Legion {
 
             // Enhanced daemon mode: run checks in a loop with adjustable intensity
             loop {
-                let profile = if self.loop_iteration % FULL_SCAN_INTERVAL_CYCLES == 0 {
+                let profile = if self
+                    .loop_iteration
+                    .is_multiple_of(FULL_SCAN_INTERVAL_CYCLES)
+                {
                     ScanProfile::Full
                 } else {
                     ScanProfile::Quick
@@ -1668,8 +1671,8 @@ impl Legion {
         if total_diff == 0 {
             return Ok(0.0);
         }
-        let usage = (total_diff - idle_diff) as f64 / total_diff as f64;
-        Ok(usage.min(1.0).max(0.0)) // Clamp to 0.0-1.0
+    let usage = (total_diff - idle_diff) as f64 / total_diff as f64;
+    Ok(usage.clamp(0.0, 1.0))
     }
 
     /// Get current memory usage as a percentage (0.0 to 1.0)
@@ -3984,7 +3987,10 @@ pub async fn run_with_args(args: &[String]) -> Result<(), Box<dyn std::error::Er
                            data consistency, and reports any corruption or maintenance issues.")
                 .action(clap::ArgAction::SetTrue),
         )
-        .get_matches_from(&["hardn legion".to_string()].iter().chain(args.iter()).cloned().collect::<Vec<_>>());
+        .get_matches_from(["hardn legion".to_string()]
+            .into_iter()
+            .chain(args.iter().cloned())
+            .collect::<Vec<_>>());
 
     let create_baseline = matches.get_flag("create-baseline");
     let predictive_enabled = matches.get_flag("predictive");

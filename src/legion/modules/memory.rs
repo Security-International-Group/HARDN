@@ -1,6 +1,7 @@
 use std::process::Command;
 
 /// Memory and resource monitoring
+#[allow(clippy::module_inception)]
 pub mod memory {
     use super::*;
 

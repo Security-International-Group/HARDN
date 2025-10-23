@@ -16,7 +16,6 @@ use crate::utils::{detect_debian_version, log_message, LogLevel};
 use crate::utils::{env_or_defaults, find_script, join_paths, list_modules};
 use chrono::{DateTime, Utc};
 use comfy_table::{presets::UTF8_FULL, Table};
-use ctrlc;
 use glob::glob;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
@@ -539,37 +538,41 @@ struct HardnAuditRawRule {
 
 impl HardnMonitorSnapshot {
     fn new(
-        tool_score: f64,
-        module_score: f64,
-        audit_score: f64,
+        scores: HardnScoreBreakdown,
         total_score: f64,
         grade: &str,
-        tool_summary: HardnToolSummary,
-        module_logs: Vec<String>,
-        services: Vec<HardnServiceStatusEntry>,
-        hardn_processes: Vec<String>,
-        recommendations: Vec<String>,
-        status_note: Option<String>,
-        audit: Option<HardnAuditSummary>,
+        context: HardnSnapshotContext,
     ) -> Self {
+        let sanitized_scores = HardnScoreBreakdown {
+            tools: sanitize_score(scores.tools),
+            modules: sanitize_score(scores.modules),
+            audit: sanitize_score(scores.audit),
+        };
+
         Self {
             timestamp: Utc::now(),
             total_score: sanitize_score(total_score),
             grade: grade.to_string(),
-            component_scores: HardnScoreBreakdown {
-                tools: sanitize_score(tool_score),
-                modules: sanitize_score(module_score),
-                audit: sanitize_score(audit_score),
-            },
-            tool_summary,
-            module_logs,
-            services,
-            hardn_processes,
-            recommendations,
-            status_note,
-            audit,
+            component_scores: sanitized_scores,
+            tool_summary: context.tool_summary,
+            module_logs: context.module_logs,
+            services: context.services,
+            hardn_processes: context.hardn_processes,
+            recommendations: context.recommendations,
+            status_note: context.status_note,
+            audit: context.audit,
         }
     }
+}
+
+struct HardnSnapshotContext {
+    tool_summary: HardnToolSummary,
+    module_logs: Vec<String>,
+    services: Vec<HardnServiceStatusEntry>,
+    hardn_processes: Vec<String>,
+    recommendations: Vec<String>,
+    status_note: Option<String>,
+    audit: Option<HardnAuditSummary>,
 }
 
 fn sanitize_score(value: f64) -> f64 {
@@ -610,8 +613,6 @@ fn generate_security_report() {
     );
 
     // Track scoring components
-    let tool_score: f64;
-    let module_score: f64;
     let mut audit_score: f64 = 0.0;
     let mut recommendations: Vec<String> = Vec::new();
     let mut status_note: Option<String> = None;
@@ -698,7 +699,7 @@ fn generate_security_report() {
     }
     let missing_tools = total_tools.saturating_sub(installed_tools);
     let max_tool_points = total_tools as f64;
-    tool_score = (tool_points / max_tool_points * 40.0).min(40.0);
+    let tool_score = (tool_points / max_tool_points * 40.0).min(40.0);
 
     println!(
         "\n  Active: {}/{}, Enabled: {}/{}, Installed: {}/{}",
@@ -788,7 +789,7 @@ fn generate_security_report() {
     let expected_modules = 5; // Expected number of module logs
     let module_points = (executed_modules.len() as f64 / expected_modules as f64 * 10.0)
         + (active_services as f64 / hardn_services.len() as f64 * 10.0);
-    module_score = module_points.min(20.0);
+    let module_score = module_points.min(20.0);
 
     println!(
         "\n  Module logs found: {}/{}",
@@ -999,10 +1000,9 @@ fn generate_security_report() {
     let padding = 78 - score_text.len();
 
     println!(
-        "║  {}{}{}{:width$}║",
+        "║  {}{}\x1b[0m{:width$}║",
         grade_color,
         score_text,
-        "\x1b[0m",
         " ",
         width = padding
     );
@@ -1063,19 +1063,27 @@ fn generate_security_report() {
     let recommendations_snapshot = recommendations.clone();
     let status_note_snapshot = status_note.clone();
 
+    let component_scores = HardnScoreBreakdown {
+        tools: tool_score,
+        modules: module_score,
+        audit: audit_score,
+    };
+
+    let snapshot_context = HardnSnapshotContext {
+        tool_summary: tool_summary_snapshot,
+        module_logs: module_logs_snapshot,
+        services: service_status_entries,
+        hardn_processes: hardn_processes_snapshot,
+        recommendations: recommendations_snapshot,
+        status_note: status_note_snapshot,
+        audit: audit_summary.clone(),
+    };
+
     let snapshot = HardnMonitorSnapshot::new(
-        tool_score,
-        module_score,
-        audit_score,
+        component_scores,
         total_score,
         grade,
-        tool_summary_snapshot,
-        module_logs_snapshot,
-        service_status_entries,
-        hardn_processes_snapshot,
-        recommendations_snapshot,
-        status_note_snapshot,
-        audit_summary.clone(),
+        snapshot_context,
     );
 
     if let Err(e) = persist_hardn_monitor_snapshot(&snapshot) {

@@ -1,6 +1,7 @@
 use std::process::Command;
 
 /// Process and behavior monitoring
+#[allow(clippy::module_inception)]
 pub mod processes {
     use super::*;
 

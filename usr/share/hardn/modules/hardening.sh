@@ -108,11 +108,163 @@ apt_install() {
     fi
 }
 
+hardn_services_lockdown() {
+    local api_port="${HARDN_API_PORT:-8000}"
+    local grafana_port="${HARDN_GRAFANA_PORT:-3000}"
+    local api_allow_list="${HARDN_API_ALLOWED_CIDRS:-}"
+    local grafana_allow_list="${HARDN_GRAFANA_ALLOWED_CIDRS:-}"
+
+    HARDN_STATUS INFO "Applying HARDN services lockdown perimeter"
+
+    if ! command -v ufw >/dev/null 2>&1; then
+        apt_install "ufw" "Installing UFW firewall" 180 ufw || log_warning "Failed to install UFW; continuing with existing firewall"
+    fi
+
+    if ! command -v iptables >/dev/null 2>&1; then
+        apt_install "iptables" "Installing iptables tools" 120 iptables iptables-persistent netfilter-persistent || true
+    fi
+
+    # Disable SSH entry points – Fail2Ban will still monitor for unexpected activations
+    if systemctl list-unit-files | grep -q '^ssh\.service'; then
+        systemctl stop ssh.service 2>/dev/null || true
+        systemctl disable ssh.service 2>/dev/null || true
+        systemctl mask ssh.service 2>/dev/null || true
+    fi
+    if systemctl list-unit-files | grep -q '^ssh\.socket'; then
+        systemctl stop ssh.socket 2>/dev/null || true
+        systemctl disable ssh.socket 2>/dev/null || true
+    fi
+
+    if command -v ufw >/dev/null 2>&1; then
+        ufw --force disable
+        ufw --force reset
+        ufw default deny incoming
+        ufw default allow outgoing
+        ufw default deny routed
+        ufw allow in on lo comment 'Loopback inbound'
+        ufw allow out on lo comment 'Loopback outbound'
+
+        if [ -n "$api_allow_list" ]; then
+            for cidr in $api_allow_list; do
+                ufw allow proto tcp from "$cidr" to any port "$api_port" comment 'HARDN API access (scoped)'
+            done
+        else
+            ufw allow "$api_port"/tcp comment 'HARDN API access'
+        fi
+
+        if [ -n "$grafana_allow_list" ]; then
+            for cidr in $grafana_allow_list; do
+                ufw allow proto tcp from "$cidr" to any port "$grafana_port" comment 'Grafana access (scoped)'
+            done
+        else
+            ufw allow "$grafana_port"/tcp comment 'Grafana access'
+        fi
+
+        ufw allow out 53 comment 'DNS'
+        ufw allow out 80/tcp comment 'HTTP'
+        ufw allow out 443/tcp comment 'HTTPS'
+        ufw allow out 123/udp comment 'NTP'
+
+        if [ -n "$HARDN_PERMITTED_OUTBOUND_CIDRS" ]; then
+            for cidr in $HARDN_PERMITTED_OUTBOUND_CIDRS; do
+                ufw allow out to "$cidr" comment 'Approved outbound range'
+            done
+        fi
+
+        ufw --force enable
+        ufw reload >/dev/null 2>&1 || true
+        HARDN_STATUS INFO "UFW restricted to HARDN API port ${api_port} and Grafana port ${grafana_port}"
+    else
+        log_warning "UFW firewall not available; skipping UFW lockdown"
+    fi
+
+    local ipt_cmd=""
+    if command -v iptables-nft >/dev/null 2>&1; then
+        ipt_cmd="iptables-nft"
+    elif command -v iptables >/dev/null 2>&1; then
+        ipt_cmd="iptables"
+    fi
+
+    if [ -n "$ipt_cmd" ]; then
+        $ipt_cmd -N HARDN-LOCKDOWN 2>/dev/null || true
+        $ipt_cmd -F HARDN-LOCKDOWN
+        $ipt_cmd -A HARDN-LOCKDOWN -i lo -j ACCEPT
+        $ipt_cmd -A HARDN-LOCKDOWN -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+        if [ -n "$api_allow_list" ]; then
+            for cidr in $api_allow_list; do
+                $ipt_cmd -A HARDN-LOCKDOWN -p tcp --dport "$api_port" -s "$cidr" -j ACCEPT
+            done
+        else
+            $ipt_cmd -A HARDN-LOCKDOWN -p tcp --dport "$api_port" -j ACCEPT
+        fi
+
+        if [ -n "$grafana_allow_list" ]; then
+            for cidr in $grafana_allow_list; do
+                $ipt_cmd -A HARDN-LOCKDOWN -p tcp --dport "$grafana_port" -s "$cidr" -j ACCEPT
+            done
+        else
+            $ipt_cmd -A HARDN-LOCKDOWN -p tcp --dport "$grafana_port" -j ACCEPT
+        fi
+
+        $ipt_cmd -A HARDN-LOCKDOWN -p icmp --icmp-type echo-request -j DROP
+        $ipt_cmd -A HARDN-LOCKDOWN -j DROP
+
+        if ! $ipt_cmd -C INPUT -j HARDN-LOCKDOWN 2>/dev/null; then
+            $ipt_cmd -I INPUT 1 -j HARDN-LOCKDOWN
+        fi
+
+        HARDN_STATUS INFO "iptables HARDN-LOCKDOWN chain applied"
+
+        if command -v ip6tables >/dev/null 2>&1; then
+            ip6tables -N HARDN-LOCKDOWN 2>/dev/null || true
+            ip6tables -F HARDN-LOCKDOWN
+            ip6tables -A HARDN-LOCKDOWN -i lo -j ACCEPT
+            ip6tables -A HARDN-LOCKDOWN -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+            if [ -n "$api_allow_list" ]; then
+                for cidr in $api_allow_list; do
+                    ip6tables -A HARDN-LOCKDOWN -p tcp --dport "$api_port" -s "$cidr" -j ACCEPT
+                done
+            else
+                ip6tables -A HARDN-LOCKDOWN -p tcp --dport "$api_port" -j ACCEPT
+            fi
+
+            if [ -n "$grafana_allow_list" ]; then
+                for cidr in $grafana_allow_list; do
+                    ip6tables -A HARDN-LOCKDOWN -p tcp --dport "$grafana_port" -s "$cidr" -j ACCEPT
+                done
+            else
+                ip6tables -A HARDN-LOCKDOWN -p tcp --dport "$grafana_port" -j ACCEPT
+            fi
+
+            ip6tables -A HARDN-LOCKDOWN -j DROP
+
+            if ! ip6tables -C INPUT -j HARDN-LOCKDOWN 2>/dev/null; then
+                ip6tables -I INPUT 1 -j HARDN-LOCKDOWN
+            fi
+
+            HARDN_STATUS INFO "ip6tables HARDN-LOCKDOWN chain applied"
+        fi
+
+        if command -v netfilter-persistent >/dev/null 2>&1; then
+            netfilter-persistent save >/dev/null 2>&1 || true
+        fi
+    else
+        log_warning "iptables not available; skipping low-level firewall sync"
+    fi
+
+    HARDN_STATUS INFO "HARDN services lockdown perimeter enforced"
+}
+
 # Check if running as root
 if [[ $EUID -ne 0 ]]; then
     log_error "This script must be run as root"
    exit 1
 fi
+
+# Enforce network perimeter before additional hardening
+hardn_services_lockdown
 
 # ==========================================
 # TIME - NTP
@@ -902,39 +1054,6 @@ EOF
     augenrules --load 2>/dev/null || true
     systemctl restart auditd 2>/dev/null || true
     HARDN_STATUS "Audit rules configured"
-fi
-
-# ==========================================
-# FIREWALL HARDENING
-# ==========================================
-HARDN_STATUS "Configuring firewall with strict rules..."
-
-if command -v ufw >/dev/null 2>&1; then
-    # Reset UFW to defaults
-    ufw --force disable
-    ufw --force reset
-    
-    # Default policies
-    ufw default deny incoming
-    ufw default allow outgoing
-    ufw default deny routed
-    
-    # Allow SSH (rate limited)
-    ufw limit ssh/tcp comment 'SSH rate limit'
-    
-    # Allow DNS
-    ufw allow out 53 comment 'DNS'
-    
-    # Allow HTTP/HTTPS out
-    ufw allow out 80/tcp comment 'HTTP'
-    ufw allow out 443/tcp comment 'HTTPS'
-    
-    # Allow NTP
-    ufw allow out 123/udp comment 'NTP'
-    
-    # Enable UFW
-    ufw --force enable
-    HARDN_STATUS "UFW firewall configured with strict rules"
 fi
 
 # ==========================================

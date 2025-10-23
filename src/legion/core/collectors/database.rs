@@ -3,15 +3,15 @@ use crate::legion::core::framework::{
     CollectionContext, FrameworkError, TelemetryCategory, TelemetryPayload, TelemetryRecord,
     TelemetrySource,
 };
-use std::sync::Arc;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct DatabaseTelemetrySource {
-    baseline_manager: Arc<BaselineManager>,
+    baseline_manager: Rc<BaselineManager>,
 }
 
 impl DatabaseTelemetrySource {
-    pub fn new(baseline_manager: Arc<BaselineManager>) -> Self {
+    pub fn new(baseline_manager: Rc<BaselineManager>) -> Self {
         Self { baseline_manager }
     }
 }

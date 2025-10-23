@@ -1,6 +1,7 @@
 use std::process::Command;
 
 /// Containers and build tooling monitoring
+#[allow(clippy::module_inception)]
 pub mod containers {
     use super::*;
 

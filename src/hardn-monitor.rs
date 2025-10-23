@@ -147,8 +147,8 @@ fn count_systemd_jobs() -> Option<usize> {
 fn parse_size_to_mb(token: &str) -> Option<f64> {
     let cleaned = token
         .trim()
-        .trim_start_matches(|c| c == '(')
-        .trim_end_matches(|c| c == ')' || c == '.' || c == ',');
+        .trim_start_matches('(')
+        .trim_end_matches(&[')', '.', ','][..]);
     if cleaned.is_empty() {
         return None;
     }
@@ -495,7 +495,7 @@ fn log_metrics_from_api() {
                         .and_then(|h| h.get("load_average"))
                         .and_then(|v| v.as_array())
                         .map(|arr| {
-                            let l1 = arr.get(0).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let l1 = arr.first().and_then(|v| v.as_f64()).unwrap_or(0.0);
                             let l5 = arr.get(1).and_then(|v| v.as_f64()).unwrap_or(0.0);
                             let l15 = arr.get(2).and_then(|v| v.as_f64()).unwrap_or(0.0);
                             (l1, l5, l15)

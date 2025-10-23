@@ -2,6 +2,7 @@ use std::fs;
 use std::process::Command;
 
 /// System inventory and information collection
+#[allow(clippy::module_inception)]
 pub mod inventory {
     use super::*;
 

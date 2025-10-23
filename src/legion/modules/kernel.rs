@@ -1,6 +1,7 @@
 use std::process::Command;
 
 /// Kernel and low-level monitoring
+#[allow(clippy::module_inception)]
 pub mod kernel {
     use super::*;
 

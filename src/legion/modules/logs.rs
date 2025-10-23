@@ -1,6 +1,7 @@
 use std::process::Command;
 
 /// Log analysis and monitoring
+#[allow(clippy::module_inception)]
 pub mod logs {
     use super::*;
 

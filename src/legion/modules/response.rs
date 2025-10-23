@@ -131,7 +131,7 @@ impl ResponseEngine {
                 eprintln!("Executing response rule: {}", rule.name);
 
                 for action in &rule.actions {
-                    if self.can_execute_action(&action).await {
+                    if self.can_execute_action(action).await {
                         match self.execute_action(action).await {
                             Ok(_) => {
                                 executed_actions.push(action.clone());

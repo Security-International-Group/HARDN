@@ -1,6 +1,7 @@
 use std::process::Command;
 
 /// Package and binary integrity checks
+#[allow(clippy::module_inception)]
 pub mod packages {
     use super::*;
 

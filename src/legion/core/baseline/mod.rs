@@ -80,6 +80,8 @@ pub struct KernelInfo {
     pub sysctl: HashMap<String, String>,
 }
 
+pub type DatabaseStats = (i64, i64, Option<i64>, u64);
+
 /// Baseline manager for handling baseline operations
 #[derive(Debug)]
 pub struct BaselineManager {
@@ -242,7 +244,7 @@ impl BaselineManager {
         }
     }
 
-    pub fn get_database_stats(&self) -> Result<Option<(i64, i64, Option<i64>, u64)>> {
+    pub fn get_database_stats(&self) -> Result<Option<DatabaseStats>> {
         if let Some(ref db) = self.database {
             let baseline_count = db.get_baseline_count()?;
             let anomaly_count = db.get_anomaly_count()?;
@@ -451,11 +453,7 @@ impl Baseline {
                         let stdout = String::from_utf8_lossy(&output.stdout);
                         for line in stdout.lines() {
                             let line = line.trim();
-                            if line.starts_with("inet ") {
-                                if let Some(addr) = line.split_whitespace().nth(1) {
-                                    addresses.push(addr.to_string());
-                                }
-                            } else if line.starts_with("inet6 ") {
+                            if line.starts_with("inet ") || line.starts_with("inet6 ") {
                                 if let Some(addr) = line.split_whitespace().nth(1) {
                                     addresses.push(addr.to_string());
                                 }
