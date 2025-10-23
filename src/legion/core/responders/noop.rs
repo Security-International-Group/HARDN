@@ -35,7 +35,7 @@ mod tests {
 
     #[test]
     fn noop_responder_skips_actions() {
-        let mut responder = NoopResponder::default();
+        let mut responder = NoopResponder;
         let telemetry = vec![TelemetryRecord::new(
             "test",
             TelemetryCategory::System,
