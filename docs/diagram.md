@@ -1,4 +1,4 @@
-![HARDN Logo](docs/assets/IMG_1233.jpeg)
+![HARDN Logo](assets/IMG_1233.jpeg)
 # Design Architectures (Demo)
 
 ## LEGION
