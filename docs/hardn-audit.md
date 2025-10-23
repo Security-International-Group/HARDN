@@ -1,4 +1,4 @@
-![HARDN Logo](docs/assets/IMG_1233.jpeg)
+![HARDN Logo](assets/IMG_1233.jpeg)
 # HARDN Audit Module Walkthrough
 
 This guide explains how the OPENScap C-based audit engine under `src/audit/` works, how it uses generated rule metadata, and how to extend it. The walkthrough is organized around the three key inputs in that directory:
