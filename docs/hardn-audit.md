@@ -10,16 +10,15 @@ This guide explains how the OPENScap C-based audit engine under `src/audit/` wor
 ## High-Level Flow
 
 ```mermaid
-detail
 flowchart TD
-    A[Start \`hardn_audit\`] --> B[Load RULES from \`rules_autogen.inc\`]
+    A[Start hardn_audit] --> B[Load rules from rules_autogen.inc]
     B --> C[initialize_rule_overrides()]
-    C --> D[patch_rule_check \u2192 replace placeholders]
-    D --> E[UTC timestamp capture]
+    C --> D[patch_rule_check → replace placeholders]
+    D --> E[Capture UTC timestamp]
     E --> F[Iterate over every rule]
     F --> G{Has concrete check?}
-    G -- yes --> H[Invoke rule-specific function]
-    G -- no --> I[Fallback: check_not_implemented]
+    G -- Yes --> H[Invoke rule-specific function]
+    G -- No --> I[Fallback: check_not_implemented]
     H --> J[Return status + evidence]
     I --> J
     J --> K[json_escape_and_print()]
