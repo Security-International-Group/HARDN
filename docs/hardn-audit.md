@@ -17,8 +17,8 @@ flowchart TD
     D --> E[Capture UTC timestamp]
     E --> F[Iterate over every rule]
     F --> G{Has concrete check?}
-    G -- Yes --> H[Invoke rule-specific function]
-    G -- No --> I[Fallback: check_not_implemented]
+    G -->|Yes| H[Invoke rule-specific function]
+    G -->|No| I[Fallback: check_not_implemented]
     H --> J[Return status + evidence]
     I --> J
     J --> K[json_escape_and_print()]
