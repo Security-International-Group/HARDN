@@ -3,4 +3,4 @@ queries:
   - uses: security-extended
   - exclude:
       problem.severity:
-        - warning
+        - low
