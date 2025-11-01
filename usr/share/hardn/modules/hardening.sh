@@ -165,8 +165,8 @@ hardn_services_lockdown() {
         ufw allow out 443/tcp comment 'HTTPS'
         ufw allow out 123/udp comment 'NTP'
 
-        if [ -n "$permitted_outbound_cidrs" ]; then
-            for cidr in $permitted_outbound_cidrs; do
+        if [ -n "$HARDN_PERMITTED_OUTBOUND_CIDRS" ]; then
+            for cidr in $HARDN_PERMITTED_OUTBOUND_CIDRS; do
                 ufw allow out to "$cidr" comment 'Approved outbound range'
             done
         fi
