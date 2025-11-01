@@ -113,6 +113,7 @@ hardn_services_lockdown() {
     local grafana_port="${HARDN_GRAFANA_PORT:-3000}"
     local api_allow_list="${HARDN_API_ALLOWED_CIDRS:-}"
     local grafana_allow_list="${HARDN_GRAFANA_ALLOWED_CIDRS:-}"
+    local permitted_outbound_cidrs="${HARDN_PERMITTED_OUTBOUND_CIDRS:-}"
 
     HARDN_STATUS INFO "Applying HARDN services lockdown perimeter"
 
@@ -165,8 +166,8 @@ hardn_services_lockdown() {
         ufw allow out 443/tcp comment 'HTTPS'
         ufw allow out 123/udp comment 'NTP'
 
-        if [ -n "$HARDN_PERMITTED_OUTBOUND_CIDRS" ]; then
-            for cidr in $HARDN_PERMITTED_OUTBOUND_CIDRS; do
+        if [ -n "$permitted_outbound_cidrs" ]; then
+            for cidr in $permitted_outbound_cidrs; do
                 ufw allow out to "$cidr" comment 'Approved outbound range'
             done
         fi
