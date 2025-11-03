@@ -1,6 +1,9 @@
 # Binary and paths
 BINARY_NAME=hardn
 BUILD_TARGET=target/release/$(BINARY_NAME)
+# GUI binary target
+GUI_BINARY_NAME=hardn-gui
+GUI_BUILD_TARGET=target/release/$(GUI_BINARY_NAME)
 DEB_DIR=debian
 BIN_INSTALL_PATH=usr/bin
 
@@ -48,6 +51,9 @@ CASTLE_PREFIX := $(COLOR_PRIMARY)  $(CASTLE_NAME)
 # Tunable build flags
 CARGO_FLAGS ?= --release --quiet
 DEB_PARALLEL ?= $(shell nproc 2>/dev/null || echo 1)
+
+# Control whether to clean after build (0 = keep artifacts; 1 = clean)
+CLEAN_AFTER_BUILD ?= 0
 
 # Ensure dpkg-buildpackage skips DWZ (avoids noisy warnings) while retaining caller options
 DEB_BUILD_OPTIONS ?= parallel=$(DEB_PARALLEL)
@@ -216,7 +222,11 @@ build-internal:
 	else \
 		printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)No fresh .deb located upstream.$(COLOR_RESET)\n'; \
 	fi
+ifneq ($(CLEAN_AFTER_BUILD),1)
+	@printf '$(CASTLE_PREFIX) $(COLOR_MUTED)Skipping post-build clean (CLEAN_AFTER_BUILD=0).$(COLOR_RESET)\n'
+else
 	$(MAKE) clean
+endif
 	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)HARDN battle-ready.$(COLOR_RESET)\n'
 
 # Install HARDN as a service and start everything
@@ -229,46 +239,41 @@ hardn:
 		exit 1; \
 	fi
 
-# Internal target that does the actual work (called by sudo)
+# Internal target that does the work 
 hardn-internal:
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Triggering the HARDN beacon$(COLOR_RESET)\n'
-	@bash scripts/print-banner.sh "$(BUILD_TARGET)"
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Dropping the HARDN payload$(COLOR_RESET)\n'
-	@$(MAKE) install-deb-internal
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Syncing operators into the HARDN mesh$(COLOR_RESET)\n'
+	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Setting up HARDN$(COLOR_RESET)\n'
+	@if [ ! -f "$(BUILD_TARGET)" ] || [ ! -f "$(GUI_BUILD_TARGET)" ] || [ ! -f "target/release/hardn-monitor" ]; then \
+		printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Binary not found. Run: sudo make build$(COLOR_RESET)\n'; \
+		exit 1; \
+	fi
+	@printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Installing to /usr/lib/hardn and wiring symlinks$(COLOR_RESET)\n'
+	@mkdir -p /usr/lib/hardn
+	@install -m 755 $(BUILD_TARGET) /usr/lib/hardn/hardn
+	@install -m 755 target/release/hardn-monitor /usr/lib/hardn/hardn-monitor
+	@install -m 755 $(GUI_BUILD_TARGET) /usr/lib/hardn/hardn-gui
+	@if [ -f "usr/share/hardn/scripts/hardn-service-manager.sh" ]; then \
+		install -m 755 usr/share/hardn/scripts/hardn-service-manager.sh /usr/lib/hardn/hardn-service-manager; \
+	fi
+	@ln -sf /usr/lib/hardn/hardn /usr/bin/hardn
+	@ln -sf /usr/lib/hardn/hardn-monitor /usr/bin/hardn-monitor
+	@ln -sf /usr/lib/hardn/hardn-gui /usr/bin/hardn-gui
+	@if [ -f "/usr/lib/hardn/hardn-service-manager" ]; then \
+		ln -sf /usr/lib/hardn/hardn-service-manager /usr/bin/hardn-service-manager; \
+	fi
+	@mkdir -p /usr/share/hardn /var/log/hardn /var/lib/hardn/legion
+	@chmod 755 /usr/share/hardn /var/lib/hardn /var/lib/hardn/legion 2>/dev/null || true
+	@chmod 755 /var/log/hardn 2>/dev/null || true
 	@if [ -n "$$SUDO_USER" ]; then \
-		usermod -aG hardn "$$SUDO_USER" || true; \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)Added %s to the hardn squad (re-login needed).$(COLOR_RESET)\n' "$$SUDO_USER"; \
+		usermod -aG hardn "$$SUDO_USER" 2>/dev/null || true; \
+	fi
+	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Launching HARDN GUI$(COLOR_RESET)\n'
+	@if [ -n "$$SUDO_USER" ]; then \
+		runuser -u "$$SUDO_USER" -- nohup /usr/bin/hardn-gui >/dev/null 2>&1 & \
 	else \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)No sudo operator; skipping squad sync.$(COLOR_RESET)\n'; \
+		nohup /usr/bin/hardn-gui >/dev/null 2>&1 & \
 	fi
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Spawning the command console$(COLOR_RESET)\n'
-	# Optionally launch GUI (unless disabled)
-	@if [ "$$HARDN_NO_AUTO_GUI" != "1" ]; then \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Trying to pop the HARDN GUI (if present).$(COLOR_RESET)\n'; \
-		if command -v hardn-gui >/dev/null 2>&1; then \
-			if [ -n "$$SUDO_USER" ]; then \
-				runuser -u "$$SUDO_USER" -- nohup hardn-gui >/dev/null 2>&1 & \
-			else \
-				nohup hardn-gui >/dev/null 2>&1 & \
-			fi; \
-		fi; \
-	fi
-	# Console is opt-in: HARDN_AUTO_CONSOLE=1; can be suppressed with HARDN_NO_CONSOLE=1
-	@if [ "$$HARDN_NO_CONSOLE" = "1" ]; then \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Console launch suppressed (HARDN_NO_CONSOLE=1).$(COLOR_RESET)\n'; \
-	else \
-		if [ "$$HARDN_AUTO_CONSOLE" = "1" ]; then \
-			if [ -e /dev/tty ] && [ -w /dev/tty ]; then \
-				hardn-service-manager < /dev/tty > /dev/tty 2>&1; \
-			else \
-				printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)No TTY detected; run sudo hardn-service-manager manually.$(COLOR_RESET)\n'; \
-			fi; \
-		else \
-			printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Console not auto-launched. Run: sudo hardn-service-manager$(COLOR_RESET)\n'; \
-		fi; \
-	fi
-	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)HARDN deployment complete.$(COLOR_RESET)\n'
+	@printf '$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)GUI launched$(COLOR_RESET)\n'
+	@printf '$(COLOR_SUCCESS)HARDN ready$(COLOR_RESET)\n'
 
 # Internal target that does the actual installation work
 install-deb-internal:
@@ -277,11 +282,10 @@ install-deb-internal:
 		DEB_FILE=$$(find .. -name "hardn_*_$(ARCH).deb" | head -n1); \
 	fi; \
 	if [ -n "$$DEB_FILE" ]; then \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Installing %s$(COLOR_RESET)\n' "$$DEB_FILE"; \
-		apt-get update -qq; \
-		apt-get install -y -qq "$$DEB_FILE"; \
+		apt-get update -qq > /dev/null 2>&1; \
+		apt-get install -y -qq "$$DEB_FILE" > /dev/null 2>&1; \
 	else \
-		printf '$(CASTLE_PREFIX) $(COLOR_WARN)No .deb file found for installation!$(COLOR_RESET)\n'; exit 1; \
+		printf '$(CASTLE_PREFIX) $(COLOR_WARN)No .deb file found!$(COLOR_RESET)\n'; exit 1; \
 	fi
 
 clean:

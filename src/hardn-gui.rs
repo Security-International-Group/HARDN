@@ -254,7 +254,7 @@ fn main() {
         let tmp_end = buffer.end_iter();
         let end_mark: TextMark = buffer.create_mark(Some("log_end"), &tmp_end, true);
 
-        let text_view_tab = TextView::new();
+    let text_view_tab = TextView::new();
         text_view_tab.set_editable(false);
         text_view_tab.set_cursor_visible(false);
         text_view_tab.set_monospace(true);
@@ -268,6 +268,16 @@ fn main() {
         text_view_split.add_css_class("view");
         text_view_split.set_buffer(Some(&buffer));
 
+    // Main (left) logs view that lives outside the notebook so it can
+    // occupy the full left column of the application. It shares the
+    // same `buffer` as the tabbed views so content is consistent.
+    let main_text_view = TextView::new();
+    main_text_view.set_editable(false);
+    main_text_view.set_cursor_visible(false);
+    main_text_view.set_monospace(true);
+    main_text_view.add_css_class("view");
+    main_text_view.set_buffer(Some(&buffer));
+
         let logs_scroll_tab = ScrolledWindow::new();
         logs_scroll_tab.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
         logs_scroll_tab.set_child(Some(&text_view_tab));
@@ -276,7 +286,7 @@ fn main() {
         logs_scroll_tab.set_hexpand(true);
         logs_scroll_tab.set_vexpand(true);
 
-        let logs_scroll_split = ScrolledWindow::new();
+    let logs_scroll_split = ScrolledWindow::new();
         logs_scroll_split.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
         logs_scroll_split.set_child(Some(&text_view_split));
         logs_scroll_split.set_overlay_scrolling(false);
@@ -290,14 +300,23 @@ fn main() {
         term_scroll_tab.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
         term_scroll_tab.set_child(Some(&terminal_tab));
         term_scroll_tab.set_hexpand(true);
-        term_scroll_tab.set_vexpand(true);
+    term_scroll_tab.set_vexpand(true);
+    // Make the terminal request a reasonable minimum height so it's visible
+    // when the Logs view is large — users reported the terminal appearing
+    // as a thin strip at the bottom. This gives the terminal more room.
+    terminal_tab.set_vexpand(true);
+    terminal_tab.set_hexpand(true);
+    term_scroll_tab.set_height_request(480);
 
         let terminal_split = VteTerminal::new();
         let term_scroll_split = ScrolledWindow::new();
         term_scroll_split.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
         term_scroll_split.set_child(Some(&terminal_split));
         term_scroll_split.set_hexpand(true);
-        term_scroll_split.set_vexpand(true);
+    term_scroll_split.set_vexpand(true);
+    terminal_split.set_vexpand(true);
+    terminal_split.set_hexpand(true);
+    term_scroll_split.set_height_request(480);
 
         // Start shells: keep idle shells; prompt/launch when tab is opened
         {
@@ -317,18 +336,7 @@ fn main() {
             }
         }
 
-        // Split view (Logs + Terminal)
-        let split = Paned::new(Orientation::Horizontal);
-        split.set_hexpand(true);
-        split.set_vexpand(true);
-        split.set_start_child(Some(&logs_scroll_split));
-        split.set_resize_start_child(true);
-        split.set_shrink_start_child(true);
-        split.set_end_child(Some(&term_scroll_split));
-        split.set_resize_end_child(true);
-        split.set_shrink_end_child(true);
-
-        // Tabs container
+    // Tabs container
         let notebook = Notebook::new();
         notebook.set_hexpand(true);
         notebook.set_vexpand(true);
@@ -345,14 +353,21 @@ fn main() {
         term_box.set_hexpand(true);
         term_box.set_vexpand(true);
         term_box.append(&term_scroll_tab);
-        let split_box = GtkBox::new(Orientation::Vertical, 0);
-        split_box.set_hexpand(true);
-        split_box.set_vexpand(true);
-        split_box.append(&split);
+    let split_paned = Paned::new(Orientation::Vertical);
+    split_paned.set_hexpand(true);
+    split_paned.set_vexpand(true);
+    split_paned.set_start_child(Some(&logs_scroll_split));
+    split_paned.set_resize_start_child(true);
+    split_paned.set_shrink_start_child(true);
+    split_paned.set_end_child(Some(&term_scroll_split));
+    split_paned.set_resize_end_child(true);
+    split_paned.set_shrink_end_child(true);
+    // Default to half the right column height (approx). Users can drag the sash.
+    split_paned.set_position(400);
 
-        notebook.append_page(&logs_box, Some(&tab_logs_label));
-        notebook.append_page(&term_box, Some(&tab_term_label));
-        notebook.append_page(&split_box, Some(&tab_split_label));
+    notebook.append_page(&logs_box, Some(&tab_logs_label));
+    notebook.append_page(&term_box, Some(&tab_term_label));
+    notebook.append_page(&split_paned, Some(&tab_split_label));
         notebook.set_tab_pos(gtk4::PositionType::Top);
 
         // Prepare on-demand terminal launch per tab selection (one-time per view)
@@ -362,9 +377,13 @@ fn main() {
         let terminal_split_c = terminal_split.clone();
         let tab_flag_c = term_prompted_tab.clone();
         let split_flag_c = term_prompted_split.clone();
+        let split_paned_c_for_switch = split_paned.clone();
         notebook.connect_switch_page(move |_nb, _page, idx| {
             // Build the command to clear screen, print prompt, then trigger sudo to launch the manager
-            const LAUNCH_CMD: &[u8] = b"printf \"\\033c\\033]0;HARDN Service Console\\007\\033[38;5;48m>>> Enter password to launch HARDN Service Manager...\\033[0m\\n\"; sudo -k; sudo -S bash -lc hardn-service-manager\n";
+            // Use plain `sudo` (no -S) so sudo reads the password from the PTY prompt
+            // instead of attempting to read from STDIN; this improves interactivity
+            // in embedded terminals. Use full path to hardn-service-manager to avoid PATH issues.
+            const LAUNCH_CMD: &[u8] = b"printf \"\\033c\\033]0;HARDN Service Console\\007\\033[38;5;48m>>> Enter password to launch HARDN Service Manager...\\033[0m\\n\"; sudo -k; sudo /usr/bin/hardn-service-manager\n";
             if idx == 1 {
                 if !*tab_flag_c.borrow() {
                     terminal_tab_c.feed_child(LAUNCH_CMD);
@@ -373,12 +392,15 @@ fn main() {
             } else if idx == 2 && !*split_flag_c.borrow() {
                 terminal_split_c.feed_child(LAUNCH_CMD);
                 *split_flag_c.borrow_mut() = true;
+                // Make the split between logs and terminal roughly equal when the
+                // "Logs + Terminal" tab is selected.
+                split_paned_c_for_switch.set_position(400);
             }
         });
 
         // If current page is already Terminal or Split at startup, fire once
         {
-            const LAUNCH_CMD: &[u8] = b"printf \"\\033c\\033]0;HARDN Service Console\\007\\033[38;5;48m>>> Enter password to launch HARDN Service Manager...\\033[0m\\n\"; sudo -k; sudo -S bash -lc hardn-service-manager\n";
+            const LAUNCH_CMD: &[u8] = b"printf \"\\033c\\033]0;HARDN Service Console\\007\\033[38;5;48m>>> Enter password to launch HARDN Service Manager...\\033[0m\\n\"; sudo -k; sudo /usr/bin/hardn-service-manager\n";
             let current = notebook.current_page();
             if current == Some(1) && !*term_prompted_tab.borrow() {
                 terminal_tab.feed_child(LAUNCH_CMD);
@@ -416,7 +438,7 @@ fn main() {
             }
         }
         if let Some(pic) = &logo_picture { header_box.append(pic); }
-        let title_label = Label::new(Some("HARDN Monitor (Read-Only)"));
+    let title_label = Label::new(Some("HARDN Monitor"));
         title_label.add_css_class("title-2");
         header_box.append(&title_label);
         // Spacer
@@ -445,20 +467,46 @@ fn main() {
         badge_box.append(&badge_legion);
         badge_box.append(&badge_monitor);
 
-        // Root container: header + badges + tabs
-        let root = GtkBox::new(Orientation::Vertical, 0);
-        root.set_hexpand(true);
-        root.set_vexpand(true);
-        root.append(&header_box);
-        root.append(&badge_box);
-        root.append(&notebook);
+        // Root-right container: header + badges + tabs (this will be the
+        // right-hand pane of the main two-column layout)
+        let right_box = GtkBox::new(Orientation::Vertical, 0);
+        right_box.set_hexpand(true);
+        right_box.set_vexpand(true);
+        right_box.append(&header_box);
+        right_box.append(&badge_box);
+        right_box.append(&notebook);
+
+        // Main two-column paned layout: logs on the left, GUI on the right.
+        let main_paned = Paned::new(Orientation::Horizontal);
+        main_paned.set_hexpand(true);
+        main_paned.set_vexpand(true);
+        // Left: a scrolled view containing `main_text_view`
+        let main_logs_scroll = ScrolledWindow::new();
+        main_logs_scroll.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
+        main_logs_scroll.set_child(Some(&main_text_view));
+        main_logs_scroll.set_overlay_scrolling(false);
+        main_logs_scroll.set_hexpand(true);
+        main_logs_scroll.set_vexpand(true);
+        main_logs_scroll.set_height_request(640);
+
+        main_paned.set_start_child(Some(&main_logs_scroll));
+        main_paned.set_resize_start_child(true);
+        main_paned.set_shrink_start_child(true);
+        main_paned.set_end_child(Some(&right_box));
+        main_paned.set_resize_end_child(true);
+        main_paned.set_shrink_end_child(true);
+        /// TIM - discoved this on fresh deb 13 install
+    // Set initial divider position (pixels). Users can drag
+    // the sash to resize the left logs pane as needed; Paned is
+    // interactive by default.
+    main_paned.set_position(480);
 
         let window = ApplicationWindow::builder()
             .application(app)
-            .title("HARDN Monitor (Read-Only)")
-            .default_width(980)
-            .default_height(640)
-            .child(&root)
+            .title("HARDN Monitor")
+            .default_width(1280)
+            .default_height(800)
+            .child(&main_paned)
             .build();
         window.maximize();
 
@@ -494,6 +542,7 @@ fn main() {
         // Auto-follow flags for each log view: follow only when at bottom
         let auto_follow_tab = Arc::new(Mutex::new(true));
         let auto_follow_split = Arc::new(Mutex::new(true));
+    let auto_follow_main = Arc::new(Mutex::new(true));
         {
             let vadj = logs_scroll_tab.vadjustment();
             let auto_flag = auto_follow_tab.clone();
@@ -516,21 +565,34 @@ fn main() {
                 if let Ok(mut f) = auto_flag.lock() { *f = at_bottom; }
             });
         }
+        {
+            let vadj = main_logs_scroll.vadjustment();
+            let auto_flag = auto_follow_main.clone();
+            vadj.connect_value_changed(move |adj| {
+                let value = adj.value();
+                let upper = adj.upper();
+                let page = adj.page_size();
+                let at_bottom = value + page >= upper - 2.0;
+                if let Ok(mut f) = auto_flag.lock() { *f = at_bottom; }
+            });
+        }
 
         // Periodic UI refresh (pull model)
-        let rb_c = rb.clone();
-        let buf_for_ui_c = buf_for_ui.clone();
-        let alerts_ref_c = alerts_ref.clone();
-        let health_ref_c = health_ref.clone();
-        let badge_hardn_c = badge_hardn.clone();
-        let badge_api_c = badge_api.clone();
-        let badge_legion_c = badge_legion.clone();
-        let badge_monitor_c = badge_monitor.clone();
-        let text_view_tab_c = text_view_tab.clone();
-        let text_view_split_c = text_view_split.clone();
-        let auto_follow_tab_c = auto_follow_tab.clone();
-        let auto_follow_split_c = auto_follow_split.clone();
-        let end_mark_c = end_mark.clone();
+    let rb_c = rb.clone();
+    let buf_for_ui_c = buf_for_ui.clone();
+    let alerts_ref_c = alerts_ref.clone();
+    let health_ref_c = health_ref.clone();
+    let badge_hardn_c = badge_hardn.clone();
+    let badge_api_c = badge_api.clone();
+    let badge_legion_c = badge_legion.clone();
+    let badge_monitor_c = badge_monitor.clone();
+    let text_view_tab_c = text_view_tab.clone();
+    let text_view_split_c = text_view_split.clone();
+    let main_text_view_c = main_text_view.clone();
+    let auto_follow_tab_c = auto_follow_tab.clone();
+    let auto_follow_split_c = auto_follow_split.clone();
+    let auto_follow_main_c = auto_follow_main.clone();
+    let end_mark_c = end_mark.clone();
         let last_len: Rc<RefCell<usize>> = Rc::new(RefCell::new(0));
         let last_len_c = last_len.clone();
         // Update clock
@@ -588,6 +650,9 @@ fn main() {
             }
             if auto_follow_split_c.lock().map(|v| *v).unwrap_or(false) {
                 text_view_split_c.scroll_mark_onscreen(&end_mark_c);
+            }
+            if auto_follow_main_c.lock().map(|v| *v).unwrap_or(false) {
+                main_text_view_c.scroll_mark_onscreen(&end_mark_c);
             }
             ControlFlow::Continue
         });
