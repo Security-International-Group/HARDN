@@ -495,11 +495,11 @@ fn main() {
         main_paned.set_end_child(Some(&right_box));
         main_paned.set_resize_end_child(true);
         main_paned.set_shrink_end_child(true);
-        /// TIM - discoved this on fresh deb 13 install
-    // Set initial divider position (pixels). Users can drag
-    // the sash to resize the left logs pane as needed; Paned is
-    // interactive by default.
-    main_paned.set_position(480);
+        // TIM - discovered this on fresh Debian 13 install
+        // Set initial divider position (pixels). Users can drag
+        // the sash to resize the left logs pane as needed; Paned is
+        // interactive by default.
+        main_paned.set_position(480);
 
         let window = ApplicationWindow::builder()
             .application(app)

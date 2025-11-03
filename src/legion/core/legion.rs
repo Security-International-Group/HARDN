@@ -870,10 +870,7 @@ impl Legion {
 
             // Enhanced daemon mode: run checks in a loop with adjustable intensity
             loop {
-                let profile = if self
-                    .loop_iteration
-                    .is_multiple_of(FULL_SCAN_INTERVAL_CYCLES)
-                {
+                let profile = if self.loop_iteration % FULL_SCAN_INTERVAL_CYCLES == 0 {
                     ScanProfile::Full
                 } else {
                     ScanProfile::Quick
