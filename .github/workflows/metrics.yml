@@ -14,6 +14,10 @@ jobs:
   github-metrics:
     runs-on: ubuntu-latest
     steps:
+      - name: Install dependencies
+        run: |
+           sudo apt-get update
+           sudo apt-get install -y docker.io jq
       - name: Generate metrics
         uses: lowlighter/metrics@latest
         with:
