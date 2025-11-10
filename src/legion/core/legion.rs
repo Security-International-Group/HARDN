@@ -867,14 +867,18 @@ impl Legion {
                 cron_log_root.display(),
                 cron_state_path.display()
             ));
-
+            
             // Enhanced daemon mode: run checks in a loop with adjustable intensity
             loop {
-                let profile = if self.loop_iteration % FULL_SCAN_INTERVAL_CYCLES == 0 {
-                    ScanProfile::Full
+               let profile = if self
+                    .loop_iteration
+                    .is_multiple_of(FULL_SCAN_INTERVAL_CYCLES) 
+                {
+                   ScanProfile::Full
                 } else {
-                    ScanProfile::Quick
+                   ScanProfile::Quick
                 };
+            
 
                 if self.verbose {
                     functions::blank_line();

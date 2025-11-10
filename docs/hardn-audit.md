@@ -10,22 +10,47 @@ This guide explains how the OPENScap C-based audit engine under `src/audit/` wor
 ## High-Level Flow
 
 ```mermaid
-detail
-flowchart TD
-    A[Start \`hardn_audit\`] --> B[Load RULES from \`rules_autogen.inc\`]
-    B --> C[initialize_rule_overrides()]
-    C --> D[patch_rule_check \u2192 replace placeholders]
-    D --> E[UTC timestamp capture]
-    E --> F[Iterate over every rule]
-    F --> G{Has concrete check?}
-    G -- yes --> H[Invoke rule-specific function]
-    G -- no --> I[Fallback: check_not_implemented]
-    H --> J[Return status + evidence]
-    I --> J
-    J --> K[json_escape_and_print()]
-    K --> L[Emit JSON entry]
-    L --> M[All rules processed]
-    M --> N[Close JSON array and exit]
+flowchart LR
+
+subgraph INIT [Init]
+  A0([Start\nhardn_audit])
+  A1a[Load rules\nrules_autogen.inc]
+  A1b[initialize_rule_overrides()]
+  A1c[patch_rule_check\nreplace placeholders]
+  A1d[Capture UTC timestamp]
+end
+
+subgraph EXEC [Execute]
+  B1a[Iterate over each rule]
+  B1b{Has concrete check?}
+  B1c[Invoke rule-specific function]
+  B1d[Fallback: check_not_implemented]
+  B1e[Return status + evidence]
+end
+
+subgraph OUT [Output]
+  C1a[json_escape_and_print()]
+  C1b[Emit JSON entry]
+  C1c[All rules processed]
+  C1d([Close JSON array\nand exit])
+end
+
+A0 --> A1a
+A1a --> A1b
+A1b --> A1c
+A1c --> A1d
+
+A1d --> B1a
+B1a --> B1b
+B1b -- Yes --> B1c
+B1b -- No --> B1d
+B1c --> B1e
+B1d --> B1e
+
+B1e --> C1a
+C1a --> C1b
+C1b --> C1c
+C1c --> C1d
 ```
 
 ## File-by-File Breakdown
