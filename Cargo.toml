@@ -34,7 +34,7 @@ lru = "0.9"
 sha2 = "0.10"
 atty = "0.2"
 tempfile = "3.0"
-ctrlc = "3.4"
+ctrlc = "3.5"
 gtk4 = { version = "0.10", package = "gtk4" }
 glib = "0.21"
 gio = "0.21"
