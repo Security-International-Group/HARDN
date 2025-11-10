@@ -144,16 +144,16 @@ hardn_services_lockdown() {
         ufw allow in on lo comment 'Loopback inbound'
         ufw allow out on lo comment 'Loopback outbound'
 
-        if [ -n "$api_allow_list" ]; then
-            for cidr in $api_allow_list; do
+        if [ -n "${api_allow_list}" ]; then
+            for cidr in ${api_allow_list}; do
                 ufw allow proto tcp from "$cidr" to any port "$api_port" comment 'HARDN API access (scoped)'
             done
         else
             ufw allow "$api_port"/tcp comment 'HARDN API access'
         fi
 
-        if [ -n "$grafana_allow_list" ]; then
-            for cidr in $grafana_allow_list; do
+        if [ -n "${grafana_allow_list}" ]; then
+            for cidr in ${grafana_allow_list}; do
                 ufw allow proto tcp from "$cidr" to any port "$grafana_port" comment 'Grafana access (scoped)'
             done
         else
@@ -165,8 +165,8 @@ hardn_services_lockdown() {
         ufw allow out 443/tcp comment 'HTTPS'
         ufw allow out 123/udp comment 'NTP'
 
-        if [ -n "$HARDN_PERMITTED_OUTBOUND_CIDRS" ]; then
-            for cidr in $HARDN_PERMITTED_OUTBOUND_CIDRS; do
+        if [ -n "${HARDN_PERMITTED_OUTBOUND_CIDRS:-}" ]; then
+            for cidr in ${HARDN_PERMITTED_OUTBOUND_CIDRS:-}; do
                 ufw allow out to "$cidr" comment 'Approved outbound range'
             done
         fi
@@ -191,16 +191,16 @@ hardn_services_lockdown() {
         $ipt_cmd -A HARDN-LOCKDOWN -i lo -j ACCEPT
         $ipt_cmd -A HARDN-LOCKDOWN -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
-        if [ -n "$api_allow_list" ]; then
-            for cidr in $api_allow_list; do
+        if [ -n "${api_allow_list}" ]; then
+            for cidr in ${api_allow_list}; do
                 $ipt_cmd -A HARDN-LOCKDOWN -p tcp --dport "$api_port" -s "$cidr" -j ACCEPT
             done
         else
             $ipt_cmd -A HARDN-LOCKDOWN -p tcp --dport "$api_port" -j ACCEPT
         fi
 
-        if [ -n "$grafana_allow_list" ]; then
-            for cidr in $grafana_allow_list; do
+        if [ -n "${grafana_allow_list}" ]; then
+            for cidr in ${grafana_allow_list}; do
                 $ipt_cmd -A HARDN-LOCKDOWN -p tcp --dport "$grafana_port" -s "$cidr" -j ACCEPT
             done
         else
@@ -222,16 +222,16 @@ hardn_services_lockdown() {
             ip6tables -A HARDN-LOCKDOWN -i lo -j ACCEPT
             ip6tables -A HARDN-LOCKDOWN -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
-            if [ -n "$api_allow_list" ]; then
-                for cidr in $api_allow_list; do
+            if [ -n "${api_allow_list}" ]; then
+                for cidr in ${api_allow_list}; do
                     ip6tables -A HARDN-LOCKDOWN -p tcp --dport "$api_port" -s "$cidr" -j ACCEPT
                 done
             else
                 ip6tables -A HARDN-LOCKDOWN -p tcp --dport "$api_port" -j ACCEPT
             fi
 
-            if [ -n "$grafana_allow_list" ]; then
-                for cidr in $grafana_allow_list; do
+            if [ -n "${grafana_allow_list}" ]; then
+                for cidr in ${grafana_allow_list}; do
                     ip6tables -A HARDN-LOCKDOWN -p tcp --dport "$grafana_port" -s "$cidr" -j ACCEPT
                 done
             else
@@ -714,68 +714,72 @@ EOF
 HARDN_STATUS "IPv6 policy documented at /etc/hardn/ipv6-policy.txt"
 
 # Ensure adequate entropy source
-HARDN_STATUS "Ensuring entropy daemon is available..."
-if ! systemctl list-unit-files | grep -q '^haveged.service'; then
-    if ! apt_install "haveged" "Installing haveged entropy daemon" 120 haveged; then
-        log_warning "haveged not available; attempting rng-tools"
-        apt_install "rng_tools" "Installing rng-tools entropy daemon" 120 rng-tools || log_warning "Entropy daemon installation failed"
-    fi
-fi
+setup_entropy_daemon() {
+    HARDN_STATUS "Ensuring entropy daemon is available..."
 
-entropy_candidates=(
-    "haveged:haveged"
-    "rngd:rngd"
-    "rng-tools:rngd"
-    "rng-tools-debian:rngd"
-)
-
-entropy_service=""
-entropy_process=""
-entropy_uses_systemd=0
-
-for candidate in "${entropy_candidates[@]}"; do
-    svc="${candidate%%:*}"
-    proc="${candidate##*:}"
-    svc_unit="${svc}.service"
-
-    if command -v systemctl >/dev/null 2>&1 && systemctl cat "$svc_unit" >/dev/null 2>&1; then
-        entropy_service="$svc"
-        entropy_process="$proc"
-        entropy_uses_systemd=1
-        break
+    # Check if entropy is already sufficient
+    if [ -r /proc/sys/kernel/random/entropy_avail ]; then
+        current_entropy=$(cat /proc/sys/kernel/random/entropy_avail 2>/dev/null || echo "0")
+        if [ "$current_entropy" -gt 1000 ]; then
+            HARDN_STATUS "System entropy appears adequate ($current_entropy bits); skipping daemon installation"
+            HARDN_STATUS "Entropy daemon setup complete"
+            return 0
+        fi
     fi
 
-    if [ -x "/etc/init.d/$svc" ]; then
-        entropy_service="$svc"
-        entropy_process="$proc"
-        entropy_uses_systemd=0
-        break
-    fi
-done
-
-if [ -n "$entropy_service" ]; then
-    if [ $entropy_uses_systemd -eq 1 ]; then
-        systemctl enable "${entropy_service}" 2>/dev/null || true
-        systemctl start "${entropy_service}" 2>/dev/null || true
-        if systemctl is-active --quiet "${entropy_service}"; then
-            HARDN_STATUS "${entropy_service} entropy service enabled and running"
-        elif pgrep -f "${entropy_process}" >/dev/null 2>&1; then
-            HARDN_STATUS "${entropy_process} entropy process running"
+    # Try installing entropy daemon with shorter timeout to prevent hanging
+    entropy_installed=false
+    if ! systemctl list-unit-files 2>/dev/null | grep -q '^haveged.service'; then
+        if apt_install "haveged" "Installing haveged entropy daemon" 60 haveged; then
+            entropy_installed=true
+            HARDN_STATUS "haveged installed successfully"
         else
-            log_warning "${entropy_service} entropy service detected but inactive; review system logs"
+            log_warning "haveged installation failed or timed out; trying rng-tools"
+            if apt_install "rng_tools" "Installing rng-tools entropy daemon" 60 rng-tools; then
+                entropy_installed=true
+                HARDN_STATUS "rng-tools installed successfully"
+            else
+                log_warning "Both haveged and rng-tools installation failed"
+            fi
         fi
     else
-        service "${entropy_service}" start 2>/dev/null || /etc/init.d/"${entropy_service}" start 2>/dev/null || true
-        if pgrep -f "${entropy_process}" >/dev/null 2>&1; then
-            HARDN_STATUS "${entropy_process} entropy daemon running"
-        else
-            log_warning "${entropy_service} entropy daemon not running; manual intervention required"
-        fi
+        entropy_installed=true
+        HARDN_STATUS "haveged already available"
     fi
-else
-    log_warning "No entropy daemon package detected after installation attempts"
-fi
-HARDN_STATUS "Entropy daemon setup complete"
+
+    # Simple service activation without complex detection
+    if [ "$entropy_installed" = true ]; then
+        # Try haveged first
+        if systemctl list-unit-files 2>/dev/null | grep -q '^haveged.service'; then
+            systemctl enable haveged 2>/dev/null || true
+            if systemctl start haveged 2>/dev/null; then
+                HARDN_STATUS "haveged entropy service started"
+            else
+                log_warning "haveged service failed to start"
+            fi
+        # Then try rngd
+        elif systemctl list-unit-files 2>/dev/null | grep -q '^rngd.service'; then
+            systemctl enable rngd 2>/dev/null || true
+            if systemctl start rngd 2>/dev/null; then
+                HARDN_STATUS "rngd entropy service started"
+            else
+                log_warning "rngd service failed to start"
+            fi
+        # Check for running processes as fallback
+        elif pgrep -f "haveged\|rngd" >/dev/null 2>&1; then
+            HARDN_STATUS "Entropy daemon process already running"
+        else
+            log_warning "Entropy daemon installed but not running; system entropy may be limited"
+        fi
+    else
+        log_warning "No entropy daemon could be installed; relying on system entropy"
+    fi
+
+    HARDN_STATUS "Entropy daemon setup complete"
+}
+
+# Run entropy setup
+setup_entropy_daemon
 
 # ==========================================
 # DISABLE UNNECESSARY SERVICES
@@ -1439,21 +1443,40 @@ Acquire::Retries "3";
 EOF
 
 HARDN_STATUS "Installing debsums and verifying package checksums..."
+verify_with_dpkg() {
+    local DPKG_LOG="/var/log/hardn/dpkg-verify.log"
+    if dpkg -V >"$DPKG_LOG" 2>&1; then
+        if [ -s "$DPKG_LOG" ]; then
+            log_update "dpkg verification reported checksum/metadata differences; see $DPKG_LOG"
+        else
+            log_update "dpkg verification complete; no issues detected"
+        fi
+    else
+        log_warning "dpkg -V failed; see $DPKG_LOG"
+    fi
+}
+
 if apt_install "debsums" "Installing debsums" 180 debsums; then
     DEBSUMS_LOG="/var/log/hardn/debsums-baseline.log"
-    if debsums --all --silent >"$DEBSUMS_LOG" 2>&1; then
-        log_update "debsums verification complete; no checksum issues detected"
+    if command -v debsums >/dev/null 2>&1; then
+        if debsums --all --silent >"$DEBSUMS_LOG" 2>&1; then
+            log_update "debsums verification complete; no checksum issues detected"
+        else
+            {
+                echo ""
+                echo "# Additional context"
+                debsums --list-missing 2>&1 || true
+                debsums --changed 2>&1 || true
+            } >>"$DEBSUMS_LOG" 2>&1 || true
+            log_update "debsums reported checksum issues; see $DEBSUMS_LOG"
+        fi
     else
-        {
-            echo ""
-            echo "# Additional context"
-            debsums --list-missing 2>&1
-            debsums --changed 2>&1
-        } >>"$DEBSUMS_LOG" 2>&1 || true
-        log_update "debsums reported checksum issues; see $DEBSUMS_LOG"
+        log_warning "debsums not found after installation; falling back to dpkg -V"
+        verify_with_dpkg
     fi
 else
-    log_warning "debsums installation failed"
+    log_warning "debsums installation failed; falling back to dpkg -V (non-fatal)"
+    verify_with_dpkg
 fi
 
 # =========================================

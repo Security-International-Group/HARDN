@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- Back-to-previous navigation entries on every `hardn-service-manager.sh` submenu so operators can exit nested views without relying on Ctrl+C.
+- Refactored gui to be scalable to UI environment. 
 
 ### Changed
 - Relaxed inter-service `Wants=` dependencies in HARDN systemd units, allowing individual services to start or stop without implicitly launching the rest of the stack.
