@@ -77,7 +77,7 @@ log_error() {
 
 APT_TIMEOUT_DEFAULT=${APT_TIMEOUT_DEFAULT:-120}
 APT_LOG_DIR="/var/log/hardn/apt"
-APT_INSTALL_FLAGS=(-y --no-install-recommends -o Dpkg::Progress-Fancy=0)
+APT_INSTALL_FLAGS=(-q -y --no-install-recommends -o Dpkg::Progress-Fancy=0)
 mkdir -p /var/log/hardn 2>/dev/null || true
 mkdir -p "$APT_LOG_DIR" 2>/dev/null || true
 
