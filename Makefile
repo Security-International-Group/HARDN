@@ -1,61 +1,79 @@
-# Binary and paths
-BINARY_NAME=hardn
-BUILD_TARGET=target/release/$(BINARY_NAME)
-# GUI binary target
-GUI_BINARY_NAME=hardn-gui
-GUI_BUILD_TARGET=target/release/$(GUI_BINARY_NAME)
-DEB_DIR=debian
-BIN_INSTALL_PATH=usr/bin
+# HARDN Makefile
+# Made detailed notes for easier navigation
+#   - Build (Rust + C auditor)
+#   - Binary install layout
+#   - systemd unit install + enable
+#   - Native "sudo make hardn" installs
+#   - Packaging 
+# ---------------------------------------------------------------------------
+BINARY_NAME      = hardn
+BUILD_TARGET     = target/release/$(BINARY_NAME)
 
-# Detect host architecture if not set
-ARCH ?= $(shell dpkg --print-architecture)
-PREFIX ?= /usr
+# GUI bin
+GUI_BINARY_NAME  = hardn-gui
+GUI_BUILD_TARGET = target/release/$(GUI_BINARY_NAME)
+
+DEB_DIR          = debian
+BIN_INSTALL_PATH = usr/bin  # (legacy; not used anymore, kept for reference)
+
+# Detect host if not set
+ARCH    ?= $(shell dpkg --print-architecture)
+PREFIX  ?= /usr
 DESTDIR ?=
 
-# Rust environment
-HOME_DIR := $(shell echo $$HOME)
-RUST_BIN_DIR := $(HOME_DIR)/.cargo/bin
+# Canonical install layout (single source)
+LIBDIR      ?= $(PREFIX)/lib/hardn
+BINDIR      ?= $(PREFIX)/bin
+SYSTEMD_DIR ?= /lib/systemd/system
+
+# Systemd unit files in the repo
+# NOTE: Update paths below if your units live elsewhere (e.g. packaging/systemd/...)
+UNIT_FILES := systemd/hardn.service \
+              systemd/legion-daemon.service
+
+# ---------------------------------------------------------------------------
+# Rust Stuff 
+# ---------------------------------------------------------------------------
+HOME_DIR      := $(shell echo $$HOME)
+RUST_BIN_DIR  := $(HOME_DIR)/.cargo/bin
 RUST_ENV_FILE := $(HOME_DIR)/.cargo/env
 
 # Export Rust environment
 export PATH := $(RUST_BIN_DIR):$(PATH)
 export CARGO_TERM_PROGRESS_WHEN := never
 
-SHELL := /bin/bash
+SHELL     := /bin/bash
 MAKEFLAGS += --no-print-directory
-
-# Branding and color palette (disable with NO_COLOR=1)
+# ---------------------------------------------------------------------------
 ifeq ($(NO_COLOR),1)
-COLOR_RESET :=
-COLOR_STAGE :=
-COLOR_SUCCESS :=
-COLOR_WARN :=
-COLOR_MUTED :=
-COLOR_PRIMARY :=
+COLOR_RESET    :=
+COLOR_STAGE    :=
+COLOR_SUCCESS  :=
+COLOR_WARN     :=
+COLOR_MUTED    :=
+COLOR_PRIMARY  :=
 COLOR_SECONDARY :=
 SUBSTEP_PREFIX :=     ->
 else
-COLOR_RESET := \033[0m
-COLOR_STAGE := \033[1;32m
-COLOR_SUCCESS := \033[1;32m
-COLOR_WARN := \033[1;32m
-COLOR_MUTED := \033[0;32m
-COLOR_PRIMARY := \033[1;32m
+COLOR_RESET     := \033[0m
+COLOR_STAGE     := \033[1;32m
+COLOR_SUCCESS   := \033[1;32m
+COLOR_WARN      := \033[1;32m
+COLOR_MUTED     := \033[0;32m
+COLOR_PRIMARY   := \033[1;32m
 COLOR_SECONDARY := \033[1;32m
-SUBSTEP_PREFIX := \033[0;32m    ↳\033[0m
+SUBSTEP_PREFIX  := \033[0;32m    ↳\033[0m
 endif
 
-CASTLE_NAME := $(COLOR_PRIMARY)H$(COLOR_SECONDARY)A$(COLOR_PRIMARY)R$(COLOR_SECONDARY)D$(COLOR_PRIMARY)N$(COLOR_RESET)
+CASTLE_NAME   := $(COLOR_PRIMARY)H$(COLOR_SECONDARY)A$(COLOR_PRIMARY)R$(COLOR_SECONDARY)D$(COLOR_PRIMARY)N$(COLOR_RESET)
 CASTLE_PREFIX := $(COLOR_PRIMARY)  $(CASTLE_NAME)
+# Tunable / Deb packaging flags
+# ---------------------------------------------------------------------------
+CARGO_FLAGS       ?= --release --quiet
+DEB_PARALLEL      ?= $(shell nproc 2>/dev/null || echo 1)
+CLEAN_AFTER_BUILD ?= 0  # 0 = keep artifacts, 1 = clean after build
 
-# Tunable build flags
-CARGO_FLAGS ?= --release --quiet
-DEB_PARALLEL ?= $(shell nproc 2>/dev/null || echo 1)
-
-# Control whether to clean after build (0 = keep artifacts; 1 = clean)
-CLEAN_AFTER_BUILD ?= 0
-
-# Ensure dpkg-buildpackage skips DWZ (avoids noisy warnings) while retaining caller options
+# Ensure dpkg-buildpackage skips DWZ 
 DEB_BUILD_OPTIONS ?= parallel=$(DEB_PARALLEL)
 ifeq ($(findstring parallel=,$(DEB_BUILD_OPTIONS)),)
 DEB_BUILD_OPTIONS += parallel=$(DEB_PARALLEL)
@@ -63,12 +81,14 @@ endif
 ifeq ($(findstring nodwz,$(DEB_BUILD_OPTIONS)),)
 DEB_BUILD_OPTIONS += nodwz
 endif
-export DEB_BUILD_OPTIONS
 
-# Default target
+# targets
+.PHONY: all build build-internal hardn hardn-internal install-core \
+        install-deb-internal clean
+
+# ---------------------------------------------------------------------------
 all: build-internal
-
-# Build the Debian package + install Rust
+# ---------------------------------------------------------------------------
 build:
 	@if [ "$$EUID" -eq 0 ]; then \
 		$(MAKE) build-internal; \
@@ -78,7 +98,14 @@ build:
 		exit 1; \
 	fi
 
-# Internal target that does the actual build work (called by sudo)
+# ---------------------------------------------------------------------------
+# pipeline for patch
+#   - Ensure build dependencies are installed
+#   - Ensure Rust toolchain is present
+#   - Build Rust core
+#   - Build C auditor
+#   - Build Debian package (.deb)
+# ---------------------------------------------------------------------------
 build-internal:
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Recon: supply scan$(COLOR_RESET)\n'
 	@MISSING_DEPS=""; \
@@ -229,8 +256,72 @@ else
 endif
 	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)HARDN battle-ready.$(COLOR_RESET)\n'
 
-# Install HARDN as a service and start everything
-hardn:
+# ---------------------------------------------------------------------------
+# Core install logic 
+#   - Uses PREFIX/LIBDIR/BINDIR/SYSTEMD_DIR
+#   - Honors DESTDIR:
+#       * DESTDIR empty >>>> real system install + systemctl enable --now
+#       * DESTDIR set  >>>>> packaging install, no systemctl
+# ---------------------------------------------------------------------------
+install-core:
+	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Installing HARDN core$(COLOR_RESET)\n'
+
+	@if [ ! -f "$(BUILD_TARGET)" ] || [ ! -f "$(GUI_BUILD_TARGET)" ] || [ ! -f "target/release/hardn-monitor" ]; then \
+		printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Binaries missing. Run: sudo make build$(COLOR_RESET)\n'; \
+		exit 1; \
+	fi
+
+	@printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Installing binaries to $(LIBDIR) and wiring symlinks$(COLOR_RESET)\n'
+	@mkdir -p "$(DESTDIR)$(LIBDIR)" "$(DESTDIR)$(BINDIR)"
+	@install -m 755 "$(BUILD_TARGET)"            "$(DESTDIR)$(LIBDIR)/hardn"
+	@install -m 755 target/release/hardn-monitor "$(DESTDIR)$(LIBDIR)/hardn-monitor"
+	@install -m 755 "$(GUI_BUILD_TARGET)"        "$(DESTDIR)$(LIBDIR)/hardn-gui"
+
+	@if [ -f "usr/share/hardn/scripts/hardn-service-manager.sh" ]; then \
+		install -m 755 usr/share/hardn/scripts/hardn-service-manager.sh "$(DESTDIR)$(LIBDIR)/hardn-service-manager"; \
+	fi
+
+	@ln -sf "$(LIBDIR)/hardn"           "$(DESTDIR)$(BINDIR)/hardn"
+	@ln -sf "$(LIBDIR)/hardn-monitor"   "$(DESTDIR)$(BINDIR)/hardn-monitor"
+	@ln -sf "$(LIBDIR)/hardn-gui"       "$(DESTDIR)$(BINDIR)/hardn-gui"
+	@if [ -f "$(DESTDIR)$(LIBDIR)/hardn-service-manager" ]; then \
+		ln -sf "$(LIBDIR)/hardn-service-manager" "$(DESTDIR)$(BINDIR)/hardn-service-manager"; \
+	fi
+
+	@mkdir -p "$(DESTDIR)/usr/share/hardn" \
+	         "$(DESTDIR)/var/log/hardn" \
+	         "$(DESTDIR)/var/lib/hardn/legion"
+	@chmod 755 "$(DESTDIR)/usr/share/hardn" \
+	           "$(DESTDIR)/var/log/hardn" \
+	           "$(DESTDIR)/var/lib/hardn" \
+	           "$(DESTDIR)/var/lib/hardn/legion" 2>/dev/null || true
+
+	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Installing systemd units$(COLOR_RESET)\n'
+	@mkdir -p "$(DESTDIR)$(SYSTEMD_DIR)"
+	@for unit in $(UNIT_FILES); do \
+		if [ -f "$$unit" ]; then \
+			install -m 644 "$$unit" "$(DESTDIR)$(SYSTEMD_DIR)/$$(basename $$unit)"; \
+		else \
+			printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Missing unit file: %s$(COLOR_RESET)\n' "$$unit"; \
+		fi; \
+	done
+
+	@if [ -z "$(DESTDIR)" ]; then \
+		printf '$(SUBSTEP_PREFIX) $(COLOR_STAGE)Reloading systemd and enabling services$(COLOR_RESET)\n'; \
+		systemctl daemon-reload || true; \
+		systemctl enable --now hardn.service legion-daemon.service || true; \
+	fi
+
+	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)Core + services installed.$(COLOR_RESET)\n'
+
+# ---------------------------------------------------------------------------
+# Native install same way 
+#   - sudo make hardn
+#   - Builds (via build) then calls install-core on the real system
+#   - Adds invoking user to "hardn" group (if it exists)
+#   - Launches GUI as invoking user
+# ---------------------------------------------------------------------------
+hardn: build
 	@if [ "$$EUID" -eq 0 ]; then \
 		$(MAKE) hardn-internal; \
 	else \
@@ -239,43 +330,26 @@ hardn:
 		exit 1; \
 	fi
 
-# Internal target that does the work 
 hardn-internal:
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Setting up HARDN$(COLOR_RESET)\n'
-	@if [ ! -f "$(BUILD_TARGET)" ] || [ ! -f "$(GUI_BUILD_TARGET)" ] || [ ! -f "target/release/hardn-monitor" ]; then \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Binary not found. Run: sudo make build$(COLOR_RESET)\n'; \
-		exit 1; \
-	fi
-	@printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Installing to /usr/lib/hardn and wiring symlinks$(COLOR_RESET)\n'
-	@mkdir -p /usr/lib/hardn
-	@install -m 755 $(BUILD_TARGET) /usr/lib/hardn/hardn
-	@install -m 755 target/release/hardn-monitor /usr/lib/hardn/hardn-monitor
-	@install -m 755 $(GUI_BUILD_TARGET) /usr/lib/hardn/hardn-gui
-	@if [ -f "usr/share/hardn/scripts/hardn-service-manager.sh" ]; then \
-		install -m 755 usr/share/hardn/scripts/hardn-service-manager.sh /usr/lib/hardn/hardn-service-manager; \
-	fi
-	@ln -sf /usr/lib/hardn/hardn /usr/bin/hardn
-	@ln -sf /usr/lib/hardn/hardn-monitor /usr/bin/hardn-monitor
-	@ln -sf /usr/lib/hardn/hardn-gui /usr/bin/hardn-gui
-	@if [ -f "/usr/lib/hardn/hardn-service-manager" ]; then \
-		ln -sf /usr/lib/hardn/hardn-service-manager /usr/bin/hardn-service-manager; \
-	fi
-	@mkdir -p /usr/share/hardn /var/log/hardn /var/lib/hardn/legion
-	@chmod 755 /usr/share/hardn /var/lib/hardn /var/lib/hardn/legion 2>/dev/null || true
-	@chmod 755 /var/log/hardn 2>/dev/null || true
+	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Setting up HARDN (native install)$(COLOR_RESET)\n'
+	@$(MAKE) install-core DESTDIR=
 	@if [ -n "$$SUDO_USER" ]; then \
 		usermod -aG hardn "$$SUDO_USER" 2>/dev/null || true; \
 	fi
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Launching HARDN GUI$(COLOR_RESET)\n'
 	@if [ -n "$$SUDO_USER" ]; then \
-		runuser -u "$$SUDO_USER" -- nohup /usr/bin/hardn-gui >/dev/null 2>&1 & \
+		runuser -u "$$SUDO_USER" -- nohup "$(BINDIR)/hardn-gui" >/dev/null 2>&1 & \
 	else \
-		nohup /usr/bin/hardn-gui >/dev/null 2>&1 & \
+		nohup "$(BINDIR)/hardn-gui" >/dev/null 2>&1 & \
 	fi
 	@printf '$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)GUI launched$(COLOR_RESET)\n'
 	@printf '$(COLOR_SUCCESS)HARDN ready$(COLOR_RESET)\n'
 
-# Internal target that does the actual installation work
+# ---------------------------------------------------------------------------
+# Internal .deb installer helper (option)
+#   - Attempts to locate a built .deb and install it w/ apt
+#   - Not used by hardn / install-core, but kept for tooling/scripts
+# ---------------------------------------------------------------------------
 install-deb-internal:
 	@DEB_FILE=$$(find . -name "hardn_*.deb" | head -n1); \
 	if [ -z "$$DEB_FILE" ]; then \
@@ -287,7 +361,8 @@ install-deb-internal:
 	else \
 		printf '$(CASTLE_PREFIX) $(COLOR_WARN)No .deb file found!$(COLOR_RESET)\n'; exit 1; \
 	fi
-
+# Cleanup
+# ---------------------------------------------------------------------------
 clean:
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Purging forge residue$(COLOR_RESET)\n'
 	@{ \
@@ -297,4 +372,3 @@ clean:
 		cargo clean >/dev/null 2>&1 || true; \
 	}
 	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)Forge embers extinguished.$(COLOR_RESET)\n'
-
