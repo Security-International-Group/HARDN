@@ -26,6 +26,10 @@ LIBDIR      ?= $(PREFIX)/lib/hardn
 BINDIR      ?= $(PREFIX)/bin
 SYSTEMD_DIR ?= /lib/systemd/system
 
+# Desktop integration
+DESKTOP_DIR   ?= /usr/share/applications
+DESKTOP_FILES := usr/share/applications/hardn-gui.desktop
+
 # Systemd unit files in the repo
 # NOTE: Update paths below if your units live elsewhere (e.g. packaging/systemd/...)
 UNIT_FILES := systemd/hardn.service \
@@ -310,6 +314,22 @@ install-core:
 		printf '$(SUBSTEP_PREFIX) $(COLOR_STAGE)Reloading systemd and enabling services$(COLOR_RESET)\n'; \
 		systemctl daemon-reload || true; \
 		systemctl enable --now hardn.service legion-daemon.service || true; \
+	fi
+
+	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Installing desktop entries$(COLOR_RESET)\n'
+	@mkdir -p "$(DESTDIR)$(DESKTOP_DIR)"
+	@for desktop in $(DESKTOP_FILES); do \
+		if [ -f "$$desktop" ]; then \
+			install -m 644 "$$desktop" "$(DESTDIR)$(DESKTOP_DIR)/$$(basename $$desktop)"; \
+		else \
+			printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Missing desktop file: %s$(COLOR_RESET)\n' "$$desktop"; \
+		fi; \
+	done
+
+	@if [ -z "$(DESTDIR)" ]; then \
+		if command -v update-desktop-database >/dev/null 2>&1; then \
+			update-desktop-database "$(DESKTOP_DIR)" >/dev/null 2>&1 || true; \
+		fi; \
 	fi
 
 	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)Core + services installed.$(COLOR_RESET)\n'
