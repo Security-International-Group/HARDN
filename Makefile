@@ -33,7 +33,9 @@ DESKTOP_FILES := usr/share/applications/hardn-gui.desktop
 # Systemd unit files in the repo
 # NOTE: Update paths below if your units live elsewhere (e.g. packaging/systemd/...)
 UNIT_FILES := systemd/hardn.service \
-              systemd/legion-daemon.service
+              systemd/hardn-api.service \
+              systemd/legion-daemon.service \
+              systemd/hardn-monitor.service
 
 # ---------------------------------------------------------------------------
 # Rust Stuff 
@@ -271,11 +273,11 @@ install-core:
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Installing HARDN core$(COLOR_RESET)\n'
 
 	@if [ ! -f "$(BUILD_TARGET)" ] || [ ! -f "$(GUI_BUILD_TARGET)" ] || [ ! -f "target/release/hardn-monitor" ]; then \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Binaries missing. Run: sudo make build$(COLOR_RESET)\n'; \
+		printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Binaries missing. Run: sudo make build$(COLORRESET)\n'; \
 		exit 1; \
 	fi
 
-	@printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Installing binaries to $(LIBDIR) and wiring symlinks$(COLOR_RESET)\n'
+	@printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Installing binaries to $(LIBDIR) and wiring symlinks$(COLORRESET)\n'
 	@mkdir -p "$(DESTDIR)$(LIBDIR)" "$(DESTDIR)$(BINDIR)"
 	@install -m 755 "$(BUILD_TARGET)"            "$(DESTDIR)$(LIBDIR)/hardn"
 	@install -m 755 target/release/hardn-monitor "$(DESTDIR)$(LIBDIR)/hardn-monitor"
@@ -300,29 +302,29 @@ install-core:
 	           "$(DESTDIR)/var/lib/hardn" \
 	           "$(DESTDIR)/var/lib/hardn/legion" 2>/dev/null || true
 
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Installing systemd units$(COLOR_RESET)\n'
+	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Installing systemd units$(COLORRESET)\n'
 	@mkdir -p "$(DESTDIR)$(SYSTEMD_DIR)"
 	@for unit in $(UNIT_FILES); do \
 		if [ -f "$$unit" ]; then \
 			install -m 644 "$$unit" "$(DESTDIR)$(SYSTEMD_DIR)/$$(basename $$unit)"; \
 		else \
-			printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Missing unit file: %s$(COLOR_RESET)\n' "$$unit"; \
+			printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Missing unit file: %s$(COLORRESET)\n' "$$unit"; \
 		fi; \
 	done
 
 	@if [ -z "$(DESTDIR)" ]; then \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_STAGE)Reloading systemd and enabling services$(COLOR_RESET)\n'; \
+		printf '$(SUBSTEP_PREFIX) $(COLOR_STAGE)Reloading systemd and enabling services$(COLORRESET)\n'; \
 		systemctl daemon-reload || true; \
-		systemctl enable --now hardn.service legion-daemon.service || true; \
+		systemctl enable --now hardn.service hardn-api.service legion-daemon.service hardn-monitor.service || true; \
 	fi
 
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Installing desktop entries$(COLOR_RESET)\n'
+	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Installing desktop entries$(COLORRESET)\n'
 	@mkdir -p "$(DESTDIR)$(DESKTOP_DIR)"
 	@for desktop in $(DESKTOP_FILES); do \
 		if [ -f "$$desktop" ]; then \
 			install -m 644 "$$desktop" "$(DESTDIR)$(DESKTOP_DIR)/$$(basename $$desktop)"; \
 		else \
-			printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Missing desktop file: %s$(COLOR_RESET)\n' "$$desktop"; \
+			printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Missing desktop file: %s$(COLORRESET)\n' "$$desktop"; \
 		fi; \
 	done
 
@@ -332,7 +334,7 @@ install-core:
 		fi; \
 	fi
 
-	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)Core + services installed.$(COLOR_RESET)\n'
+	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)Core + services installed.$(COLORRESET)\n'
 
 # ---------------------------------------------------------------------------
 # Native install same way 
@@ -351,19 +353,19 @@ hardn: build
 	fi
 
 hardn-internal:
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Setting up HARDN (native install)$(COLOR_RESET)\n'
+	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Setting up HARDN (native install)$(COLORRESET)\n'
 	@$(MAKE) install-core DESTDIR=
 	@if [ -n "$$SUDO_USER" ]; then \
 		usermod -aG hardn "$$SUDO_USER" 2>/dev/null || true; \
 	fi
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Launching HARDN GUI$(COLOR_RESET)\n'
+	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Launching HARDN GUI$(COLORRESET)\n'
 	@if [ -n "$$SUDO_USER" ]; then \
 		runuser -u "$$SUDO_USER" -- nohup "$(BINDIR)/hardn-gui" >/dev/null 2>&1 & \
 	else \
 		nohup "$(BINDIR)/hardn-gui" >/dev/null 2>&1 & \
 	fi
-	@printf '$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)GUI launched$(COLOR_RESET)\n'
-	@printf '$(COLOR_SUCCESS)HARDN ready$(COLOR_RESET)\n'
+	@printf '$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)GUI launched$(COLORRESET)\n'
+	@printf '$(COLOR_SUCCESS)HARDN ready$(COLORRESET)\n'
 
 # ---------------------------------------------------------------------------
 # Internal .deb installer helper (option)
@@ -379,16 +381,16 @@ install-deb-internal:
 		apt-get update -qq > /dev/null 2>&1; \
 		apt-get install -y -qq "$$DEB_FILE" > /dev/null 2>&1; \
 	else \
-		printf '$(CASTLE_PREFIX) $(COLOR_WARN)No .deb file found!$(COLOR_RESET)\n'; exit 1; \
+		printf '$(CASTLE_PREFIX) $(COLOR_WARN)No .deb file found!$(COLORRESET)\n'; exit 1; \
 	fi
 # Cleanup
 # ---------------------------------------------------------------------------
 clean:
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Purging forge residue$(COLOR_RESET)\n'
+	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Purging forge residue$(COLORRESET)\n'
 	@{ \
 		if [ -f "$(RUST_ENV_FILE)" ]; then \
 			. "$(RUST_ENV_FILE)"; \
 		fi; \
 		cargo clean >/dev/null 2>&1 || true; \
 	}
-	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)Forge embers extinguished.$(COLOR_RESET)\n'
+	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)Forge embers extinguished.$(COLORRESET)\n'
