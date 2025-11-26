@@ -1,7 +1,8 @@
 [Unit]
 Description=HARDN LEGION Security Monitoring Daemon
-After=network.target hardn-monitor.service
-Wants=network.target
+# Bring LEGION up after the network is actually online
+After=network-online.target
+Wants=network-online.target
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
@@ -9,15 +10,25 @@ StartLimitBurst=5
 Type=simple
 User=root
 Group=root
+
+# Keep everything consistent with the rest of the stack tomorevent the previous order loops 
+WorkingDirectory=/usr/share/hardn
+
 # Create necessary directories before starting
 ExecStartPre=/bin/bash -c 'mkdir -p /var/lib/hardn/legion /var/log/hardn && chmod 755 /var/lib/hardn /var/lib/hardn/legion'
+
 # Use the correct binary path and create baseline if needed
+# (If hardn.service already created a baseline, this condition is a no-op.)
 ExecStart=/bin/bash -c 'if [ ! -d /var/lib/hardn/legion ] || [ -z "$(ls -A /var/lib/hardn/legion/baseline_*.json 2>/dev/null)" ]; then echo "Creating LEGION baseline..."; /usr/bin/hardn legion --create-baseline --json; fi; exec /usr/bin/hardn legion --daemon --verbose'
+
+# If we want stop to really stop it at some point, switch to on-failure
 Restart=always
 RestartSec=10
+
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=legion-daemon
+
 CPUAccounting=true
 IOAccounting=true
 MemoryAccounting=true
