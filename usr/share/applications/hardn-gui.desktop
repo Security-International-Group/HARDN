@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=HARDN Monitor (Read-Only)
+Name=HARDN Monitor
 Comment=View HARDN monitoring output 
 Exec=hardn-gui
 Icon=/usr/share/pixmaps/hardn-gui.jpeg
