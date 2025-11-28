@@ -23,6 +23,10 @@ BOLD='\033[1m'
 
 # Configuration
 readonly LOG_DIR="/var/log/hardn"
+# Stack definition: these are the services we *intend* to manage.
+# Some deployments may not ship all four units yet; the status display
+# will now show "Not installed (unit missing)" instead of just "Inactive".
+### ISSUE 76 update 
 readonly HARDN_SERVICES="hardn.service hardn-api.service legion-daemon.service hardn-monitor.service"
 readonly DEFAULT_TOOL_PATHS="/usr/share/hardn/tools:/usr/lib/hardn/src/setup/tools"
 declare -ar DEFAULT_TOOL_COMMANDS=(aide apparmor auditd clamv fail2ban firejail grafana lynis ossec selinux suricata ufw)
@@ -161,7 +165,7 @@ check_dependencies() {
     echo "Using HARDN binary: $HARDN_BIN"
 }
 
-# Launch GUI as invoking desktop user (not root)
+# Launch GUI as desktop user (not root)
 launch_gui() {
     echo -e "\n${BOLD}Launching HARDN Read-Only GUI...${NC}"
     if ! command -v hardn-gui >/dev/null 2>&1; then
@@ -238,7 +242,6 @@ launch_gui() {
     read -p $'\nPress Enter to continue...' || true
 }
 
-# Function to display the header
 display_header() {
     clear
     echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════════════════╗${NC}"
@@ -248,9 +251,18 @@ display_header() {
     echo
 }
 
-# Function to check service status
+# check service status
+# ISSUE 76 uodate 
+# Returns one of: active, enabled, inactive, missing
 check_service_status() {
     local service_name=$1
+
+    # systemctl status exit code 4 => "unit not found"
+    if ! systemctl status "$service_name" >/dev/null 2>&1; then
+        echo "missing"
+        return
+    fi
+
     if systemctl is-active --quiet "$service_name" 2>/dev/null; then
         echo "active"
     elif systemctl is-enabled --quiet "$service_name" 2>/dev/null; then
@@ -269,8 +281,10 @@ display_service_status() {
     IFS=' ' read -ra services <<< "$HARDN_SERVICES"
     
     for service in "${services[@]}"; do
-        local status=$(check_service_status "$service")
-        local display_name=$(echo "$service" | sed 's/\.service$//')
+        local status
+        status=$(check_service_status "$service")
+        local display_name
+        display_name=$(echo "$service" | sed 's/\.service$//')
         
         case $status in
             "active")
@@ -278,6 +292,9 @@ display_service_status() {
                 ;;
             "enabled")
                 print_colored "$YELLOW" "  ● $display_name: Enabled (not running)"
+                ;;
+            "missing")
+                print_colored "$YELLOW" "  ● $display_name: Not installed (unit missing)"
                 ;;
             *)
                 print_colored "$RED" "  ● $display_name: Inactive ✗"
@@ -287,12 +304,10 @@ display_service_status() {
     echo
 }
 
-
 manage_service() {
     local service_name=$1
     local action=$2
     
-   
     local display_action="${action^}"
     echo -n "  ${display_action}ing $service_name... "
     
@@ -306,7 +321,6 @@ manage_service() {
         echo "  Check logs with: journalctl -u '$service_name' -n 50"
     fi
 }
-
 
 run_legion_menu() {
     while true; do
@@ -426,7 +440,6 @@ run_legion_menu() {
     done
 }
 
-
 run_modules_menu() {
     while true; do
         display_header
@@ -507,7 +520,6 @@ run_modules_menu() {
     done
 }
 
-
 run_tools_menu() {
     local default_tool_dirs="$DEFAULT_TOOL_PATHS"
 
@@ -517,9 +529,9 @@ run_tools_menu() {
         echo -e "─────────────────────────────────────────────────"
         echo
 
-    local -a tool_display=()
-    local -a tool_command=()
-    declare -A seen_tools=()
+        local -a tool_display=()
+        local -a tool_command=()
+        declare -A seen_tools=()
 
         for tool in "${DEFAULT_TOOL_COMMANDS[@]}"; do
             tool_command+=("$tool")
@@ -618,7 +630,6 @@ run_tools_menu() {
     done
 }
 
-
 manage_services_menu() {
     while true; do
         display_header
@@ -633,8 +644,8 @@ manage_services_menu() {
         echo "4) Enable ALL Services (Start on boot)"
         echo "5) Disable ALL Services (Don't start on boot)"
         echo
-    echo "6) Manage Individual Service"
-    echo "7) View Service Logs (Live & Historical)"
+        echo "6) Manage Individual Service"
+        echo "7) View Service Logs (Live & Historical)"
         echo
         echo "0) Back to Main Menu"
         echo
@@ -704,7 +715,7 @@ manage_services_menu() {
                     0)
                         continue
                         ;;
-                *) 
+                    *) 
                         print_colored "$RED" "Invalid selection!"
                         sleep 1
                         continue
@@ -729,7 +740,7 @@ manage_services_menu() {
                     5) manage_service "$selected_service" "disable" ;;
                     6)
                         if ! systemctl status "$selected_service" --no-pager; then
-                            print_colored "$YELLOW" "Service '$selected_service' is inactive or disabled."
+                            print_colored "$YELLOW" "Service '$selected_service' is inactive, disabled, or not installed."
                         fi
                         ;;
                     0)
@@ -787,7 +798,7 @@ manage_services_menu() {
                             2)
                                 echo -e "\n${BOLD}HARDN API Service Logs${NC}"
                                 if ! journalctl -u hardn-api.service -n 100 --no-pager -o short-iso; then
-                                    print_colored "$YELLOW" "No logs available for hardn-api.service (inactive or never started)."
+                                    print_colored "$YELLOW" "No logs available for hardn-api.service (inactive, not installed, or never started)."
                                 fi
                                 ;;
                             3)
@@ -799,7 +810,7 @@ manage_services_menu() {
                             4)
                                 echo -e "\n${BOLD}HARDN Monitor Service Logs${NC}"
                                 if ! journalctl -u hardn-monitor.service -n 100 --no-pager -o short-iso; then
-                                    print_colored "$YELLOW" "No logs available for hardn-monitor.service (inactive or never started)."
+                                    print_colored "$YELLOW" "No logs available for hardn-monitor.service (inactive, not installed, or never started)."
                                 fi
                                 ;;
                             0)
@@ -811,7 +822,7 @@ manage_services_menu() {
                     4)
                         echo -e "\n${BOLD}Critical Errors from All HARDN Services${NC}"
                         echo -e "${RED}Showing only ERROR, CRITICAL, and ALERT priority logs${NC}\n"
-                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -u err -n 50 --no-pager -o short-iso
+                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -p err..alert -n 50 --no-pager -o short-iso
                         ;;
                     5)
                         echo -e "\n${BOLD}HARDN Service Performance Metrics${NC}"
@@ -820,12 +831,14 @@ manage_services_menu() {
                             status=$(systemctl is-active "$service" 2>/dev/null || echo "unknown")
                             if [ "$status" = "active" ]; then
                                 echo -e "  [ACTIVE] $service: ${GREEN}RUNNING${NC}"
+                            elif [ "$status" = "unknown" ]; then
+                                echo -e "  [MISSING] $service: ${YELLOW}unit not installed${NC}"
                             else
                                 echo -e "  [INACTIVE] $service: ${RED}$status${NC}"
                             fi
                         done
                         echo -e "\n${CYAN}Recent Performance Logs:${NC}"
-                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -u "CPU|Memory|load" -n 20 --no-pager -o short-iso
+                        journalctl -u hardn.service -u hardn-api.service -u legion-daemon.service -u hardn-monitor.service -n 20 --no-pager -o short-iso
                         ;;
                     6)
                         echo -e "\n${BOLD}Custom journalctl command${NC}"
@@ -856,7 +869,6 @@ manage_services_menu() {
     done
 }
 
-# Function for dangerous operations (SELinux)
 dangerous_operations_menu() {
     while true; do
         display_header
@@ -906,7 +918,7 @@ dangerous_operations_menu() {
     done
 }
 
-# Main menu function
+
 main_menu() {
     while true; do
         display_header
@@ -1027,7 +1039,7 @@ main_menu() {
     done
 }
 
-# Main execution
+# Main 
 check_root
 check_dependencies
 main_menu

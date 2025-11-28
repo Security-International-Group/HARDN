@@ -12,6 +12,9 @@ fn log_message(level: &str, message: &str) {
     let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S");
     let log_entry = format!("[{}] [{}] {}\n", timestamp, level, message);
 
+    // Ensure log directory exists so the first log line doesn't fail
+    let _ = fs::create_dir_all("/var/log/hardn");
+
     // Log to file
     if let Ok(mut file) = fs::OpenOptions::new()
         .create(true)
@@ -285,6 +288,7 @@ fn log_networkd_metrics() {
 }
 
 fn monitor_services() {
+    // Services that HARDN monitor should track and auto-heal
     let services = vec![
         ("hardn.service", "hardn"),
         ("hardn-api.service", "hardn-api"),
@@ -320,6 +324,10 @@ fn monitor_services() {
             }
         }
     }
+
+    // Also report the monitor daemon itself for GUI badges.
+    // This process *is* hardn-monitor, so if we're running, it's "running".
+    status_messages.push("hardn-monitor:running".to_string());
 
     if !status_messages.is_empty() {
         log_message(
@@ -620,16 +628,13 @@ fn log_database_metrics() {
 fn main() {
     log_message("INFO", "HARDN Centralized Monitor starting");
 
-    // Create necessary directories
+
     let _ = fs::create_dir_all("/var/log/hardn");
     let _ = fs::create_dir_all("/var/run");
-
-    // Write PID file
     if let Ok(pid) = std::process::id().to_string().parse::<u32>() {
         let _ = fs::write("/var/run/hardn-monitor.pid", pid.to_string());
     }
 
-    // Initial service check
     monitor_services();
 
     log_message("INFO", "Entering monitoring loop");
@@ -638,25 +643,17 @@ fn main() {
         // Check services every 30 seconds
         monitor_services();
 
-        // Core platform components
+        // Core 
         log_core_services();
         log_systemd_metrics();
         log_journal_metrics();
         log_networkd_metrics();
-
-        // Check API health
         let _ = check_api_health();
-
-        // Log metrics summary for GUI consumption
         log_metrics_from_api();
-
-        // Log database metrics
         log_database_metrics();
-
-        // Check for inter-service communication (placeholder)
         log_message("DEBUG", "Monitoring inter-service communication channels");
 
-        // Sleep for 30 seconds
+
         thread::sleep(Duration::from_secs(30));
     }
 }

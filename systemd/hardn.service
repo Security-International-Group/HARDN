@@ -1,7 +1,8 @@
 [Unit]
 Description=HARDN Security Monitoring and Response Service
-After=network.target hardn-monitor.service
-Wants=network.target
+# Bring HARDN up after the network is actually online
+After=network-online.target
+Wants=network-online.target
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
@@ -9,12 +10,23 @@ StartLimitBurst=5
 Type=simple
 User=root
 Group=root
+
+# Optional, but nice for consistency if you ever add relative paths
+WorkingDirectory=/usr/share/hardn
+
+# First run: if no LEGION baseline exists, create one, then start the daemon.
+# On subsequent restarts, it just runs the daemon.
 ExecStart=/bin/bash -c 'if [ ! -d /var/lib/hardn/legion ] || [ -z "$(ls -A /var/lib/hardn/legion/baseline_*.json 2>/dev/null)" ]; then echo "Creating LEGION baseline..."; /usr/bin/hardn legion --create-baseline --json; fi; exec /usr/bin/hardn legion --daemon --response-enabled --verbose'
+
+# If you want it to come back even after manual stop, keep "always";
+# if you want "systemctl stop hardn" to stick, change to on-failure.
 Restart=always
 RestartSec=10
+
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=hardn
+
 CPUAccounting=true
 IOAccounting=true
 MemoryAccounting=true
@@ -28,7 +40,7 @@ PrivateTmp=yes
 
 # Resource limits
 MemoryMax=512M
-CPUQuota=75%
+CPUQuota=40%
 
 [Install]
 WantedBy=multi-user.target
