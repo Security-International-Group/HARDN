@@ -43,6 +43,7 @@ All notable changes to this project will be documented in this file.
 - `sudo make hardn` is highlighted as the fastest way to launch the toolkit.
 - Help text includes quick fixes for common errors.
 - Examples now use package-friendly commands instead of raw file paths.
+- Updated gui display featyre ri inckude logo 
 
 #### Technical Enhancements
 - Code is split into clearer modules (services, legion, display, and more).
