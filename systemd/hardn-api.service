@@ -1,7 +1,8 @@
 [Unit]
 Description=HARDN API Server
-After=network.target hardn.service hardn-monitor.service
-Wants=network.target
+# Bring API up after network + core daemon, but not after monitor
+After=network-online.target hardn.service
+Wants=network-online.target hardn.service
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
@@ -10,12 +11,18 @@ Type=simple
 User=hardn
 Group=hardn
 WorkingDirectory=/usr/share/hardn
-ExecStart=/usr/bin/python3 /usr/share/hardn/src/hardn-api.py
-Restart=always
+
+# -u / PYTHONUNBUFFERED for real-time logs in journald
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -u /usr/share/hardn/src/hardn-api.py
+
+Restart=on-failure
 RestartSec=5
+
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=hardn-api
+
 CPUAccounting=true
 IOAccounting=true
 MemoryAccounting=true
@@ -24,7 +31,10 @@ MemoryAccounting=true
 NoNewPrivileges=yes
 ProtectHome=yes
 ProtectSystem=strict
-ReadWritePaths=/var/log/hardn
+
+# Allow writes where the API is expected to log / persist
+ReadWritePaths=/var/log/hardn /var/lib/hardn
+
 PrivateTmp=yes
 
 [Install]

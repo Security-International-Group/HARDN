@@ -1,8 +1,8 @@
 [Unit]
 Description=HARDN Centralized Monitoring and Logging Service
-After=network.target
-Wants=network.target
-Before=hardn.service hardn-api.service legion-daemon.service
+# Bring monitor up after network + core services so it can attach to logs/metrics
+After=network-online.target hardn.service hardn-api.service legion-daemon.service
+Wants=network-online.target hardn.service hardn-api.service legion-daemon.service
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
@@ -11,12 +11,17 @@ Type=simple
 User=root
 Group=root
 WorkingDirectory=/usr/share/hardn
+
 ExecStart=/usr/bin/hardn-monitor
-Restart=always
+
+# Only restart on failure so manual stops don't immediately respawn
+Restart=on-failure
 RestartSec=5
+
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=hardn-monitor
+
 CPUAccounting=true
 IOAccounting=true
 MemoryAccounting=true
@@ -25,6 +30,7 @@ MemoryAccounting=true
 NoNewPrivileges=yes
 ProtectHome=yes
 ProtectSystem=strict
+# Allow writes where the monitor stores state / logs
 ReadWritePaths=/var/lib/hardn /var/log/hardn
 PrivateTmp=yes
 
