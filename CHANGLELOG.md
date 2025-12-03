@@ -71,3 +71,4 @@ All notable changes to this project will be documented in this file.
 - Expand analytics for deeper threat correlation.
 - Explore a web dashboard and richer GTK app.
 - Open the door for plug-in security modules.
+
