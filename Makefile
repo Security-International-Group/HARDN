@@ -31,7 +31,6 @@ DESKTOP_DIR   ?= /usr/share/applications
 DESKTOP_FILES := usr/share/applications/hardn-gui.desktop
 
 # Systemd unit files in the repo
-# NOTE: Update paths below if your units live elsewhere (e.g. packaging/systemd/...)
 UNIT_FILES := systemd/hardn.service \
               systemd/hardn-api.service \
               systemd/legion-daemon.service \
@@ -115,7 +114,7 @@ build:
 build-internal:
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Recon: supply scan$(COLOR_RESET)\n'
 	@MISSING_DEPS=""; \
-	for pkg in build-essential pkg-config libssl-dev libsqlite3-dev debhelper lintian python3-all python3-requests python3-setuptools curl wget whiptail libgtk-4-dev libglib2.0-dev libvte-2.91-gtk4-dev cargo rustc; do \
+	for pkg in build-essential pkg-config libssl-dev libsqlite3-dev debhelper lintian python3-all python3-requests python3-psutil python3-setuptools curl wget whiptail libgtk-4-dev libglib2.0-dev libvte-2.91-gtk4-dev cargo rustc; do \
 		if ! dpkg -l "$$pkg" 2>/dev/null | grep -q "^ii"; then \
 			MISSING_DEPS="$$MISSING_DEPS $$pkg"; \
 		fi; \
