@@ -103,18 +103,10 @@ build:
 		exit 1; \
 	fi
 
-# ---------------------------------------------------------------------------
-# pipeline for patch
-#   - Ensure build dependencies are installed
-#   - Ensure Rust toolchain is present
-#   - Build Rust core
-#   - Build C auditor
-#   - Build Debian package (.deb)
-# ---------------------------------------------------------------------------
 build-internal:
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Recon: supply scan$(COLOR_RESET)\n'
 	@MISSING_DEPS=""; \
-	for pkg in build-essential pkg-config libssl-dev libsqlite3-dev debhelper lintian python3-all python3-requests python3-psutil python3-setuptools curl wget whiptail libgtk-4-dev libglib2.0-dev libvte-2.91-gtk4-dev cargo rustc; do \
+	for pkg in build-essential pkg-config libssl-dev libsqlite3-dev debhelper lintian python3-all python3-requests python3-psutil python3-fastapi python3-uvicorn python3-setuptools curl wget whiptail libgtk-4-dev libglib2.0-dev libvte-2.91-gtk4-dev cargo rustc; do \
 		if ! dpkg -l "$$pkg" 2>/dev/null | grep -q "^ii"; then \
 			MISSING_DEPS="$$MISSING_DEPS $$pkg"; \
 		fi; \

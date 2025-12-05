@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Refactored gui to be scalable to UI environment. 
+- Declared API runtime dependencies (python3-fastapi, python3-uvicorn) in packaging and native install paths to ensure services start on fresh installs.
 
 ### Changed
 - Relaxed inter-service `Wants=` dependencies in HARDN systemd units, allowing individual services to start or stop without implicitly launching the rest of the stack.
@@ -18,6 +19,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Hardened `hardn-service-manager.sh` status and log viewers to handle inactive services gracefully, preventing crashes and showing friendlier feedback when no data is available.
+- Resolved API unit start failures by installing missing FastAPI/Uvicorn dependencies via deb packaging and Makefile installs.
 
 ### What's Changed v1.0.0
 
