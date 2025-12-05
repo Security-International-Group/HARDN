@@ -214,11 +214,6 @@ jobs:
         with:
           name: hardn-deb-package
           path: release_assets
-          
-        - name: Include release imagery assets
-          run: |
-            mkdir -p release_assets
-            cp docs/assets/IMG_1233.jpeg release_assets/IMG_1233.jpeg
 
       - name: Include release imagery assets
         run: |
@@ -406,8 +401,8 @@ jobs:
           files: |
             release_assets/*.deb
             release_assets/IMG_1233.jpeg
-            draft: false
-            prerelease: false
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
 
