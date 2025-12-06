@@ -299,6 +299,10 @@ install-core:
 	           "$(DESTDIR)/var/lib/hardn" \
 	           "$(DESTDIR)/var/lib/hardn/legion" 2>/dev/null || true
 	@install -D -m 644 src/hardn-api.py "$(DESTDIR)/usr/share/hardn/src/hardn-api.py"
+	@mkdir -p "$(DESTDIR)/usr/share/hardn/modules"
+	@if ls usr/share/hardn/modules/*.sh >/dev/null 2>&1; then \
+		install -m 755 usr/share/hardn/modules/*.sh "$(DESTDIR)/usr/share/hardn/modules/"; \
+	fi
 # building hardn group profile and directory setups
 	@if [ -z "$(DESTDIR)" ]; then \
 		printf '$(SUBSTEP_PREFIX) $(COLOR_STAGE)Ensuring hardn system account and permissions$(COLORRESET)\n'; \
