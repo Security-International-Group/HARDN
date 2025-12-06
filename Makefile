@@ -235,7 +235,6 @@ build-internal:
 		cat $$TMP_LOG; \
 		rm -f $$TMP_LOG; \
 		exit 1; \
-	@install -D -m 644 src/hardn-api.py "$(DESTDIR)/usr/share/hardn/src/hardn-api.py"
 	fi; \
 	rm -f $$TMP_LOG
 	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)Debian bunker sealed.$(COLOR_RESET)\n'
@@ -273,6 +272,8 @@ install-core:
 	@install -m 755 "$(BUILD_TARGET)"            "$(DESTDIR)$(LIBDIR)/hardn"
 	@install -m 755 target/release/hardn-monitor "$(DESTDIR)$(LIBDIR)/hardn-monitor"
 	@install -m 755 "$(GUI_BUILD_TARGET)"        "$(DESTDIR)$(LIBDIR)/hardn-gui"
+	@install -d "$(DESTDIR)/usr/share/hardn/src"
+	@install -m 755 src/hardn-api.py "$(DESTDIR)/usr/share/hardn/src/hardn-api.py"
 
 	@if [ -f "usr/share/hardn/scripts/hardn-service-manager.sh" ]; then \
 		install -m 755 usr/share/hardn/scripts/hardn-service-manager.sh "$(DESTDIR)$(LIBDIR)/hardn-service-manager"; \
@@ -292,6 +293,7 @@ install-core:
 	           "$(DESTDIR)/var/log/hardn" \
 	           "$(DESTDIR)/var/lib/hardn" \
 	           "$(DESTDIR)/var/lib/hardn/legion" 2>/dev/null || true
+	@install -D -m 644 src/hardn-api.py "$(DESTDIR)/usr/share/hardn/src/hardn-api.py"
 # building hardn group profile and directory setups
 	@if [ -z "$(DESTDIR)" ]; then \
 		printf '$(SUBSTEP_PREFIX) $(COLOR_STAGE)Ensuring hardn system account and permissions$(COLORRESET)\n'; \
