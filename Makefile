@@ -293,6 +293,23 @@ install-core:
 	           "$(DESTDIR)/var/lib/hardn" \
 	           "$(DESTDIR)/var/lib/hardn/legion" 2>/dev/null || true
 
+	@if [ -z "$(DESTDIR)" ]; then \
+		printf '$(SUBSTEP_PREFIX) $(COLOR_STAGE)Ensuring hardn system account and permissions$(COLORRESET)\n'; \
+		if ! getent group hardn >/dev/null; then \
+			if command -v addgroup >/dev/null 2>&1; then addgroup --system hardn || true; \
+			elif command -v groupadd >/dev/null 2>&1; then groupadd -r hardn || true; fi; \
+		fi; \
+		if ! getent passwd hardn >/dev/null; then \
+			if command -v adduser >/dev/null 2>&1; then adduser --system --ingroup hardn --home /var/lib/hardn --shell /usr/sbin/nologin hardn || true; \
+			elif command -v useradd >/dev/null 2>&1; then useradd -r -g hardn -d /var/lib/hardn -s /usr/sbin/nologin hardn || true; fi; \
+		fi; \
+		mkdir -p /var/log/hardn /var/lib/hardn /var/lib/hardn/backups /var/lib/hardn/baselines 2>/dev/null || true; \
+		chown root:hardn /var/log/hardn /var/lib/hardn /var/lib/hardn/backups /var/lib/hardn/baselines 2>/dev/null || true; \
+		chmod 2770 /var/log/hardn /var/lib/hardn /var/lib/hardn/backups /var/lib/hardn/baselines 2>/dev/null || true; \
+		chown -R root:hardn /usr/share/hardn 2>/dev/null || true; \
+		find /usr/share/hardn -type d -exec chmod 2755 {} + 2>/dev/null || true; \
+	fi
+
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Installing systemd units$(COLORRESET)\n'
 	@mkdir -p "$(DESTDIR)$(SYSTEMD_DIR)"
 	@for unit in $(UNIT_FILES); do \
@@ -384,4 +401,4 @@ clean:
 		fi; \
 		cargo clean >/dev/null 2>&1 || true; \
 	}
-	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)Forge embers extinguished.$(COLORRESET)\n'
+	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)old embers extinguished.$(COLORRESET)\n'

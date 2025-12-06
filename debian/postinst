@@ -3,6 +3,36 @@ set -e
 
 LEGACY_MODULE_DIR="/usr/lib/hardn/src/setup/modules"
 LEGACY_TOOL_DIR="/usr/lib/hardn/src/setup/tools"
+
+# hardn group sanity check 
+ensure_hardn_account() {
+    if ! getent group hardn >/dev/null; then
+        if command -v addgroup >/dev/null 2>&1; then
+            addgroup --system hardn || true
+        elif command -v groupadd >/dev/null 2>&1; then
+            groupadd -r hardn || true
+        fi
+    fi
+
+    if ! getent passwd hardn >/dev/null; then
+        if command -v adduser >/dev/null 2>&1; then
+            adduser --system --ingroup hardn --home /var/lib/hardn --shell /usr/sbin/nologin hardn || true
+        elif command -v useradd >/dev/null 2>&1; then
+            useradd -r -g hardn -d /var/lib/hardn -s /usr/sbin/nologin hardn || true
+        fi
+    fi
+}
+
+ensure_hardn_paths() {
+    mkdir -p /var/log/hardn /var/lib/hardn /var/lib/hardn/backups /var/lib/hardn/baselines 2>/dev/null || true
+    chown root:hardn /var/log/hardn /var/lib/hardn /var/lib/hardn/backups /var/lib/hardn/baselines 2>/dev/null || true
+    chmod 2770 /var/log/hardn /var/lib/hardn /var/lib/hardn/backups /var/lib/hardn/baselines 2>/dev/null || true
+
+    if [ -d /usr/share/hardn ]; then
+        chown -R root:hardn /usr/share/hardn 2>/dev/null || true
+        find /usr/share/hardn -type d -exec chmod 2755 {} + 2>/dev/null || true
+    fi
+}
         if [ -d "systemd" ]; then
             for service_file in systemd/*.service; do
                 if [ -f "$service_file" ]; then
@@ -11,7 +41,7 @@ LEGACY_TOOL_DIR="/usr/lib/hardn/src/setup/tools"
             done
         fi
         
-        # Reload systemd if any services were installed
+        # Reload systemd if any services were installed + group add
         if [ -d "systemd" ] && command -v systemctl >/dev/null; then
             systemctl daemon-reload || true
         fi
@@ -25,6 +55,9 @@ PROFILE_D_FILE="/etc/profile.d/hardn-paths.sh"
 
 case "$1" in
     configure)
+        # cross your fingers....
+        ensure_hardn_account
+        ensure_hardn_paths
 
         # Ensure system group 'hardn' exists, then create system user 'hardn' in that group
         if ! getent group hardn >/dev/null; then
