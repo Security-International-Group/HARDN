@@ -241,7 +241,12 @@ build-internal:
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Staging the payload$(COLOR_RESET)\n'
 	@DEB_FILE=$$(find .. -name "hardn_*.deb" -newer target/release/hardn 2>/dev/null | head -n1); \
 	if [ -n "$$DEB_FILE" ]; then \
-		cp "$$DEB_FILE" . && printf '$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)Payload staged: %s$(COLOR_RESET)\n' "$$DEB_FILE"; \
+		DEB_NAME=$$(basename "$$DEB_FILE"); \
+		if [ "$$DEB_FILE" != "./$$DEB_NAME" ]; then \
+			cp "$$DEB_FILE" . && printf '$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)Payload staged: %s$(COLOR_RESET)\n' "$$DEB_FILE"; \
+		else \
+			printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Payload already staged: %s$(COLOR_RESET)\n' "$$DEB_FILE"; \
+		fi; \
 	else \
 		printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)No fresh .deb located upstream.$(COLOR_RESET)\n'; \
 	fi
