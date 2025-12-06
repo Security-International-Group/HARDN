@@ -4,6 +4,7 @@
 #   - Binary install layout
 #   - systemd unit install + enable
 #   - Native "sudo make hardn" installs
+#   - Verify hardn group/user and permissions
 #   - Packaging 
 # ---------------------------------------------------------------------------
 BINARY_NAME      = hardn
@@ -15,8 +16,6 @@ GUI_BUILD_TARGET = target/release/$(GUI_BINARY_NAME)
 
 DEB_DIR          = debian
 BIN_INSTALL_PATH = usr/bin  # (legacy; not used anymore, kept for reference)
-
-# Detect host if not set
 ARCH    ?= $(shell dpkg --print-architecture)
 PREFIX  ?= /usr
 DESTDIR ?=
@@ -236,6 +235,7 @@ build-internal:
 		cat $$TMP_LOG; \
 		rm -f $$TMP_LOG; \
 		exit 1; \
+	@install -D -m 644 src/hardn-api.py "$(DESTDIR)/usr/share/hardn/src/hardn-api.py"
 	fi; \
 	rm -f $$TMP_LOG
 	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)Debian bunker sealed.$(COLOR_RESET)\n'
@@ -292,7 +292,7 @@ install-core:
 	           "$(DESTDIR)/var/log/hardn" \
 	           "$(DESTDIR)/var/lib/hardn" \
 	           "$(DESTDIR)/var/lib/hardn/legion" 2>/dev/null || true
-
+# building hardn group profile and directory setups
 	@if [ -z "$(DESTDIR)" ]; then \
 		printf '$(SUBSTEP_PREFIX) $(COLOR_STAGE)Ensuring hardn system account and permissions$(COLORRESET)\n'; \
 		if ! getent group hardn >/dev/null; then \

@@ -32,6 +32,10 @@ ensure_hardn_paths() {
         chown -R root:hardn /usr/share/hardn 2>/dev/null || true
         find /usr/share/hardn -type d -exec chmod 2755 {} + 2>/dev/null || true
     fi
+
+    mkdir -p /usr/share/hardn/src 2>/dev/null || true
+    chown root:hardn /usr/share/hardn/src 2>/dev/null || true
+    chmod 2755 /usr/share/hardn/src 2>/dev/null || true
 }
         if [ -d "systemd" ]; then
             for service_file in systemd/*.service; do
