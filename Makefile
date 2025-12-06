@@ -303,6 +303,10 @@ install-core:
 	@if ls usr/share/hardn/modules/*.sh >/dev/null 2>&1; then \
 		install -m 755 usr/share/hardn/modules/*.sh "$(DESTDIR)/usr/share/hardn/modules/"; \
 	fi
+	@mkdir -p "$(DESTDIR)/usr/share/hardn/docs"
+	@mkdir -p "$(DESTDIR)/usr/share/pixmaps"
+	@install -m 644 docs/assets/IMG_1233.jpeg "$(DESTDIR)/usr/share/hardn/docs/IMG_1233.jpeg" 2>/dev/null || true
+	@install -m 644 docs/assets/IMG_1233.jpeg "$(DESTDIR)/usr/share/pixmaps/hardn-gui.jpeg" 2>/dev/null || true
 # building hardn group profile and directory setups
 	@if [ -z "$(DESTDIR)" ]; then \
 		printf '$(SUBSTEP_PREFIX) $(COLOR_STAGE)Ensuring hardn system account and permissions$(COLORRESET)\n'; \
