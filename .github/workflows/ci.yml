@@ -412,34 +412,20 @@ jobs:
         env:
           WEBHOOK: ${{ secrets.DEV_UPDATES_DISCORD_WEBHOOK }}
         run: |
-          # Skip if webhook is unset or obviously redacted/placeholder
+          # Skip if webhook missing/placeholder
           if [[ -z "${WEBHOOK:-}" || "${WEBHOOK}" == "***" || "${WEBHOOK}" == "*****" ]]; then
-            echo "Discord webhook not configured; skipping notification.";
-            exit 0;
-          fi
+            echo "Discord webhook not configured; skipping notification."; exit 0; fi
 
           STATUS="${{ job.status }}"
           VERSION="${{ steps.version.outputs.version }}"
           DEB_NAME="${{ steps.version.outputs.deb_name }}"
           MSG="https://github.com/${{ github.repository }}/releases/tag/latest"
 
-          if command -v hardn-discord.sh >/dev/null 2>&1; then
-            if [[ "$STATUS" == "success" ]]; then
-              hardn-discord.sh "LATEST RELEASE UPDATED" "HARDN Latest Updated (v${VERSION}): $MSG" || true
-            else
-              hardn-discord.sh "LATEST RELEASE FAILED" "Latest release update failed for v${VERSION} on branch ${{ github.ref_name }}" || true
-            fi
-          elif [[ -n "${WEBHOOK:-}" ]]; then
-            COLOR=15105570  # Default gray
-            [[ "$STATUS" == "success" ]] && COLOR=3066993 || true  # Green
-            [[ "$STATUS" == "failure" ]] && COLOR=15158332 || true  # Red
+          COLOR=15105570
+          [[ "$STATUS" == "success" ]] && COLOR=3066993 || true
+          [[ "$STATUS" == "failure" ]] && COLOR=15158332 || true
 
-            if [[ "$STATUS" == "success" ]]; then
-              DESCRIPTION=" **Latest Release Updated**\\n**Package**: \`${DEB_NAME}\`\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`\\nStatic download URL ready!"
-            else
-              DESCRIPTION=" **Latest Release Update Failed**\\n**Version**: \`${VERSION}\`\\n**Status**: **${STATUS}** on branch \`${{ github.ref_name }}\`"
-            fi
+          DESCRIPTION="Status: ${STATUS} on ${DEB_NAME} (v${VERSION})"
 
-            curl -H "Content-Type: application/json" -X POST "$WEBHOOK" \
-              -d "{\"embeds\":[{\"title\":\"HARDN Latest Release Pipeline • ${{ github.repository }}\",\"description\":\"$DESCRIPTION\",\"color\":$COLOR,\"url\":\"$MSG\"}]}" || true
-          fi
+          curl -H "Content-Type: application/json" -X POST "$WEBHOOK" \
+            -d "{\"embeds\":[{\"title\":\"HARDN Release\",\"description\":\"$DESCRIPTION\",\"color\":$COLOR,\"url\":\"$MSG\"}]}" || true
