@@ -20,8 +20,6 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 1
     versioning-strategy: "auto"
-    registries:
-      - pip-private
     labels:
       - "dependencies"
     assignees:
@@ -37,8 +35,6 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    registries:
-      - cargo-private
     open-pull-requests-limit: 1
     versioning-strategy: "auto"
     labels:

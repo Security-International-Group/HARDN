@@ -14,7 +14,8 @@ WorkingDirectory=/usr/share/hardn
 
 # -u / PYTHONUNBUFFERED for real-time logs in journald
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 -u /usr/share/hardn/src/hardn-api.py
+# Use env to tolerate python3 path differences across distros after seeing issue between deb 13 and ubuntu 24.04
+ExecStart=/usr/bin/env python3 -u /usr/share/hardn/src/hardn-api.py
 
 Restart=on-failure
 RestartSec=5
