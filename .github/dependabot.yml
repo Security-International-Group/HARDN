@@ -51,13 +51,3 @@ updates:
       rust-deps:
         patterns:
           - "*"
-
-registries:
-  cargo-private:
-    type: "cargo-registry"
-    url: "https://github.com/Security-International-Group/HARDN"
-    token: "${{secrets.DEP_PAT}}"
-  pip-private:
-    type: "python-index"
-    url: "https://github.com/Security-International-Group/HARDN"
-    token: "${{secrets.DEP_PAT}}"

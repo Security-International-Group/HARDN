@@ -7,12 +7,9 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 # Color codes
-RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' 
+NC='\033[0m'
 
 echo "HARDN Enhanced Security Hardening Module"
 echo "========================================="
@@ -22,64 +19,37 @@ echo ""
 # LOGGING
 # =========================================
 HARDN_STATUS() {
-    local color="$GREEN"
-    local label="[INFO]"
-    local timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
-
-    if [ $# -gt 1 ]; then
-        case "$1" in
-            INFO)
-                color="$GREEN"
-                label="[INFO]"
-                shift
-                ;;
-            WARN)
-                color="$YELLOW"
-                label="[WARN]"
-                shift
-                ;;
-            UPDATE)
-                color="$CYAN"
-                label="[UPDATE]"
-                shift
-                ;;
-            ERROR)
-                color="$RED"
-                label="[ERROR]"
-                shift
-                ;;
-            DEBUG)
-                color="$BLUE"
-                label="[DEBUG]"
-                shift
-                ;;
-        esac
-    fi
-
-    echo -e "${color}[${timestamp}] ${label}${NC} $*"
+    local label="${1:-INFO}"
+    shift || true
+    local timestamp
+    timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+    echo "[${timestamp}] [${label}] $*"
 }
 
-log_action() {
-    HARDN_STATUS INFO "$1"
-}
-
-log_warning() {
-    HARDN_STATUS WARN "$1"
-}
-
-log_update() {
-    HARDN_STATUS UPDATE "$1"
-}
-
-log_error() {
-    HARDN_STATUS ERROR "$1"
-}
+# shellcheck disable=SC2317
+log_action() { HARDN_STATUS INFO "$@"; }
+log_warning() { HARDN_STATUS WARN "$@"; }
+log_update() { HARDN_STATUS UPDATE "$@"; }
+log_error() { HARDN_STATUS ERROR "$@"; }
 
 APT_TIMEOUT_DEFAULT=${APT_TIMEOUT_DEFAULT:-120}
 APT_LOG_DIR="/var/log/hardn/apt"
 APT_INSTALL_FLAGS=(-q -y --no-install-recommends -o Dpkg::Progress-Fancy=0)
+APT_UPDATED=0
 mkdir -p /var/log/hardn 2>/dev/null || true
 mkdir -p "$APT_LOG_DIR" 2>/dev/null || true
+
+ensure_apt_update() {
+    if [ "${APT_UPDATED:-0}" -eq 0 ]; then
+        local update_log="$APT_LOG_DIR/apt-get-update.log"
+        HARDN_STATUS "Refreshing APT package lists (details: $update_log)"
+        if timeout "$APT_TIMEOUT_DEFAULT" apt-get update >"$update_log" 2>&1; then
+            APT_UPDATED=1
+        else
+            log_warning "apt-get update failed; see $update_log"
+        fi
+    fi
+}
 
 apt_install() {
     local log_key="$1"; shift
@@ -99,6 +69,7 @@ apt_install() {
 
     local log_file="$APT_LOG_DIR/${log_key}.log"
     HARDN_STATUS "$description (details: $log_file)"
+    ensure_apt_update
     if timeout "$timeout" apt-get install "${APT_INSTALL_FLAGS[@]}" "$@" >"$log_file" 2>&1; then
         HARDN_STATUS "$description completed"
         return 0
@@ -111,8 +82,11 @@ apt_install() {
 hardn_services_lockdown() {
     local api_port="${HARDN_API_PORT:-8000}"
     local grafana_port="${HARDN_GRAFANA_PORT:-3000}"
+    local ssh_port="${HARDN_SSH_PORT:-22}"
     local api_allow_list="${HARDN_API_ALLOWED_CIDRS:-}"
     local grafana_allow_list="${HARDN_GRAFANA_ALLOWED_CIDRS:-}"
+    local ssh_allow_list="${HARDN_SSH_ALLOWED_CIDRS:-}"
+    local disable_ssh="${HARDN_DISABLE_SSH:-0}"
 
     HARDN_STATUS INFO "Applying HARDN services lockdown perimeter"
 
@@ -124,15 +98,19 @@ hardn_services_lockdown() {
         apt_install "iptables" "Installing iptables tools" 120 iptables iptables-persistent netfilter-persistent || true
     fi
 
-    # Disable SSH entry points – Fail2Ban will still monitor for unexpected activations
-    if systemctl list-unit-files | grep -q '^ssh\.service'; then
-        systemctl stop ssh.service 2>/dev/null || true
-        systemctl disable ssh.service 2>/dev/null || true
-        systemctl mask ssh.service 2>/dev/null || true
-    fi
-    if systemctl list-unit-files | grep -q '^ssh\.socket'; then
-        systemctl stop ssh.socket 2>/dev/null || true
-        systemctl disable ssh.socket 2>/dev/null || true
+    # Disable SSH entry points only when explicitly requested
+    if [ "$disable_ssh" != "0" ]; then
+        if systemctl list-unit-files | grep -q '^ssh\.service'; then
+            systemctl stop ssh.service 2>/dev/null || true
+            systemctl disable ssh.service 2>/dev/null || true
+            systemctl mask ssh.service 2>/dev/null || true
+        fi
+        if systemctl list-unit-files | grep -q '^ssh\.socket'; then
+            systemctl stop ssh.socket 2>/dev/null || true
+            systemctl disable ssh.socket 2>/dev/null || true
+        fi
+    else
+        HARDN_STATUS INFO "HARDN_DISABLE_SSH=0; keeping SSH service available"
     fi
 
     if command -v ufw >/dev/null 2>&1; then
@@ -171,6 +149,17 @@ hardn_services_lockdown() {
             done
         fi
 
+        # SSH allow list (or open if none provided)
+        if [ "$disable_ssh" = "0" ]; then
+            if [ -n "$ssh_allow_list" ]; then
+                for cidr in $ssh_allow_list; do
+                    ufw allow proto tcp from "$cidr" to any port "$ssh_port" comment 'SSH access (scoped)'
+                done
+            else
+                ufw allow "$ssh_port"/tcp comment 'SSH access'
+            fi
+        fi
+
         ufw --force enable
         ufw reload >/dev/null 2>&1 || true
         HARDN_STATUS INFO "UFW restricted to HARDN API port ${api_port} and Grafana port ${grafana_port}"
@@ -185,11 +174,21 @@ hardn_services_lockdown() {
         ipt_cmd="iptables"
     fi
 
-    if [ -n "$ipt_cmd" ]; then
+        if [ -n "$ipt_cmd" ]; then
         $ipt_cmd -N HARDN-LOCKDOWN 2>/dev/null || true
         $ipt_cmd -F HARDN-LOCKDOWN
         $ipt_cmd -A HARDN-LOCKDOWN -i lo -j ACCEPT
         $ipt_cmd -A HARDN-LOCKDOWN -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+            if [ "$disable_ssh" = "0" ]; then
+                if [ -n "$ssh_allow_list" ]; then
+                    for cidr in $ssh_allow_list; do
+                        $ipt_cmd -A HARDN-LOCKDOWN -p tcp --dport "$ssh_port" -s "$cidr" -j ACCEPT
+                    done
+                else
+                    $ipt_cmd -A HARDN-LOCKDOWN -p tcp --dport "$ssh_port" -j ACCEPT
+                fi
+            fi
 
         if [ -n "${api_allow_list}" ]; then
             for cidr in ${api_allow_list}; do
@@ -272,7 +271,7 @@ hardn_services_lockdown
 HARDN_STATUS "Configuring secure time synchronization..."
 if apt_install "chrony" "Installing chrony" 120 chrony; then
     if [ -f /etc/chrony/chrony.conf ]; then
-        cp /etc/chrony/chrony.conf /etc/chrony/chrony.conf.bak.$(date +%Y%m%d%H%M%S) 2>/dev/null || true
+        cp /etc/chrony/chrony.conf "/etc/chrony/chrony.conf.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
     fi
     cat > /etc/chrony/chrony.conf <<'EOF'
 # HARDN Chrony configuration
@@ -450,10 +449,10 @@ HARDN_STATUS "Applying comprehensive SSH hardening..."
 
 if [ -f /etc/ssh/sshd_config ]; then
     # Backup original config
-    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak.$(date +%Y%m%d)
+    cp /etc/ssh/sshd_config "/etc/ssh/sshd_config.bak.$(date +%Y%m%d)"
     
     # Apply hardened SSH configuration
-    cat > /etc/ssh/sshd_config.d/99-hardn-hardened.conf <<EOF
+    cat > /etc/ssh/sshd_config.d/99-hardn-hardened.conf <<'EOF'
 # HARDN Enhanced SSH Configuration
 # Generated: $(date)
 
@@ -495,14 +494,8 @@ LoginGraceTime 60
 # Banner
 Banner /etc/ssh/sshd_banner
 EOF
-
-
-# ==========================================
-# BANNER CONFIGURATION
-# =========================================
-    
     # Create SSH banner
-    cat > /etc/ssh/sshd_banner <<EOF
+    cat > /etc/ssh/sshd_banner <<'EOF'
 ***************************************************************************
                             NOTICE TO USERS
                        ***** W A R N I N G *****
@@ -524,10 +517,85 @@ LOG OFF IMMEDIATELY if you do not agree to the conditions stated in this warning
           S E C U R I T Y - I N T E R N A T I O N A L - G R O U P
 ***************************************************************************
 EOF
-    
-    systemctl reload sshd || service ssh reload || true
+ 
+    if systemctl list-unit-files | grep -q '^sshd\.service'; then
+        if systemctl is-enabled sshd 2>/dev/null | grep -q masked; then
+            log_warning "sshd.service is masked; reload skipped"
+        else
+            systemctl reload sshd 2>/dev/null || systemctl restart sshd 2>/dev/null || log_warning "sshd reload failed"
+        fi
+    elif systemctl list-unit-files | grep -q '^ssh\.service'; then
+        if systemctl is-enabled ssh 2>/dev/null | grep -q masked; then
+            log_warning "ssh.service is masked; reload skipped"
+        else
+            systemctl reload ssh.service 2>/dev/null || systemctl restart ssh.service 2>/dev/null || log_warning "ssh reload failed"
+        fi
+    else
+        log_warning "SSH service not present; reload skipped"
+    fi
     HARDN_STATUS "SSH configuration hardened"
 fi
+
+# ==========================================
+# FAIL2BAN HARDENING
+# ==========================================
+HARDN_STATUS "Configuring Fail2Ban..."
+
+HARDN_FAIL2BAN_BANTIME="${HARDN_FAIL2BAN_BANTIME:-600}"
+HARDN_FAIL2BAN_FINDTIME="${HARDN_FAIL2BAN_FINDTIME:-600}"
+HARDN_FAIL2BAN_MAXRETRY="${HARDN_FAIL2BAN_MAXRETRY:-5}"
+
+if apt_install "fail2ban" "Installing Fail2Ban" 180 fail2ban; then
+    mkdir -p /etc/fail2ban/jail.d 2>/dev/null || true
+    cat > /etc/fail2ban/jail.d/99-hardn.conf <<'EOF'
+[DEFAULT]
+bantime = ${HARDN_FAIL2BAN_BANTIME}
+findtime = ${HARDN_FAIL2BAN_FINDTIME}
+maxretry = ${HARDN_FAIL2BAN_MAXRETRY}
+backend = systemd
+
+[sshd]
+enabled = true
+
+EOF
+    systemctl enable fail2ban 2>/dev/null || true
+    systemctl restart fail2ban 2>/dev/null || true
+    HARDN_STATUS "Fail2Ban configured with hardened defaults"
+else
+    log_warning "Fail2Ban installation failed; skipping configuration"
+fi
+
+# ==========================================
+# LOGROTATE CONFIGURATION
+# ==========================================
+HARDN_STATUS "Configuring log rotation..."
+
+cat > /etc/logrotate.d/hardn <<'EOF'
+# HARDN log rotation configuration
+/var/log/hardn/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 root adm
+}
+
+/var/log/audit/audit.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0600 root root
+    postrotate
+        /usr/sbin/service auditd rotate
+    endscript
+}
+EOF
+
 
 # ==========================================
 #  FILE PERMISSIONS AND OWNERSHIP
@@ -675,27 +743,25 @@ process_sysctls=(
     "kernel.perf_event_paranoid=3"
 )
 
-{
-    printf '\n# Network Security\n'
-    for item in "${network_sysctls[@]}"; do
-        write_sysctl_setting "${item%%=*}" "${item#*=}" "$SYSCTL_FILE"
-    done
+printf '\n# Network Security\n' >> "$SYSCTL_FILE"
+for item in "${network_sysctls[@]}"; do
+    write_sysctl_setting "${item%%=*}" "${item#*=}" "$SYSCTL_FILE"
+done
 
-    printf '\n# Kernel Security\n'
-    for item in "${kernel_sysctls[@]}"; do
-        write_sysctl_setting "${item%%=*}" "${item#*=}" "$SYSCTL_FILE"
-    done
+printf '\n# Kernel Security\n' >> "$SYSCTL_FILE"
+for item in "${kernel_sysctls[@]}"; do
+    write_sysctl_setting "${item%%=*}" "${item#*=}" "$SYSCTL_FILE"
+done
 
-    printf '\n# File System Security\n'
-    for item in "${filesystem_sysctls[@]}"; do
-        write_sysctl_setting "${item%%=*}" "${item#*=}" "$SYSCTL_FILE"
-    done
+printf '\n# File System Security\n' >> "$SYSCTL_FILE"
+for item in "${filesystem_sysctls[@]}"; do
+    write_sysctl_setting "${item%%=*}" "${item#*=}" "$SYSCTL_FILE"
+done
 
-    printf '\n# Process Security\n'
-    for item in "${process_sysctls[@]}"; do
-        write_sysctl_setting "${item%%=*}" "${item#*=}" "$SYSCTL_FILE"
-    done
-} >> "$SYSCTL_FILE"
+printf '\n# Process Security\n' >> "$SYSCTL_FILE"
+for item in "${process_sysctls[@]}"; do
+    write_sysctl_setting "${item%%=*}" "${item#*=}" "$SYSCTL_FILE"
+done
 
 sysctl -p /etc/sysctl.d/99-hardn-hardening.conf 2>/dev/null || log_warning "Some sysctl settings failed to apply"
 
@@ -965,8 +1031,8 @@ if [ -f "$AUDIT_CONF" ]; then
     )
     for key in "${!auditd_settings[@]}"; do
         value="${auditd_settings[$key]}"
-        if grep -Eq "^[[:space:]]*$key[[:space:]]*=" "$AUDIT_CONF"; then
-            sed -ri "s|^[[:space:]]*$key[[:space:]]*=.*$|$key = $value|I" "$AUDIT_CONF"
+        if grep -Eq "^[[:space:]]*${key}[[:space:]]*=" "$AUDIT_CONF"; then
+            sed -ri "s|^[[:space:]]*${key}[[:space:]]*=.*$|${key} = ${value}|I" "$AUDIT_CONF"
         else
             printf '%s = %s\n' "$key" "$value" >> "$AUDIT_CONF"
         fi
@@ -1063,68 +1129,56 @@ fi
 # ==========================================
 # FAIL2BAN HARDENING
 # ==========================================
-HARDN_STATUS "Configuring Fail2Ban..."
-
-HARDN_FAIL2BAN_BANTIME="${HARDN_FAIL2BAN_BANTIME:-600}"
-HARDN_FAIL2BAN_FINDTIME="${HARDN_FAIL2BAN_FINDTIME:-600}"
-HARDN_FAIL2BAN_MAXRETRY="${HARDN_FAIL2BAN_MAXRETRY:-5}"
-
-if apt_install "fail2ban" "Installing Fail2Ban" 180 fail2ban; then
-    mkdir -p /etc/fail2ban/jail.d
-    sed -i '/^\s*allowipv6\s*=\s*/d' /etc/fail2ban/jail.local 2>/dev/null || true
-    sed -i '/^\s*\[sshd-ddos\]/I,/^\s*$/d' /etc/fail2ban/jail.local 2>/dev/null || true
-    cat > /etc/fail2ban/jail.d/99-hardn.conf <<EOF
-[DEFAULT]
-bantime = ${HARDN_FAIL2BAN_BANTIME}
-findtime = ${HARDN_FAIL2BAN_FINDTIME}
-maxretry = ${HARDN_FAIL2BAN_MAXRETRY}
-backend = systemd
-
-[sshd]
-enabled = true
-EOF
-
-    systemctl enable fail2ban 2>/dev/null || true
-    if fail2ban-client -t >/var/log/hardn/fail2ban-config-check.log 2>&1; then
-        systemctl restart fail2ban 2>/dev/null || true
-    else
-        log_warning "Fail2Ban configuration test failed; see /var/log/hardn/fail2ban-config-check.log"
-    fi
-    HARDN_STATUS "Fail2Ban configured with hardened defaults"
+HARDN_STATUS "Installing ClamAV..."
+clamav_installed=0
+if apt_install "clamav" "Installing ClamAV" 120 clamav clamav-daemon; then
+    clamav_installed=1
 else
-    log_warning "Fail2Ban installation failed; skipping configuration"
+    log_warning "ClamAV installation failed; skipping service enable and signature update"
 fi
 
-# ==========================================
-# LOGROTATE CONFIGURATION
-# ==========================================
-HARDN_STATUS "Configuring log rotation..."
+if [ "$clamav_installed" -eq 1 ]; then
+    systemctl enable clamav-daemon 2>/dev/null || true
+    systemctl start clamav-daemon 2>/dev/null || true       
+    # Update ClamAV database
+    mkdir -p /var/log/hardn 2>/dev/null || true
+    FRESHCLAM_LOG="/var/log/hardn/freshclam-update.log"
+    HARDN_STATUS "Updating ClamAV signatures..."
+    update_succeeded=0
 
-cat > /etc/logrotate.d/hardn <<EOF
-# HARDN log rotation configuration
-/var/log/hardn/*.log {
-    daily
-    rotate 30
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0640 root adm
-}
+    if systemctl list-unit-files | grep -q '^clamav-freshclam.service'; then
+        systemctl enable clamav-freshclam 2>/dev/null || true
+        systemctl stop clamav-freshclam 2>/dev/null || true
+    fi
 
-/var/log/audit/audit.log {
-    daily
-    rotate 30
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0600 root root
-    postrotate
-        /usr/sbin/service auditd rotate
-    endscript
-}
-EOF
+    if command -v freshclam >/dev/null 2>&1; then
+        if timeout 300 freshclam --stdout --no-warnings >"$FRESHCLAM_LOG" 2>&1; then
+            update_succeeded=1
+            HARDN_STATUS "ClamAV signature update complete (see $FRESHCLAM_LOG)"
+        fi
+    fi
+
+    if [ $update_succeeded -eq 0 ]; then
+        if systemctl list-unit-files | grep -q '^clamav-freshclam.service'; then
+            if systemctl restart clamav-freshclam 2>/dev/null; then
+                update_succeeded=1
+                HARDN_STATUS "clamav-freshclam service restarted to refresh signatures"
+            fi
+        fi
+    fi
+
+    if systemctl list-unit-files | grep -q '^clamav-freshclam.service'; then
+        systemctl start clamav-freshclam 2>/dev/null || true
+    fi
+
+    if [ $update_succeeded -eq 0 ]; then
+        if compgen -G '/var/lib/clamav/*.[cC][lL][dD]' >/dev/null 2>&1 || compgen -G '/var/lib/clamav/*.[cC][vV][dD]' >/dev/null 2>&1; then
+            HARDN_STATUS "Existing ClamAV signatures detected; updates will occur when connectivity is available (see $FRESHCLAM_LOG)"
+        else
+            log_warning "ClamAV signatures missing; review $FRESHCLAM_LOG for remediation"
+        fi
+    fi
+fi
 
 # ==========================================
 # CORE DUMP RESTRICTIONS
@@ -1414,6 +1468,7 @@ APT::Periodic::Download-Upgradeable-Packages "1";
 APT::Periodic::AutocleanInterval "7";
 EOF
     if [ -f /etc/apt/apt.conf.d/50unattended-upgrades ]; then
+    # shellcheck disable=SC2016
     sed -i 's|^[[:space:]]*//[[:space:]]*"${distro_id}:${distro_codename}-security";|        "${distro_id}:${distro_codename}-security";|' /etc/apt/apt.conf.d/50unattended-upgrades
         if ! grep -q 'Unattended-Upgrade::Origins-Pattern' /etc/apt/apt.conf.d/50unattended-upgrades 2>/dev/null; then
             cat >> /etc/apt/apt.conf.d/50unattended-upgrades <<'EOF'
@@ -1512,25 +1567,26 @@ echo -e "${GREEN}HARDN Enhanced Hardening Complete!${NC}"
 echo "========================================="
 echo ""
 echo "Applied hardening measures:"
-echo "  ✓ Authentication hardening (password history & inactivity)"
-echo "  ✓ Service account shell restrictions"
-echo "  ✓ Comprehensive SSH configuration"
-echo "  ✓ Secure file permissions and sudo logging"
-echo "  ✓ Kernel security parameters & IPv6 policy documentation"
-echo "  ✓ Entropy daemon and time synchronization"
-echo "  ✓ Persistent journald with remote syslog forwarding"
-echo "  ✓ AIDE fast baseline and debsums checksums"
-echo "  ✓ MITRE ATT&CK audit rules"
-echo "  ✓ Strict firewall configuration"
-echo "  ✓ Log rotation configured"
-echo "  ✓ Core dumps disabled"
-echo "  ✓ AppArmor profiles configured (problematic apps disabled, others enforced)"
-echo "  ✓ Compiler access restricted"
-echo "  ✓ Network parameters tuned"
-echo "  ✓ Lynis baseline scan completed"
+echo "  - Authentication hardening (password history & inactivity)"
+echo "  - Service account shell restrictions"
+echo "  - Comprehensive SSH configuration"
+echo "  - Secure file permissions and sudo logging"
+echo "  - Kernel security parameters & IPv6 policy documentation"
+echo "  - Entropy daemon and time synchronization"
+echo "  - Persistent journald with remote syslog forwarding"
+echo "  - AIDE fast baseline and debsums checksums"
+echo "  - MITRE ATT&CK audit rules"
+echo "  - Strict firewall configuration"
+echo "  - Log rotation configured"
+echo "  - Core dumps disabled"
+echo "  - AppArmor profiles configured (native apps disabled, others enforced)"
+echo "  - Compiler access restricted"
+echo "  - Network parameters tuned"
+echo "  - Lynis baseline scan completed"
 echo ""
 echo -e "${YELLOW}Note:${NC} System reboot recommended for all changes to take effect."
 echo -e "${YELLOW}Note:${NC} Run 'lynis audit system' to verify improvements."
 echo ""
 
 HARDN_STATUS "Enhanced hardening module completed successfully!"
+exit 0

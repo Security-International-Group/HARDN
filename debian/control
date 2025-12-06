@@ -54,9 +54,7 @@ Recommends: whiptail,
         suricata, 
         aide, 
         rkhunter, 
-        auditd,
-        python3-fastapi,
-        python3-uvicorn
+        auditd
 Description: Linux Security Hardening Framework (Demo Version)
  HARDN is a comprehensive Linux security hardening toolkit demonstration.
  It integrates essential security tools and provides a framework for
