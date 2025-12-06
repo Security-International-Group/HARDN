@@ -78,8 +78,21 @@ log_error() {
 APT_TIMEOUT_DEFAULT=${APT_TIMEOUT_DEFAULT:-120}
 APT_LOG_DIR="/var/log/hardn/apt"
 APT_INSTALL_FLAGS=(-q -y --no-install-recommends -o Dpkg::Progress-Fancy=0)
+APT_UPDATED=0
 mkdir -p /var/log/hardn 2>/dev/null || true
 mkdir -p "$APT_LOG_DIR" 2>/dev/null || true
+
+ensure_apt_update() {
+    if [ "${APT_UPDATED:-0}" -eq 0 ]; then
+        local update_log="$APT_LOG_DIR/apt-get-update.log"
+        HARDN_STATUS "Refreshing APT package lists (details: $update_log)"
+        if timeout "$APT_TIMEOUT_DEFAULT" apt-get update >"$update_log" 2>&1; then
+            APT_UPDATED=1
+        else
+            log_warning "apt-get update failed; see $update_log"
+        fi
+    fi
+}
 
 apt_install() {
     local log_key="$1"; shift
@@ -99,6 +112,7 @@ apt_install() {
 
     local log_file="$APT_LOG_DIR/${log_key}.log"
     HARDN_STATUS "$description (details: $log_file)"
+    ensure_apt_update
     if timeout "$timeout" apt-get install "${APT_INSTALL_FLAGS[@]}" "$@" >"$log_file" 2>&1; then
         HARDN_STATUS "$description completed"
         return 0
@@ -525,7 +539,21 @@ LOG OFF IMMEDIATELY if you do not agree to the conditions stated in this warning
 ***************************************************************************
 EOF
     
-    systemctl reload sshd || service ssh reload || true
+    if systemctl list-unit-files | grep -q '^sshd\.service'; then
+        if systemctl is-enabled sshd 2>/dev/null | grep -q masked; then
+            log_warning "sshd.service is masked; reload skipped"
+        else
+            systemctl reload sshd 2>/dev/null || systemctl restart sshd 2>/dev/null || log_warning "sshd reload failed"
+        fi
+    elif systemctl list-unit-files | grep -q '^ssh\.service'; then
+        if systemctl is-enabled ssh 2>/dev/null | grep -q masked; then
+            log_warning "ssh.service is masked; reload skipped"
+        else
+            systemctl reload ssh.service 2>/dev/null || systemctl restart ssh.service 2>/dev/null || log_warning "ssh reload failed"
+        fi
+    else
+        log_warning "SSH service not present; reload skipped"
+    fi
     HARDN_STATUS "SSH configuration hardened"
 fi
 
