@@ -1,9 +1,16 @@
 ![HARDN Logo](docs/assets/IMG_1233.jpeg)
+
 # HARDN
 **Linux Security Hardening and Extended Detection Response**
 
-> [![ci](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml/badge.svg)](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml)
-> [![SAST](https://github.com/Security-International-Group/HARDN/actions/workflows/codeql.yml/badge.svg)](https://github.com/Security-International-Group/HARDN/actions/workflows/codeql.yml)
+
+<p align="center">
+	<a href="https://www.debian.org/"><img src="https://img.shields.io/badge/debian-13-8B0000?logo=debian&logoColor=white" alt="Debian Base" /></a>
+	<a href="https://www.debian.org/"><img src="https://img.shields.io/badge/debian-12-8B0000?logo=debian&logoColor=white" alt="Debian Base" /></a>
+  <a href="https://ubuntu.com/"><img src="https://img.shields.io/badge/ubuntu-22.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu" /></a>
+  <a href="https://ubuntu.com/"><img src="https://img.shields.io/badge/ubuntu-24.04-red?logo=ubuntu&logoColor=white" alt="Ubuntu" /></a>
+	<a href="https://hits.sh/github.com/Security-International-Group/HARDN_DOCKER/"><img src="https://hits.sh/github.com/Security-International-Group/HARDN_DOCKER.svg?style=flat&label=views" alt="views" /></a>
+</p>
 
 HARDN is a comprehensive security hardening system for Debian-based Linux systems, providing automated security hardening and continuous monitoring through an integrated toolkit.
 
@@ -50,6 +57,8 @@ sudo hardn-service-manager
 - The Service Manager is there to monitor, launch and get the needed system data an administrator needs in times of monitoring and response. 
 
 ## What HARDN Does
+>[![ci](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml/badge.svg)](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml)
+>[![SAST](https://github.com/Security-International-Group/HARDN/actions/workflows/codeql.yml/badge.svg)](https://github.com/Security-International-Group/HARDN/actions/workflows/codeql.yml)
 
 ### Security Hardening
 Applies comprehensive security configurations to a system with a single command.
