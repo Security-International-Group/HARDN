@@ -6,7 +6,7 @@ Only versions listed below receive security updates and coordinated disclosure s
 
 | Version | Supported |
 | ------- | --------- |
-| 1.0.12  | Yes       |
+| 1.2.35  | Yes       |
 | 1.0.11  | No        |
 | < 1.0   | No        |
 
