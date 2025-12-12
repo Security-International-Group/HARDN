@@ -2,7 +2,7 @@ use atty::Stream;
 use once_cell::sync::Lazy;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::legion::safe_println;
+// use crate::legion::safe_println;
 use crate::utils::LogLevel;
 
 static COLOR_ENABLED: Lazy<AtomicBool> = Lazy::new(|| {
