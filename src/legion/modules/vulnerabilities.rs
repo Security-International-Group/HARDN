@@ -1,4 +1,4 @@
-use crate::legion::safe_println;
+// use crate::legion::safe_println;
 use std::process::Command;
 
 /// Vulnerability assessment and monitoring utilities
