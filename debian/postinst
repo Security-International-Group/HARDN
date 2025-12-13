@@ -155,16 +155,16 @@ export HARDN_TOOL_PATH=\"${TOOL_DIR}:${LEGACY_TOOL_DIR}\"
             done
         fi
         
-        # Reload and enable systemd services
-        if command -v systemctl >/dev/null; then
-            systemctl daemon-reload
+        # Reload and enable systemd services updated 
+        if command -v systemctl >/dev/null 2>&1 && systemctl is-system-running >/dev/null 2>&1 || [ "${container:-}" != "docker" ]; then
+            systemctl daemon-reload || true
             # Enable services in dependency order
             systemctl enable hardn.service || true
             systemctl enable legion-daemon.service || true
             systemctl enable hardn-api.service || true
             systemctl enable hardn-monitor.service || true
         else
-            echo "systemctl not found, skipping service enablement."
+            echo "systemd not available or not running, skipping service enablement."
         fi
 
         ICON_SRC="/usr/share/pixmaps/hardn-gui.jpeg"
