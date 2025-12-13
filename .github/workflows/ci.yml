@@ -422,7 +422,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           DEB_NAME="${{ steps.version.outputs.deb_name }}"
           MSG="https://github.com/${{ github.repository }}/releases/tag/latest"
-          IMG_URL=/docs/assets/IMG_1233.jpeg"
+          IMG_URL="/docs/assets/IMG_1233.jpeg"
           COLOR=15105570
           [[ "$STATUS" == "success" ]] && COLOR=3066993 || true
           [[ "$STATUS" == "failure" ]] && COLOR=15158332 || true
