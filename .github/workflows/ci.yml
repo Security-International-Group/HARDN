@@ -45,6 +45,7 @@ jobs:
             python3-all \
             python3-requests \
             curl \
+            sudo \
             whiptail
 
       - name: Install Rust toolchain
