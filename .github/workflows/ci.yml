@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: ['main']
+    branches: ['*']
   workflow_dispatch:
 
 permissions:
@@ -18,6 +18,7 @@ jobs:
   build:
     name: Build and Deploy
     runs-on: ubuntu-latest
+    container: ubuntu:24.04
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -28,8 +29,8 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          apt-get update
+          apt-get install -y \
             build-essential \
             debhelper \
             devscripts \
@@ -44,6 +45,7 @@ jobs:
             python3-all \
             python3-requests \
             curl \
+            sudo \
             whiptail
 
       - name: Install Rust toolchain
@@ -420,7 +422,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           DEB_NAME="${{ steps.version.outputs.deb_name }}"
           MSG="https://github.com/${{ github.repository }}/releases/tag/latest"
-
+          IMG_URL="/docs/assets/IMG_1233.jpeg"
           COLOR=15105570
           [[ "$STATUS" == "success" ]] && COLOR=3066993 || true
           [[ "$STATUS" == "failure" ]] && COLOR=15158332 || true

@@ -23,7 +23,7 @@ updates:
     labels:
       - "dependencies"
     assignees:
-      - "@Orinax"
+      - "@opensource-for-freedom"
     commit-message:
       prefix: "[deps]"
     groups:
