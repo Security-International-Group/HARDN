@@ -8,6 +8,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- **Fixed 4 High-severity path traversal vulnerabilities (CWE-22)** detected by CodeQL analysis
+  - Added new `utils/path_security.rs` module with `sanitize_path()`, `validate_env_path()`, and `safe_read_env_file()` functions
+  - Fixed uncontrolled CSS file path in `hardn-gui.rs` from `HARDN_GUI_CSS` environment variable - now validates against whitelist of allowed directories
+  - Fixed uncontrolled binary path from `HARDN_AUDIT_BIN` environment variable in path discovery
+  - All environment variable paths are now validated against strict whitelists and canonicalized to prevent directory traversal attacks
+  - Implemented defense-in-depth with multiple validation layers following principle of least privilege
+
 ### Added
 - Refactored gui to be scalable to UI environment. 
 - Declared API runtime dependencies (python3-fastapi, python3-uvicorn) in packaging and native install paths to ensure services start on fresh installs.
