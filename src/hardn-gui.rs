@@ -1,3 +1,5 @@
+mod utils;
+
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -221,8 +223,18 @@ fn main() {
             let css_data = {
                 // External CSS search order
                 let mut data: Option<String> = None;
-                if let Ok(path) = std::env::var("HARDN_GUI_CSS") {
-                    data = std::fs::read_to_string(path).ok();
+                if let Ok(path_str) = std::env::var("HARDN_GUI_CSS") {
+                    // Validate path from environment variable against whitelist
+                    let allowed_css_dirs = [
+                        "/usr/share/hardn",
+                        "/usr/local/share/hardn",
+                        "/etc/hardn",
+                    ];
+                    
+                    // Use path_security module to validate safely
+                    if let Some(validated_path) = crate::utils::validate_env_path(&path_str, &allowed_css_dirs) {
+                        data = std::fs::read_to_string(validated_path).ok();
+                    }
                 }
                 if data.is_none() {
                     for p in [
