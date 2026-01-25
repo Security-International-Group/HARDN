@@ -1,0 +1,153 @@
+name: SAST
+
+on:
+  push:
+    branches: ['*']
+  pull_request:
+    branches: ['*']
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch: {}
+
+env:
+  CARGO_TERM_COLOR: always
+  VERSION_COMMIT_SHA: ${{ github.sha }}
+
+permissions:
+  contents: read
+  actions: read
+  packages: read
+  security-events: write
+
+jobs:
+  codeql:
+    name: CodeQL Analysis (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      packages: write
+      actions: read
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, rust]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          tools: latest
+          queries: security-extended,security-and-quality
+
+      - name: Set up Rust toolchain
+        if: matrix.language == 'rust'
+        uses: actions-rust-lang/setup-rust-toolchain@1fbea72663f6d4c03efaab13560c8a24cfd2a7cc
+        with:
+          components: rustfmt, clippy
+
+      - name: Install GLib dependencies
+        if: matrix.language == 'rust'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            libsqlite3-dev \
+            libglib2.0-dev \
+            libgtk-4-dev \
+            libvte-2.91-gtk4-dev
+
+      - name: Build Rust project
+        if: matrix.language == 'rust'
+        run: |
+          cargo check
+          cargo build --release
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}
+
+  static-analysis:
+    name: Static Analysis (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    needs: codeql
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [rust, python]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@6
+
+      - name: Set up Rust toolchain
+        if: matrix.language == 'rust'
+        uses: actions-rust-lang/setup-rust-toolchain@1fbea72663f6d4c03efaab13560c8a24cfd2a7cc
+        with:
+          components: rustfmt, clippy
+
+      - name: Install Rust system dependencies
+        if: matrix.language == 'rust'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libglib2.0-dev libgtk-4-dev libvte-2.91-gtk4-dev libssl-dev pkg-config
+
+      - name: Run cargo clippy
+        if: matrix.language == 'rust'
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Set up Python
+        if: matrix.language == 'python'
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b6
+        with:
+          python-version: '3.11'
+
+      - name: Run Ruff static analysis
+        if: matrix.language == 'python'
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+          ruff check .
+
+  summary:
+    name: Security Scan Summary
+    runs-on: ubuntu-latest
+    needs:
+      - codeql
+      - static-analysis
+    if: always()
+    steps:
+      - name: Generate Security Report
+        run: |
+          {
+            echo '# Security Scan Results'
+            echo
+             echo '## Job Status Summary'
+                  if [ "${{ needs.codeql.result }}" = "success" ]; then
+                    echo "- :one: CodeQL Analysis Passed"
+                  else
+                    echo "- :one: CodeQL Analysis Failed"
+                  fi
+                  if [ "${{ needs.static-analysis.result }}" = "success" ]; then
+                    echo "- :two: Static Analysis Passed"
+                  else
+                    echo "- :two: Static Analysis Failed"
+            fi
+            echo
+            echo '## Scan Coverage'
+            echo '- **Languages**: Rust, Python'
+            echo '- **Tools**: CodeQL, cargo clippy, Ruff'
+            echo
+            echo '## Next Steps'
+            if [ "${{ needs.codeql.result }}" != "success" ] || [ "${{ needs.static-analysis.result }}" != "success" ]; then
+              echo 'Some security scans failed. Please review the detailed results above and address any issues.'
+            else
+              echo 'All security scans passed!'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
