@@ -24,8 +24,8 @@ body:
       label: Brief Title
       description: Concise title of the bug report
       placeholder: "E.g., Installation fails on Debian 13"
-      validations:
-        required: true
+    validations:
+      required: true
 
   - type: textarea
     id: report-summary-description
