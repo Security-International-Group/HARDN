@@ -1,0 +1,161 @@
+name: Bug Report
+description: Provide detailed information about a bug to help us reproduce and resolve it
+title: '[Bug]: <Brief title>'
+labels:
+  - bug
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # Bug Report Template
+
+        **Important:**
+        - During the testing phase, bugs are to be reported, not fixed. We will plan and schedule patches after local testing is complete.
+        - **Target platforms:** Debian 12–13 and Ubuntu 24.04
+        - **Goal:** 10 consecutive front-to-back tests with zero errors.
+
+        Please complete all sections below to ensure proper processing of your bug report.
+
+  - type: input
+    id: report-summary-title
+    attributes:
+      label: Brief Title
+      description: Concise title of the bug report
+      placeholder: "E.g., Installation fails on Debian 13"
+      required: true
+
+  - type: textarea
+    id: report-summary-description
+    attributes:
+      label: Short Description
+      description: Provide a brief summary of the issue
+      placeholder: "E.g., The hardn.service fails to start after installation"
+      required: true
+
+  - type: input
+    id: environment-hardn-version
+    attributes:
+      label: HARDN Version
+      description: Specify the HARDN commit, tag, or version number
+      placeholder: "E.g., v1.4.0 or commit hash"
+      required: true
+
+  - type: dropdown
+    id: environment-platform
+    attributes:
+      label: Platform
+      description: Select the platform on which the issue occurs
+      options:
+        - Debian 12
+        - Debian 13
+        - Ubuntu 24.04
+      required: true
+
+  - type: input
+    id: environment-platform-other
+    attributes:
+      label: If "Other," please Specify
+      description: Provide the name of the platform on which HARDN has been Installed
+      placeholder: "E.g. Docker, Fedora, RHEL, etc."
+      required: false
+
+  - type: input
+    id: environment-vm-details
+    attributes:
+      label: VM Details
+      description: Provide details like vCPUs, RAM, and disk space
+      placeholder: "E.g., 4 vCPUs, 8GB RAM, 50GB disk"
+      required: true
+
+  - type: textarea
+    id: preconditions
+    attributes:
+      label: Preconditions
+      description: Describe the setup (installation method, enabled services, non-default settings)
+      placeholder: "- Installed from: .deb / source / other\n- Services enabled: hardn.service, legion-daemon.service\n- Non-default settings:"
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed steps to reproduce the issue
+      placeholder: |
+        1. <Step 1>
+        2. <Step 2>
+        3. <Step 3>
+      required: true
+
+  - type: textarea
+    id: expected-result
+    attributes:
+      label: Expected Result
+      description: Describe what should happen
+      placeholder: "E.g., The hardn.service should start successfully."
+      required: true
+
+  - type: textarea
+    id: actual-result
+    attributes:
+      label: Actual Result
+      description: Describe what happened instead, including any error messages
+      placeholder: "E.g., The hardn.service failed to start with error 'XYZ'."
+      required: true
+
+  - type: textarea
+    id: logs-and-artifacts
+    attributes:
+      label: Logs and Artifacts
+      description: Include relevant logs and files
+      placeholder: |
+        - journalctl -u hardn.service --since "<time>"
+        - journalctl -u legion-daemon.service --since "<time>"
+        Attach snippets or files if possible.
+      required: false
+
+  - type: textarea
+    id: relevant-screenshots
+    attributes:
+      label: Relevant Screenshots
+      description: If applicable, drag and drop screenshots here to illustrate the issue
+      placeholder: |
+        Drag and drop images here or paste them directly in this box.
+      required: false
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: Categorize the severity of the issue
+      options:
+        - Low
+        - Medium
+        - High
+        - Critical
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Explain the functional, performance, security, or packaging impact
+      placeholder: "E.g., The bug prevents deployment on production servers."
+      required: true
+
+  - type: textarea
+    id: workarounds
+    attributes:
+      label: Workarounds
+      description: Describe any known temporary mitigations
+      placeholder: "E.g., Restarting the service resolves the issue temporarily."
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Provide additional context or reference related issues/PRs
+      placeholder: "- Additional context: ...\n- Related issues/PRs: #123, #456"
+      required: false
