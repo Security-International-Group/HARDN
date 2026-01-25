@@ -24,7 +24,8 @@ body:
       label: Brief Title
       description: Concise title of the bug report
       placeholder: "E.g., Installation fails on Debian 13"
-      required: true
+      validations:
+        required: true
 
   - type: textarea
     id: report-summary-description
@@ -51,7 +52,8 @@ body:
         - Debian 12
         - Debian 13
         - Ubuntu 24.04
-      required: true
+      validations:
+        required: true
 
   - type: input
     id: environment-platform-other
