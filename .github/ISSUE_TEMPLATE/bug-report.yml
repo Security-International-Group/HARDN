@@ -33,6 +33,7 @@ body:
       label: Short Description
       description: Provide a brief summary of the issue
       placeholder: "E.g., The hardn.service fails to start after installation"
+    validations:
       required: true
 
   - type: input
@@ -41,6 +42,7 @@ body:
       label: HARDN Version
       description: Specify the HARDN commit, tag, or version number
       placeholder: "E.g., v1.4.0 or commit hash"
+    validations:
       required: true
 
   - type: dropdown
@@ -52,8 +54,8 @@ body:
         - Debian 12
         - Debian 13
         - Ubuntu 24.04
-      validations:
-        required: true
+    validations:
+      required: true
 
   - type: input
     id: environment-platform-other
@@ -61,6 +63,7 @@ body:
       label: If "Other," please Specify
       description: Provide the name of the platform on which HARDN has been Installed
       placeholder: "E.g. Docker, Fedora, RHEL, etc."
+    validations:
       required: false
 
   - type: input
@@ -69,6 +72,7 @@ body:
       label: VM Details
       description: Provide details like vCPUs, RAM, and disk space
       placeholder: "E.g., 4 vCPUs, 8GB RAM, 50GB disk"
+    validations:
       required: true
 
   - type: textarea
@@ -77,6 +81,7 @@ body:
       label: Preconditions
       description: Describe the setup (installation method, enabled services, non-default settings)
       placeholder: "- Installed from: .deb / source / other\n- Services enabled: hardn.service, legion-daemon.service\n- Non-default settings:"
+    validations:
       required: true
 
   - type: textarea
@@ -88,6 +93,7 @@ body:
         1. <Step 1>
         2. <Step 2>
         3. <Step 3>
+    validations:
       required: true
 
   - type: textarea
@@ -96,6 +102,7 @@ body:
       label: Expected Result
       description: Describe what should happen
       placeholder: "E.g., The hardn.service should start successfully."
+    validations:
       required: true
 
   - type: textarea
@@ -104,6 +111,7 @@ body:
       label: Actual Result
       description: Describe what happened instead, including any error messages
       placeholder: "E.g., The hardn.service failed to start with error 'XYZ'."
+    validations:
       required: true
 
   - type: textarea
@@ -115,6 +123,7 @@ body:
         - journalctl -u hardn.service --since "<time>"
         - journalctl -u legion-daemon.service --since "<time>"
         Attach snippets or files if possible.
+    validations:
       required: false
 
   - type: textarea
@@ -124,6 +133,7 @@ body:
       description: If applicable, drag and drop screenshots here to illustrate the issue
       placeholder: |
         Drag and drop images here or paste them directly in this box.
+    validations:
       required: false
 
   - type: dropdown
@@ -136,6 +146,7 @@ body:
         - Medium
         - High
         - Critical
+    validations:
       required: true
 
   - type: textarea
@@ -144,6 +155,7 @@ body:
       label: Impact
       description: Explain the functional, performance, security, or packaging impact
       placeholder: "E.g., The bug prevents deployment on production servers."
+    validations:
       required: true
 
   - type: textarea
@@ -152,6 +164,7 @@ body:
       label: Workarounds
       description: Describe any known temporary mitigations
       placeholder: "E.g., Restarting the service resolves the issue temporarily."
+    validations:
       required: false
 
   - type: textarea
@@ -160,4 +173,5 @@ body:
       label: Notes
       description: Provide additional context or reference related issues/PRs
       placeholder: "- Additional context: ...\n- Related issues/PRs: #123, #456"
+    validations:
       required: false
