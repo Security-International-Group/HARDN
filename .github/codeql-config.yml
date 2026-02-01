@@ -1,6 +1,12 @@
 disable-default-queries: false
+
 queries:
   - uses: security-extended
-  - exclude:
-      problem.severity:
-        - low
+    query-filters:
+      - exclude:
+          problem.severity: [low]
+
+  - uses: security-and-quality
+    query-filters:
+      - exclude:
+          problem.severity: [low]
