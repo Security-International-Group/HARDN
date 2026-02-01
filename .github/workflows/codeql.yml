@@ -2,9 +2,9 @@ name: SAST
 
 on:
   push:
-    branches: ['*']
+    branches: ['**']
   pull_request:
-    branches: ['*']
+    branches: ['**']
   schedule:
     - cron: '0 6 * * 1'
   workflow_dispatch: {}
@@ -31,7 +31,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [python, rust]
+        include:
+          - language: python
+            build_mode: none
+          - language: rust
+            build_mode: manual 
     steps:
       - name: Checkout repository
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
@@ -40,9 +44,9 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
-          build-mode: none
+          config-file: ./.github/codeql-config.yml
+          build-mode: ${{ matrix.build_mode }}
           tools: latest
-          queries: security-extended,security-and-quality
 
       - name: Set up Rust toolchain
         if: matrix.language == 'rust'
