@@ -35,7 +35,7 @@ jobs:
           - language: python
             build_mode: none
           - language: rust
-            build_mode: manual 
+            build_mode: none
     steps:
       - name: Checkout repository
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
