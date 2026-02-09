@@ -34,10 +34,10 @@ jobs:
         language: [python, rust]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2 # v4.32.2
         with:
           languages: ${{ matrix.language }}
           build-mode: none
@@ -46,7 +46,7 @@ jobs:
 
       - name: Set up Rust toolchain
         if: matrix.language == 'rust'
-        uses: actions-rust-lang/setup-rust-toolchain@1fbea72663f6d4c03efaab13560c8a24cfd2a7cc
+        uses: actions-rust-lang/setup-rust-toolchain@1780873c7b576612439a134613cc4cc74ce5538c # v1.15.2
         with:
           components: rustfmt, clippy
 
@@ -70,7 +70,7 @@ jobs:
           cargo build --release
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2 # v4.32.2
         with:
           category: /language:${{ matrix.language }}
 
@@ -84,11 +84,11 @@ jobs:
         language: [rust, python]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Set up Rust toolchain
         if: matrix.language == 'rust'
-        uses: actions-rust-lang/setup-rust-toolchain@1fbea72663f6d4c03efaab13560c8a24cfd2a7cc
+        uses: actions-rust-lang/setup-rust-toolchain@1780873c7b576612439a134613cc4cc74ce5538c # v1.15.2
         with:
           components: rustfmt, clippy
 
@@ -104,7 +104,7 @@ jobs:
 
       - name: Set up Python
         if: matrix.language == 'python'
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.11'
 
