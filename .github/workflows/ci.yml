@@ -54,7 +54,7 @@ jobs:
           toolchain: stable
 
       - name: Cache cargo registry and git
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 #v5.0.3
         with:
           path: |
             ~/.cargo/registry
