@@ -307,9 +307,26 @@ display_service_status() {
 manage_service() {
     local service_name=$1
     local action=$2
+    local vowels=("a" "e" "i" "o" "u")
     
     local display_action="${action^}"
-    echo -n "  ${display_action}ing $service_name... "
+    local final_char="${action: -1}"
+    local drop_vowel=0
+
+    for vowel in "${vowels[@]}"; do
+      if [[ "$vowel" == "$final_char" ]]; then
+        drop_vowel=1
+        break
+      else
+        drop_vowel=0
+      fi
+    done
+
+    if [[ $drop_vowel -eq 1 ]]; then
+      echo " ${display_action:0:-1}ing $service_name... "
+    else
+      echo " ${display_action}ing $service_name... "
+    fi
     
     if systemctl "$action" "$service_name" 2>/dev/null; then
         print_colored "$GREEN" "✓ Success"
