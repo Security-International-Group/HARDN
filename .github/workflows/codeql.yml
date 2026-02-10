@@ -71,7 +71,7 @@ jobs:
         if: matrix.language == 'rust'
         run: |
           cargo check
-          cargo build --release
+          RUSTFLAGS="-A dead_code" cargo build --release
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3
