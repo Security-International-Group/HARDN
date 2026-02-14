@@ -28,7 +28,7 @@ HARDN is a comprehensive security hardening system for Debian-based Linux system
 
 ### From Source
 ```bash
-git clone https://github.com/Security-International-Group/HARDN.git
+git clone https://github.com/Security-International-Group/HARDN
 cd HARDN
 sudo make build
 sudo make hardn
