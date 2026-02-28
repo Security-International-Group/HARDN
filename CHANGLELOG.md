@@ -8,6 +8,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **Removed dead code across core and utility modules** — compiler warnings eliminated, no `#[allow(dead_code)]` suppressions remaining in target files
+  - `src/core/error.rs`: Removed unused `HardnError` variants `ModuleNotFound`, `ToolNotFound`, and `InvalidArgument` along with their `Display` match arms
+  - `src/core/types.rs`: Removed unused fields `ServiceStatus::name`, `ServiceStatus::description`, and `SecurityToolInfo::process_name`; updated all construction sites in `src/main.rs` accordingly
+  - `src/core/cron.rs`: Removed unused `CronOrchestrator::with_poll_interval` method
+- **Toolchain update**: Upgraded WSL Rust toolchain to stable 1.93.1 (was 1.75.0) to resolve Cargo lock file v4 compatibility error; build now completes cleanly
+
 ### Security
 - **Fixed 4 High-severity path traversal vulnerabilities (CWE-22)** detected by CodeQL analysis
   - Added new `utils/path_security.rs` module with `sanitize_path()`, `validate_env_path()`, and `safe_read_env_file()` functions
