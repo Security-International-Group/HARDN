@@ -1,12 +1,8 @@
 /// Service status information
 #[derive(Debug)]
 pub struct ServiceStatus {
-    #[allow(dead_code)]
-    pub name: String,
     pub active: bool,
     pub enabled: bool,
-    #[allow(dead_code)]
-    pub description: String,
     pub pid: Option<u32>,
 }
 
@@ -14,8 +10,6 @@ pub struct ServiceStatus {
 pub struct SecurityToolInfo {
     pub name: &'static str,
     pub service_name: &'static str,
-    #[allow(dead_code)]
-    pub process_name: &'static str,
     pub description: &'static str,
 }
 

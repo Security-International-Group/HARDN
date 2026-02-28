@@ -2071,61 +2071,51 @@ fn get_security_tools() -> Vec<SecurityToolInfo> {
         SecurityToolInfo {
             name: "AIDE",
             service_name: "aide",
-            process_name: "aide",
             description: "Advanced Intrusion Detection Environment - File integrity monitoring",
         },
         SecurityToolInfo {
             name: "AppArmor",
             service_name: "apparmor",
-            process_name: "apparmor",
             description: "Mandatory Access Control system for applications",
         },
         SecurityToolInfo {
             name: "Fail2Ban",
             service_name: "fail2ban",
-            process_name: "fail2ban-server",
             description: "Intrusion prevention - Bans IPs with multiple auth failures",
         },
         SecurityToolInfo {
             name: "UFW",
             service_name: "ufw",
-            process_name: "ufw",
             description: "Uncomplicated Firewall - Network traffic filtering",
         },
         SecurityToolInfo {
             name: "Auditd",
             service_name: "auditd",
-            process_name: "auditd",
             description: "Linux Audit Framework - Security event logging",
         },
         SecurityToolInfo {
             name: "RKHunter",
             service_name: "rkhunter",
-            process_name: "rkhunter",
             description: "Rootkit Hunter - Scans for rootkits and exploits",
         },
         SecurityToolInfo {
             name: "ClamAV",
             service_name: "clamv-daemon",
-            process_name: "clamd",
             description: "Antivirus engine for detecting trojans and malware",
         },
         SecurityToolInfo {
             name: "Legion",
             service_name: "legion-daemon",
-            process_name: "legion",
             description: "Continuous anomaly detection and network telemetry",
         },
         SecurityToolInfo {
             name: "OSSEC",
             service_name: "ossec",
-            process_name: "ossec-analysisd",
             description: "Host-based Intrusion Detection System",
         },
         SecurityToolInfo {
             name: "Lynis",
             service_name: "lynis",
-            process_name: "lynis",
             description: "Security auditing and compliance testing",
         },
     ]
@@ -2141,10 +2131,8 @@ fn check_service_status(service_name: &str) -> ServiceStatus {
         Ok(output) => output,
         Err(_) => {
             return ServiceStatus {
-                name: service_name.to_string(),
                 active: false,
                 enabled: false,
-                description: String::new(),
                 pid: None,
             }
         }
@@ -2160,10 +2148,8 @@ fn check_service_status(service_name: &str) -> ServiceStatus {
         Ok(output) => output,
         Err(_) => {
             return ServiceStatus {
-                name: service_name.to_string(),
                 active,
                 enabled: false,
-                description: String::new(),
                 pid: None,
             }
         }
@@ -2189,10 +2175,8 @@ fn check_service_status(service_name: &str) -> ServiceStatus {
     };
 
     ServiceStatus {
-        name: service_name.to_string(),
         active,
         enabled,
-        description: String::new(),
         pid,
     }
 }

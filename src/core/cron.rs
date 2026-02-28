@@ -545,12 +545,6 @@ impl CronOrchestrator {
         orchestrator
     }
 
-    #[allow(dead_code)]
-    pub fn with_poll_interval(mut self, interval: Duration) -> Self {
-        self.poll_interval = interval;
-        self
-    }
-
     pub fn start(self) -> JoinHandle<()> {
         thread::spawn(move || self.run_loop())
     }
