@@ -196,7 +196,7 @@ jobs:
             dist/*.build
             dist/*.buildinfo
             dist/*.changes
-          retention-days: 7
+          retention-days: 15
 
   deploy-test:
     name: Deploy and Integration Test
