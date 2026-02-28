@@ -221,8 +221,22 @@ fn main() {
             let css_data = {
                 // External CSS search order
                 let mut data: Option<String> = None;
-                if let Ok(path) = std::env::var("HARDN_GUI_CSS") {
-                    data = std::fs::read_to_string(path).ok();
+                if let Ok(path_str) = std::env::var("HARDN_GUI_CSS") {
+                    // Validate path from environment variable against whitelist
+                    let allowed_css_dirs = [
+                        "/usr/share/hardn",
+                        "/usr/local/share/hardn",
+                        "/etc/hardn",
+                    ];
+                    
+                    // Validate path against whitelist of allowed directories
+                    let validated = std::path::PathBuf::from(&path_str)
+                        .canonicalize()
+                        .ok()
+                        .filter(|p| allowed_css_dirs.iter().any(|d| p.starts_with(d)));
+                    if let Some(validated_path) = validated {
+                        data = std::fs::read_to_string(validated_path).ok();
+                    }
                 }
                 if data.is_none() {
                     for p in [

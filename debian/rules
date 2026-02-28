@@ -55,6 +55,13 @@ override_dh_auto_install:
 	install -d debian/hardn/usr/share/hardn/docs
 	install -m 644 docs/assets/IMG_1233.jpeg debian/hardn/usr/share/hardn/docs/IMG_1233.jpeg 2>/dev/null || true
 
+override_dh_builddeb:
+	# Fix control directory permissions broken by NTFS/WSL filesystem (must be 755, not 777)
+	find debian/hardn/DEBIAN debian/.debhelper -maxdepth 1 -type d -exec chmod 755 {} + 2>/dev/null || true
+	find debian/hardn/DEBIAN -maxdepth 1 -type f -exec chmod 644 {} + 2>/dev/null || true
+	chmod 755 debian/hardn/DEBIAN/postinst debian/hardn/DEBIAN/postrm debian/hardn/DEBIAN/prerm 2>/dev/null || true
+	dh_builddeb
+
 override_dh_dwz:
 	@echo "Skipping dwz pass; Rust release binaries are already stripped"
 	@true

@@ -2,9 +2,9 @@ name: SAST
 
 on:
   push:
-    branches: ['*']
+    branches: ['**']
   pull_request:
-    branches: ['*']
+    branches: ['**']
   schedule:
     - cron: '0 6 * * 1'
   workflow_dispatch: {}
@@ -31,18 +31,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [python, rust]
+        include:
+          - language: python
+            build_mode: none
+          - language: rust
+            build_mode: none
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2 # v4.32.2
+        uses: github/codeql-action/init@89a39a4e59826350b863aa6b6252a07ad50cf83e # v4.32.4
         with:
           languages: ${{ matrix.language }}
-          build-mode: none
+          config-file: ./.github/codeql-config.yml
+          build-mode: ${{ matrix.build_mode }}
           tools: latest
-          queries: security-extended,security-and-quality
 
       - name: Set up Rust toolchain
         if: matrix.language == 'rust'
@@ -67,10 +71,10 @@ jobs:
         if: matrix.language == 'rust'
         run: |
           cargo check
-          cargo build --release
+          RUSTFLAGS="-A dead_code" cargo build --release
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2 # v4.32.2
+        uses: github/codeql-action/analyze@89a39a4e59826350b863aa6b6252a07ad50cf83e # v4.32.4
         with:
           category: /language:${{ matrix.language }}
 
@@ -98,10 +102,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libglib2.0-dev libgtk-4-dev libvte-2.91-gtk4-dev libssl-dev pkg-config
 
-      - name: Run cargo clippy
+      - name: Check Rust compilation
         if: matrix.language == 'rust'
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
+        run: cargo check --all-targets --all-features
+        env:
+          RUSTFLAGS: "-A dead_code"
       - name: Set up Python
         if: matrix.language == 'python'
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0

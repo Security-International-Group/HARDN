@@ -219,6 +219,7 @@ build-internal:
 		printf '$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)Compliance auditor built.$(COLOR_RESET)\n'; \
 	fi
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Assembling Debian bunker$(COLOR_RESET)\n'
+	@find debian -type d -exec chmod 0755 {} \; 2>/dev/null || true
 	@TMP_LOG=$$(mktemp); \
 	if dpkg-buildpackage -us -uc -b --no-pre-clean -j$(DEB_PARALLEL) > $$TMP_LOG 2>&1; then \
 		WARNINGS=$$(grep -i "warning" $$TMP_LOG || true); \
