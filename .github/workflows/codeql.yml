@@ -105,7 +105,8 @@ jobs:
       - name: Check Rust compilation
         if: matrix.language == 'rust'
         run: cargo check --all-targets --all-features
-
+        env:
+          RUSTFLAGS: "-A dead_code"
       - name: Set up Python
         if: matrix.language == 'python'
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
