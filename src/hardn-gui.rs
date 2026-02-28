@@ -229,8 +229,12 @@ fn main() {
                         "/etc/hardn",
                     ];
                     
-                    // Use path_security module to validate safely
-                    if let Some(validated_path) = crate::utils::validate_env_path(&path_str, &allowed_css_dirs) {
+                    // Validate path against whitelist of allowed directories
+                    let validated = std::path::PathBuf::from(&path_str)
+                        .canonicalize()
+                        .ok()
+                        .filter(|p| allowed_css_dirs.iter().any(|d| p.starts_with(d)));
+                    if let Some(validated_path) = validated {
                         data = std::fs::read_to_string(validated_path).ok();
                     }
                 }
