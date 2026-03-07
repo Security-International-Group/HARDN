@@ -1087,7 +1087,7 @@ fn generate_security_report() {
     );
 
     if let Err(e) = persist_hardn_monitor_snapshot(&snapshot) {
-        eprintln!("Failed to persist HARDN monitor snapshot: {}", e);
+        log_message(LogLevel::Warning, &format!("Could not save monitor snapshot: {}", e));
     }
 
     // Add interactive menu if there are recommendations
