@@ -101,8 +101,10 @@ use std::fmt;
 use std::error::Error;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Application version - single source of truth
-const VERSION: &str = "2.2.0";
+/// Application version — read from Cargo.toml at compile time so it always
+/// matches the release tag. To change the displayed version, update `version`
+/// in Cargo.toml only.
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Application name
 const APP_NAME: &str = "HARDN";
