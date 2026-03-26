@@ -3,7 +3,7 @@
 
 ## Overview
 
-HARDN is a comprehensive, open-source security hardening and threat detection system designed specifically for Debian-based Linux distributions. It provides automated security configuration, continuous monitoring, and real-time threat response capabilities to protect systems against modern cyber threats.
+HARDN is an open-source security hardening and threat detection toolkit for Debian-based Linux. It automates the security configuration process, runs continuous background monitoring via the LEGION daemon, and gives operators a single place to manage it all.
 
 ## What HARDN Is
 
@@ -11,10 +11,10 @@ HARDN is a complete security framework that includes:
 
 ### Core Security Components
 - **Automated Hardening**: STIG-compliant security configuration and hardening scripts
-- **Threat Detection**: Advanced anomaly detection and threat intelligence integration
-- **Service Management**: Comprehensive systemd service orchestration and monitoring
+- **Threat Detection**: Anomaly detection and threat intelligence integration
+- **Service Management**: Systemd service orchestration and monitoring
 - **API Integration**: RESTful API for remote monitoring and management
-- **Interactive Interface**: User-friendly service manager with real-time monitoring
+- **Interactive Interface**: Service manager with real-time monitoring
 
 ### Security Monitoring Features
 - **LEGION Daemon**: Continuous security monitoring with syslog, journal, and network analysis
@@ -61,7 +61,7 @@ HARDN is a complete security framework that includes:
 
 ### Threat Detection & Response
 - **Real-time Monitoring**: Continuous system and network monitoring
-- **Anomaly Detection**: Machine learning-based behavioral analysis
+- **Anomaly Detection**: Behavioral analysis against a stored baseline
 - **IOC Integration**: Automated processing of threat intelligence feeds
 - **Incident Response**: Automated response to detected threats
 
@@ -141,15 +141,15 @@ Automated security configuration modules:
 
 ### Proactive Protection
 - **Continuous Monitoring**: 24/7 system surveillance
-- **Threat Intelligence**: Integration with global threat feeds
-- **Automated Response**: Immediate action on detected threats
+- **Threat Intelligence**: Integration with threat feeds
+- **Automated Response**: Automated action on detected threats
 - **Compliance Automation**: Maintain security standards automatically
 
 ### Operational Security
 - **Access Control**: SSH key-based authentication
-- **Audit Logging**: Comprehensive security event logging
+- **Audit Logging**: Security event logging
 - **Integrity Monitoring**: File and system integrity checks
-- **Network Security**: Advanced firewall and intrusion detection
+- **Network Security**: Firewall and intrusion detection
 
 ### Incident Response
 - **Real-time Alerts**: Immediate notification of security events
@@ -163,8 +163,7 @@ Automated security configuration modules:
 HARDN is developed by the **Security International Group (SIG)**, a community-driven organization focused on advancing cybersecurity through open-source solutions.
 
 ### Getting Help
-- **Documentation**: Comprehensive guides and API references
-- **Community Support**: Active community forums and discussion groups
+- **Documentation**: Guides and API references
 - **Issue Tracking**: GitHub issues for bug reports and feature requests
 - **Contributing**: Open contribution guidelines for community involvement
 
@@ -189,10 +188,9 @@ HARDN is released under the MIT License, encouraging community contributions and
 
 ### Upcoming Features
 - Web-based dashboard
-- Advanced threat intelligence
-- Machine learning integration
-- Multi-system orchestration
-- Cloud integration
+- Expanded threat intelligence
+- Multi-system management
+- Remote alerting
 
 ---
 

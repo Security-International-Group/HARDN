@@ -12,7 +12,7 @@
 	<a href="https://hits.sh/github.com/Security-International-Group/HARDN/"><img src="https://hits.sh/github.com/Security-International-Group/HARDN.svg?style=flat&label=views" alt="views" /></a>
 </p>
 
-HARDN is a comprehensive security hardening system for Debian-based Linux systems, providing automated security hardening and continuous monitoring through an integrated toolkit.
+HARDN is a security hardening toolkit for Debian-based Linux systems. It automates the lockdown of a fresh install and keeps watching for threats through an integrated set of services.
 
 **Demo Version** - This is a demonstration version showcasing core security features of HARDN-XDR, the full enterprise solution. For production use and advanced features, please contact Security International Group.
 ## Key Features
@@ -52,8 +52,8 @@ desktop environment.
 sudo hardn-service-manager
 ```
 
-- Users can choose to launch HARDN module scripts or run security tools indivually. 
-- A security report can be launced based on a built in HARDN Compliance meter; built in accordance to CIS standards (Center for Internet Security). 
+- Users can choose to launch HARDN module scripts or run security tools individually.
+- A security report can be launched based on a built-in HARDN compliance meter aligned to CIS standards (Center for Internet Security).
 - The Service Manager is there to monitor, launch and get the needed system data an administrator needs in times of monitoring and response. 
 
 ## What HARDN Does
@@ -61,7 +61,7 @@ sudo hardn-service-manager
 >[![SAST](https://github.com/Security-International-Group/HARDN/actions/workflows/codeql.yml/badge.svg)](https://github.com/Security-International-Group/HARDN/actions/workflows/codeql.yml)
 
 ### Security Hardening
-Applies comprehensive security configurations to a system with a single command.
+Applies security configurations to a system with a single command.
 
 ### Real-Time Monitoring
 Continuous security monitoring through the LEGION daemon, tracking system changes and potential threats.
