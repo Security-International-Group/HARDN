@@ -67,6 +67,7 @@ apt_install() {
         return 1
     fi
 
+    local packages=("$@")
     local log_file="$APT_LOG_DIR/${log_key}.log"
     HARDN_STATUS "$description (details: $log_file)"
     ensure_apt_update
@@ -74,6 +75,21 @@ apt_install() {
         HARDN_STATUS "$description completed"
         return 0
     else
+        # apt-get can exit non-zero even when packages installed successfully
+        # e.g. postinst script warnings, debconf notices, or "already newest version".
+        # This caused HARDN Monitor to falsely report failures for ufw, unattended-upgrades,
+        # and debsums (v1.2.90). Use dpkg-query as the source of truth.
+        local all_installed=1
+        for pkg in "${packages[@]}"; do
+            if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
+                all_installed=0
+                break
+            fi
+        done
+        if [ "$all_installed" -eq 1 ]; then
+            HARDN_STATUS "$description completed (apt reported warnings; packages verified installed)"
+            return 0
+        fi
         log_warning "$description failed; see $log_file"
         return 1
     fi
