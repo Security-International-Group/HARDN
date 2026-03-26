@@ -5,6 +5,11 @@
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
+# Prevent tools (ufw, apt, etc.) from emitting ANSI cursor-movement sequences.
+# Without this, tools that detect a colour-capable PTY output \r / \033[G style
+# codes that GTK's TextView renders as literal characters, causing each line to
+# start progressively further to the right (staircase misalignment).
+export TERM=dumb
 
 # Color codes
 GREEN='\033[0;32m'
@@ -130,38 +135,45 @@ hardn_services_lockdown() {
     fi
 
     if command -v ufw >/dev/null 2>&1; then
-        ufw --force disable
-        ufw --force reset
-        ufw default deny incoming
-        ufw default allow outgoing
-        ufw default deny routed
-        ufw allow in on lo comment 'Loopback inbound'
-        ufw allow out on lo comment 'Loopback outbound'
+        # Redirect per-rule "Rules updated" output to a log file.
+        # Each ufw allow/deny/default command prints one line per address family
+        # which, when emitted with ANSI codes inside a PTY, causes progressive
+        # right-shifting (staircase) in HARDN Monitor's text display.
+        local ufw_log="${APT_LOG_DIR}/ufw-config.log"
+        : > "$ufw_log"  # truncate/create
+
+        ufw --force disable  >"$ufw_log" 2>&1 || true
+        ufw --force reset    >>"$ufw_log" 2>&1 || true
+        ufw default deny incoming  >>"$ufw_log" 2>&1
+        ufw default allow outgoing >>"$ufw_log" 2>&1
+        ufw default deny routed    >>"$ufw_log" 2>&1
+        ufw allow in on lo comment 'Loopback inbound'  >>"$ufw_log" 2>&1
+        ufw allow out on lo comment 'Loopback outbound' >>"$ufw_log" 2>&1
 
         if [ -n "${api_allow_list}" ]; then
             for cidr in ${api_allow_list}; do
-                ufw allow proto tcp from "$cidr" to any port "$api_port" comment 'HARDN API access (scoped)'
+                ufw allow proto tcp from "$cidr" to any port "$api_port" comment 'HARDN API access (scoped)' >>"$ufw_log" 2>&1
             done
         else
-            ufw allow "$api_port"/tcp comment 'HARDN API access'
+            ufw allow "$api_port"/tcp comment 'HARDN API access' >>"$ufw_log" 2>&1
         fi
 
         if [ -n "${grafana_allow_list}" ]; then
             for cidr in ${grafana_allow_list}; do
-                ufw allow proto tcp from "$cidr" to any port "$grafana_port" comment 'Grafana access (scoped)'
+                ufw allow proto tcp from "$cidr" to any port "$grafana_port" comment 'Grafana access (scoped)' >>"$ufw_log" 2>&1
             done
         else
-            ufw allow "$grafana_port"/tcp comment 'Grafana access'
+            ufw allow "$grafana_port"/tcp comment 'Grafana access' >>"$ufw_log" 2>&1
         fi
 
-        ufw allow out 53 comment 'DNS'
-        ufw allow out 80/tcp comment 'HTTP'
-        ufw allow out 443/tcp comment 'HTTPS'
-        ufw allow out 123/udp comment 'NTP'
+        ufw allow out 53  comment 'DNS'   >>"$ufw_log" 2>&1
+        ufw allow out 80/tcp comment 'HTTP'  >>"$ufw_log" 2>&1
+        ufw allow out 443/tcp comment 'HTTPS' >>"$ufw_log" 2>&1
+        ufw allow out 123/udp comment 'NTP'  >>"$ufw_log" 2>&1
 
         if [ -n "${HARDN_PERMITTED_OUTBOUND_CIDRS:-}" ]; then
             for cidr in ${HARDN_PERMITTED_OUTBOUND_CIDRS:-}; do
-                ufw allow out to "$cidr" comment 'Approved outbound range'
+                ufw allow out to "$cidr" comment 'Approved outbound range' >>"$ufw_log" 2>&1
             done
         fi
 
@@ -169,16 +181,16 @@ hardn_services_lockdown() {
         if [ "$disable_ssh" = "0" ]; then
             if [ -n "$ssh_allow_list" ]; then
                 for cidr in $ssh_allow_list; do
-                    ufw allow proto tcp from "$cidr" to any port "$ssh_port" comment 'SSH access (scoped)'
+                    ufw allow proto tcp from "$cidr" to any port "$ssh_port" comment 'SSH access (scoped)' >>"$ufw_log" 2>&1
                 done
             else
-                ufw allow "$ssh_port"/tcp comment 'SSH access'
+                ufw allow "$ssh_port"/tcp comment 'SSH access' >>"$ufw_log" 2>&1
             fi
         fi
 
-        ufw --force enable
-        ufw reload >/dev/null 2>&1 || true
-        HARDN_STATUS INFO "UFW restricted to HARDN API port ${api_port} and Grafana port ${grafana_port}"
+        ufw --force enable >>"$ufw_log" 2>&1
+        ufw reload >>"$ufw_log" 2>&1 || true
+        HARDN_STATUS INFO "UFW restricted to HARDN API port ${api_port} and Grafana port ${grafana_port} (details: $ufw_log)"
     else
         log_warning "UFW firewall not available; skipping UFW lockdown"
     fi
