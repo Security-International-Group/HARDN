@@ -3163,7 +3163,8 @@ fn run_legion(args: &[String]) -> i32 {
     };
 
     // Set up environment for legion
-    std::env::set_var("RUST_BACKTRACE", "1");
+    // SAFETY: called once at startup before any threads are spawned
+    unsafe { std::env::set_var("RUST_BACKTRACE", "1") };
 
     // Ensure LEGION banner and colorized output are ready before checks begin
     crate::legion::functions::enable_color(
