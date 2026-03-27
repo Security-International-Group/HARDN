@@ -15,7 +15,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Authorized keys file for SSH public key auth
-AUTHORIZED_KEYS_FILE = os.environ.get("HARDN_AUTHORIZED_KEYS", "/etc/hardn/authorized_keys")
+AUTHORIZED_KEYS_FILE = os.environ.get(
+    "HARDN_AUTHORIZED_KEYS", "/etc/hardn/authorized_keys"
+)
 
 app = FastAPI(
     title="HARDN API",
@@ -26,7 +28,9 @@ app = FastAPI(
 )
 
 # CORS — restrict to explicit list; override via HARDN_API_CORS_ORIGINS (comma-separated)
-_raw_origins = os.environ.get("HARDN_API_CORS_ORIGINS", "http://localhost:9002,http://127.0.0.1:9002")
+_raw_origins = os.environ.get(
+    "HARDN_API_CORS_ORIGINS", "http://localhost:9002,http://127.0.0.1:9002"
+)
 ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
 app.add_middleware(
@@ -71,7 +75,9 @@ def verify_ssh_key(credentials: HTTPAuthorizationCredentials = Depends(security)
 
     if not os.path.isfile(AUTHORIZED_KEYS_FILE):
         logger.error("Authorized keys file not found: %s", AUTHORIZED_KEYS_FILE)
-        raise HTTPException(status_code=503, detail="Authorization unavailable — keys file missing")
+        raise HTTPException(
+            status_code=503, detail="Authorization unavailable — keys file missing"
+        )
 
     # Extract the key material (type + base64 blob, ignore optional comment)
     key_parts = key.split()
@@ -454,7 +460,9 @@ if __name__ == "__main__":
     api_port = int(os.environ.get("HARDN_API_PORT", "8000"))
 
     print(f"Starting HARDN API server on http://{api_host}:{api_port}")
-    print("Remote access: Grafana (port 9002) and HARDN API (port 8000) only. SSH port 22 is closed.")
+    print(
+        "Remote access: Grafana (port 9002) and HARDN API (port 8000) only. SSH port 22 is closed."
+    )
     print(f"Auth: SSH public key required — add keys to {AUTHORIZED_KEYS_FILE}")
     print("API endpoints:")
     print("  GET /health - Health check")
