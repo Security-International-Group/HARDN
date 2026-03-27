@@ -3,17 +3,17 @@
 
 ## Overview
 
-The HARDN Interactive Service Manager (`hardn-service-manager`) is a user-friendly bash script that provides a comprehensive menu-driven interface for managing all HARDN security functionality. It serves as the primary user interface for interacting with HARDN's services, modules, tools, and monitoring capabilities.
+The HARDN Interactive Service Manager (`hardn-service-manager`) is a menu-driven bash script for managing all HARDN security functionality from one place. It is the main entry point for interacting with HARDN services, modules, tools, and monitoring.
 
 ## Purpose
 
 The service manager addresses the complexity of managing multiple security components by providing:
 
-- **Centralized Control**: Single interface for all HARDN operations
-- **User-Friendly Menus**: Hierarchical menu system with clear options
+- **Centralized Control**: One interface for all HARDN operations
+- **Hierarchical Menus**: Organized menu system with clear option labels
 - **Safety Checks**: Root privilege verification and confirmation prompts for dangerous operations
-- **Status Monitoring**: Real-time service status and system health information
-- **Comprehensive Coverage**: Access to all HARDN features through organized menus
+- **Status Monitoring**: Live service status and system health information
+- **Full Coverage**: Access to every HARDN feature through organized menus
 
 ## Features
 
@@ -31,7 +31,7 @@ The service manager addresses the complexity of managing multiple security compo
 
 ### Tool Execution
 - Dynamic listing of available security tools by category:
-  - Security Scanners (Lynis, AIDE)
+  - Security Scanners (AIDE)
   - Network Security (Fail2ban, Legion)
   - Utility Tools (functions)
 - Individual tool execution

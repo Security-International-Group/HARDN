@@ -14,6 +14,10 @@ WorkingDirectory=/usr/share/hardn
 
 # -u / PYTHONUNBUFFERED for real-time logs in journald
 Environment=PYTHONUNBUFFERED=1
+Environment=HARDN_API_HOST=0.0.0.0
+Environment=HARDN_API_PORT=8000
+# Authorized SSH public keys for remote API auth — one key per line
+Environment=HARDN_AUTHORIZED_KEYS=/etc/hardn/authorized_keys
 # Use env to tolerate python3 path differences across distros after seeing issue between deb 13 and ubuntu 24.04
 ExecStart=/usr/bin/env python3 -u /usr/share/hardn/src/hardn-api.py
 

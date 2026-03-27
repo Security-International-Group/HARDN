@@ -468,19 +468,6 @@ impl CronOrchestrator {
                 &["-c", "rkhunter --update && rkhunter --check --sk --cronjob"],
             ))),
             Arc::new(ScheduledJob::new(CronJob::weekly_job(
-                "lynis-audit",
-                "Run Lynis hardening audit",
-                &log_root,
-                "lynis-audit.log",
-                WeeklyTime {
-                    weekday: Weekday::Sun,
-                    hour: 6,
-                    minute: 0,
-                },
-                "/usr/local/bin/lynis-audit.sh",
-                &[],
-            ))),
-            Arc::new(ScheduledJob::new(CronJob::weekly_job(
                 "fail2ban-health",
                 "Capture Fail2Ban service status",
                 &log_root,

@@ -3,7 +3,7 @@
 
 ## Overview
 
-HARDN features a comprehensive monitoring system that provides real-time security monitoring, service management, and threat detection capabilities. The system integrates multiple monitoring components into a unified, interactive interface.
+HARDN includes a monitoring system that provides real-time security event tracking, service management, and threat detection. Multiple monitoring components feed into a single interactive interface.
 
 ## Core Components
 
@@ -28,7 +28,7 @@ HARDN monitors and manages multiple systemd services:
 
 ### Interactive Service Manager
 
-The `hardn-service-manager.sh` script provides a comprehensive menu-driven interface for:
+The `hardn-service-manager.sh` script provides a menu-driven interface for:
 
 - **Service Status Monitoring**: Real-time display of service states with color-coded indicators
 - **Service Management**: Start, stop, restart, enable, and disable services
@@ -142,7 +142,7 @@ sudo hardn legion
 
 ## Future Enhancements
 
-- **Web Interface**: Browser-based monitoring dashboard
-- **Advanced Analytics**: Machine learning-based threat detection
-- **Plugin System**: Extensible monitoring modules
-- **Cloud Integration**: Remote monitoring and alerting
+- Browser-based monitoring dashboard
+- Expanded threat analytics
+- Extensible monitoring module support
+- Remote alerting integration

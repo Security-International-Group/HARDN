@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 source "$(cd "$(dirname "$0")" && pwd)/functions.sh"
 
@@ -65,12 +66,11 @@ HARDN_STATUS "info" "Scanning essential directories: /etc, /bin, /sbin, /usr/bin
 
 # Run aideinit in background and show spinner
 (aideinit 2>/dev/null || aide --init 2>/dev/null) &
-local aide_pid=$!
+aide_pid=$!
 show_spinner $aide_pid
 
 # Wait for completion and check result
-wait $aide_pid
-if [ $? -eq 0 ]; then
+if wait $aide_pid; then
     HARDN_STATUS "pass" "AIDE database initialized successfully"
     
     # Move new database into place if needed

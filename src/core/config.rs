@@ -1,5 +1,7 @@
-/// Application version - single source of truth
-pub const VERSION: &str = "2.2.0";
+/// Application version — read from Cargo.toml at compile time so it always
+/// matches the release tag. To change the displayed version, update `version`
+/// in Cargo.toml only.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Application name
 pub const APP_NAME: &str = "HARDN";

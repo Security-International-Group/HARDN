@@ -20,7 +20,6 @@ struct EventItem {
     message: String,
 }
 
-// Ring buffer to cap memory usage
 struct EventBuffer {
     items: Vec<EventItem>,
     max_items: usize,
@@ -69,6 +68,40 @@ fn spawn_file_tail(path: &str) -> std::io::Result<std::process::Child> {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()
+}
+
+/// Strip ANSI escape sequences and bare control characters from a log line so
+/// GTK's TextView renders it cleanly at any window size.
+///
+/// Without this, tools that emit cursor-movement codes (e.g. ufw emitting
+/// \r\033[G between "Rules updated" lines) store those bytes verbatim in the
+/// log file. When read back by `tail -f`, GTK renders \r as a paragraph break
+/// and ESC bytes as replacement-character boxes, pushing each following line
+/// progressively further to the right — the staircase misalignment reported
+/// on resize (un-maximising the window makes re-layout re-trigger the effect).
+fn strip_control(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // ANSI/VT escape sequence — skip until final byte (ASCII letter)
+            if chars.peek() == Some(&'[') {
+                chars.next(); // consume '['
+                for c2 in chars.by_ref() {
+                    if c2.is_ascii_alphabetic() { break; }
+                }
+            } else {
+                chars.next(); // two-char escape (e.g. \x1b=)
+            }
+        } else if c == '\r' {
+            // Bare carriage return — drop it; split on \n only
+        } else if c.is_control() && c != '\n' && c != '\t' {
+            // Other C0 control chars — skip
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 #[derive(Clone, Debug, Default)]
@@ -272,6 +305,7 @@ fn main() {
         text_view_tab.set_editable(false);
         text_view_tab.set_cursor_visible(false);
         text_view_tab.set_monospace(true);
+        text_view_tab.set_wrap_mode(gtk4::WrapMode::None);
         text_view_tab.add_css_class("view");
         text_view_tab.set_buffer(Some(&buffer));
 
@@ -279,6 +313,7 @@ fn main() {
         text_view_split.set_editable(false);
         text_view_split.set_cursor_visible(false);
         text_view_split.set_monospace(true);
+        text_view_split.set_wrap_mode(gtk4::WrapMode::None);
         text_view_split.add_css_class("view");
         text_view_split.set_buffer(Some(&buffer));
 
@@ -289,6 +324,7 @@ fn main() {
     main_text_view.set_editable(false);
     main_text_view.set_cursor_visible(false);
     main_text_view.set_monospace(true);
+    main_text_view.set_wrap_mode(gtk4::WrapMode::None);
     main_text_view.add_css_class("view");
     main_text_view.set_buffer(Some(&buffer));
 
@@ -740,7 +776,7 @@ fn main() {
                                     hs.monitor = Some(true);
                                 }
                             }
-                            g.push(EventItem { timestamp: now_iso(), source: "file".into(), message: line });
+                            g.push(EventItem { timestamp: now_iso(), source: "file".into(), message: strip_control(&line) });
                         }
                     }
                 });

@@ -235,33 +235,6 @@ fn get_tool_status_detail(tool_name: &str) -> ToolStatusDetail {
                 tool_detail(ToolStatusType::NotInstalled, false, false)
             }
         }
-        "Lynis" => {
-            // Lynis may run via timer or on-demand
-            if Command::new("systemctl")
-                .args(["is-active", "lynis.timer"])
-                .output()
-                .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "active")
-                .unwrap_or(false)
-            {
-                tool_detail(ToolStatusType::Active, true, true)
-            } else if Command::new("systemctl")
-                .args(["is-enabled", "lynis.timer"])
-                .output()
-                .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "enabled")
-                .unwrap_or(false)
-            {
-                tool_detail(ToolStatusType::Enabled, true, true)
-            } else if Command::new("which")
-                .arg("lynis")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-            {
-                tool_detail(ToolStatusType::Installed, false, true)
-            } else {
-                tool_detail(ToolStatusType::NotInstalled, false, false)
-            }
-        }
         "UFW" => {
             // UFW is a firewall, check if it's active
             let output = Command::new("ufw").arg("status").output();
@@ -642,7 +615,6 @@ fn generate_security_report() {
         ("OSSEC", get_tool_status_detail("OSSEC")),
         ("SELinux", get_tool_status_detail("SELinux")),
         ("Suricata", get_tool_status_detail("Suricata")),
-        ("Lynis", get_tool_status_detail("Lynis")),
     ];
 
     for (tool_name, detail) in &tool_statuses {
@@ -1455,7 +1427,6 @@ fn run_all_tools() -> i32 {
 }
 
 /// Run all modules and tools with comprehensive hardening
-/// IMPORTANT: This function now includes the comprehensive Lynis hardening process
 /// Sandbox commands (--sandbox-on/--sandbox-off) are NEVER included in this batch operation
 fn run_everything() -> i32 {
     println!("\n╔═══════════════════════════════════════╗");
@@ -1468,23 +1439,23 @@ fn run_everything() -> i32 {
     );
     log_message(
         LogLevel::Info,
-        "Starting comprehensive system hardening with Lynis optimization...",
+        "Starting comprehensive system hardening...",
     );
 
     // Check if comprehensive hardening script exists
     let comprehensive_script_paths = vec![
-        "/usr/share/hardn/scripts/hardn-lynis-comprehensive.sh",
-        "./scripts/hardn-lynis-comprehensive.sh",
-        "/opt/hardn/scripts/hardn-lynis-comprehensive.sh",
+        "/usr/share/hardn/scripts/hardn-comprehensive.sh",
+        "./scripts/hardn-comprehensive.sh",
+        "/opt/hardn/scripts/hardn-comprehensive.sh",
     ];
 
     let mut comprehensive_script_found = false;
     let mut comprehensive_result = EXIT_SUCCESS;
 
-    // PHASE 1: Run comprehensive Lynis hardening if available
+    // PHASE 1: Run comprehensive hardening if available
     for script_path in &comprehensive_script_paths {
         if Path::new(script_path).exists() {
-            println!("\n▶ PHASE 1: COMPREHENSIVE LYNIS HARDENING");
+            println!("\n\u{25b6} PHASE 1: COMPREHENSIVE HARDENING");
             println!("═══════════════════════════════════════");
             log_message(
                 LogLevel::Info,
@@ -1504,7 +1475,7 @@ fn run_everything() -> i32 {
                     if status.success() {
                         log_message(
                             LogLevel::Pass,
-                            "✓ Comprehensive Lynis hardening completed successfully",
+                            "✓ Comprehensive hardening completed successfully",
                         );
                     } else {
                         log_message(
@@ -1558,7 +1529,7 @@ fn run_everything() -> i32 {
         log_message(LogLevel::Pass, "✓ ALL PHASES COMPLETED SUCCESSFULLY");
         println!("\n[COMPLETE] System hardening finished successfully!");
         println!(
-            "   - Comprehensive Lynis hardening: {}",
+            "   - Comprehensive hardening: {}",
             if comprehensive_script_found {
                 "Applied"
             } else {
@@ -1569,8 +1540,7 @@ fn run_everything() -> i32 {
         println!("   - Security tools: Success");
         println!("\n[NEXT STEPS]");
         println!("   1. Review logs in /var/log/hardn/");
-        println!("   2. Run 'sudo lynis audit system' to check your security score");
-        println!("   3. Reboot if kernel parameters were modified");
+        println!("   2. Reboot if kernel parameters were modified");
         EXIT_SUCCESS
     } else {
         log_message(LogLevel::Warning, "WARNING: Some phases had issues");
@@ -1927,7 +1897,6 @@ fn get_tool_categories() -> Vec<ToolCategory> {
         ToolCategory::new(
             "Security Scanners",
             vec![
-                "lynis",
                 "rkhunter",
                 "aide",
                 "debsums",
@@ -2112,11 +2081,6 @@ fn get_security_tools() -> Vec<SecurityToolInfo> {
             name: "OSSEC",
             service_name: "ossec",
             description: "Host-based Intrusion Detection System",
-        },
-        SecurityToolInfo {
-            name: "Lynis",
-            service_name: "lynis",
-            description: "Security auditing and compliance testing",
         },
     ]
 }
@@ -3163,7 +3127,8 @@ fn run_legion(args: &[String]) -> i32 {
     };
 
     // Set up environment for legion
-    std::env::set_var("RUST_BACKTRACE", "1");
+    // SAFETY: called once at startup before any threads are spawned
+    unsafe { std::env::set_var("RUST_BACKTRACE", "1") };
 
     // Ensure LEGION banner and colorized output are ready before checks begin
     crate::legion::functions::enable_color(

@@ -36,7 +36,7 @@
 //! sudo hardn run-module hardening
 //!
 //! # Run a specific security tool
-//! sudo hardn run-tool lynis
+//! sudo hardn run-tool rkhunter
 //!
 //! # List available modules
 //! sudo hardn --list-modules
@@ -101,8 +101,10 @@ use std::fmt;
 use std::error::Error;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Application version - single source of truth
-const VERSION: &str = "2.2.0";
+/// Application version — read from Cargo.toml at compile time so it always
+/// matches the release tag. To change the displayed version, update `version`
+/// in Cargo.toml only.
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Application name
 const APP_NAME: &str = "HARDN";
@@ -876,7 +878,7 @@ fn get_tool_categories() -> Vec<ToolCategory> {
     vec![
         ToolCategory::new(
             "Security Scanners",
-            vec!["lynis", "rkhunter", "aide", "debsums", "yara", "legion", "chkrootkit"],
+            vec!["rkhunter", "aide", "debsums", "yara", "legion", "chkrootkit"],
         ),
         ToolCategory::new(
             "Access Control",
@@ -1046,12 +1048,6 @@ fn get_security_tools() -> Vec<SecurityToolInfo> {
             service_name: "ossec",
             _process_name: "ossec-analysisd",
             description: "Host-based Intrusion Detection System",
-        },
-        SecurityToolInfo {
-            name: "Lynis",
-            service_name: "lynis",
-            _process_name: "lynis",
-            description: "Security auditing and compliance testing",
         },
     ]
 }

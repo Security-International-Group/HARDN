@@ -5,9 +5,11 @@
 graph TD
 
 %% ===================== ENTRYPOINTS =====================
-U[User / Admin / GUI] -->|commands & monitoring| API[HARDN API Service]
+U["User / Admin (Remote)"] -->|"HARDN API — port 8000 (SSH key auth)"| API[HARDN API Service]
+U -->|"Grafana Dashboard — port 9002"| GRF[Grafana]
 CLI[hardn CLI] -->|manual execution| CORE[HARDN Core Service]
 API -->|remote trigger| CORE
+GRF -->|datasource queries| API
 
 %% ===================== SERVICE COMPONENTS =====================
 subgraph HARDN Core Framework
@@ -47,7 +49,6 @@ subgraph Security Tools
   AUDD[Auditd - System Auditing]
   CLAM[ClamAV - Antivirus]
   RKH[rkhunter - Rootkit Detection]
-  LYN[Lynis - Security Auditing]
   AIDE[AIDE - File Integrity Monitor]
   TOOLS --> APP
   TOOLS --> F2B
@@ -55,7 +56,6 @@ subgraph Security Tools
   TOOLS --> AUDD
   TOOLS --> CLAM
   TOOLS --> RKH
-  TOOLS --> LYN
   TOOLS --> AIDE
 end
 
@@ -103,9 +103,9 @@ class SYSMD,JRN,CRN,NETM os
 | Component | Role |
 |------------|------|
 | **HARDN Core Service** | Executes system-wide security hardening modules and configuration routines. |
-| **HARDN API Service** | REST API providing remote control, status queries, and security telemetry aggregation. |
+| **HARDN API Service** | REST API on port **8000** — the only programmatic remote access channel. SSH key auth required. Port 22 (SSH) is closed. |
 | **Hardening Modules** | Individual system-hardening scripts enforcing STIG/CIS standards. |
-| **Security Tools Layer** | Integrates AppArmor, Fail2Ban, UFW, Auditd, ClamAV, Lynis, rkhunter, and AIDE under one orchestration layer. |
+| **Security Tools Layer** | Integrates AppArmor, Fail2Ban, UFW, Auditd, ClamAV, rkhunter, and AIDE under one orchestration layer. |
 | **Audit & Compliance Engine** | Ensures continuous monitoring and reporting against NIST/STIG benchmarks. |
 | **Configuration Engine** | Manages service policies, kernel parameters, and system-level security defaults. |
 | **System Logger** | Centralized structured journaling for all modules and API events. |

@@ -48,6 +48,7 @@ EOF
     chmod 644 /etc/suricata/rules/suricata.rules
 
     HARDN_STATUS "pass" "Fallback suricata.rules file created"
+    HARDN_STATUS "warning" "Fallback rules contain only protocol event includes — NO threat detection rules. Run suricata-update to load detection rules."
 }
 
 fix_suricata_configuration() {
@@ -122,21 +123,32 @@ if ! is_package_installed suricata; then
             extracted_dir="suricata-${suricata_version}"
 
             mkdir -p "$download_dir"
-            cd "$download_dir" || {
+            pushd "$download_dir" >/dev/null || {
                 HARDN_STATUS "error" "Cannot change directory to $download_dir"
                 exit 1
             }
 
+            suricata_sha256="19d58e0be67c0cdd09a69df76fdf0e27d83d21d8fde2b2b71ea4083aebc57869"
+
             HARDN_STATUS "info" "Downloading Suricata source..."
             if wget -q "$download_url" -O "$tar_file"; then
                 HARDN_STATUS "pass" "Download successful"
+
+                HARDN_STATUS "info" "Verifying download integrity..."
+                actual_sha256=$(sha256sum "$tar_file" | awk '{print $1}')
+                if [ "$actual_sha256" != "$suricata_sha256" ]; then
+                    HARDN_STATUS "error" "SHA256 mismatch — aborting. Expected: $suricata_sha256 Got: $actual_sha256"
+                    rm -f "$tar_file"
+                    exit 1
+                fi
+                HARDN_STATUS "pass" "Integrity check passed"
 
                 HARDN_STATUS "info" "Extracting source..."
                 if tar -xzf "$tar_file" -C "$download_dir"; then
                     HARDN_STATUS "pass" "Extraction successful"
 
                     if [[ -d "$download_dir/$extracted_dir" ]]; then
-                        cd "$download_dir/$extracted_dir" || {
+                        pushd "$download_dir/$extracted_dir" >/dev/null || {
                             HARDN_STATUS "error" "Cannot change directory to extracted folder"
                             exit 1
                         }
@@ -185,7 +197,8 @@ if ! is_package_installed suricata; then
             fi
 
             # Cleanup
-            cd /
+            popd >/dev/null 2>&1 || true
+            popd >/dev/null 2>&1 || true
             rm -rf "$download_dir"
             HARDN_STATUS "info" "Source installation cleanup completed"
         fi
@@ -222,10 +235,10 @@ if command_exists suricata; then
     # Install/update suricata-update for rule management
     if ! command_exists suricata-update; then
         HARDN_STATUS "info" "Installing suricata-update..."
-        if pip3 install --upgrade pip && pip3 install --upgrade suricata-update; then
+        if install_package suricata-update; then
             HARDN_STATUS "pass" "suricata-update installed successfully"
         else
-            HARDN_STATUS "warning" "Failed to install suricata-update via pip3"
+            HARDN_STATUS "warning" "Failed to install suricata-update"
         fi
     fi
 
@@ -255,16 +268,16 @@ if command_exists suricata; then
         create_fallback_suricata_rules
     fi
 
-    # Enable and start service
-    if enable_service suricata; then
-        HARDN_STATUS "pass" "Suricata service enabled and started"
-    else
-        HARDN_STATUS "warning" "Failed to enable/start Suricata service"
-    fi
-
-    # Test configuration if config file exists
+    # Test configuration before starting the service
     if [ -f /etc/suricata/suricata.yaml ]; then
         HARDN_STATUS "info" "Testing Suricata configuration..."
+
+        # Warn if only fallback event rules exist (no real detection rules)
+        if [ -f /etc/suricata/rules/suricata.rules ]; then
+            if ! grep -qv '^#\|^$\|^include' /etc/suricata/rules/suricata.rules 2>/dev/null; then
+                HARDN_STATUS "warning" "suricata.rules contains only includes — run suricata-update to load detection rules"
+            fi
+        fi
 
         # First verify the rules file exists
         if [ ! -f "/etc/suricata/rules/suricata.rules" ]; then
@@ -279,19 +292,28 @@ if command_exists suricata; then
             HARDN_STATUS "warning" "Suricata configuration test failed"
             HARDN_STATUS "info" "Attempting to fix common configuration issues..."
 
-            # Try to fix common issues and test again
             fix_suricata_configuration
 
             if suricata -T -c /etc/suricata/suricata.yaml 2>/dev/null; then
                 HARDN_STATUS "pass" "Suricata configuration test passed after fixes"
             else
-                HARDN_STATUS "warning" "Suricata configuration test still failing - manual intervention may be required"
+                HARDN_STATUS "warning" "Suricata configuration still failing — set af-packet.interface in /etc/suricata/suricata.yaml and re-run"
             fi
         fi
+
+        # Enable and start service only after config validation
+        if enable_service suricata; then
+            HARDN_STATUS "pass" "Suricata service enabled and started"
+        else
+            HARDN_STATUS "warning" "Failed to enable/start Suricata service"
+        fi
     else
-        HARDN_STATUS "warning" "No suricata.yaml configuration file found"
-        HARDN_STATUS "info" "This may indicate a package installation issue"
+        HARDN_STATUS "warning" "No suricata.yaml found — not starting service. Set af-packet.interface and restart manually."
     fi
+
+    # Remind operator to set the capture interface
+    HARDN_STATUS "info" "ACTION REQUIRED: set 'af-packet.interface' in /etc/suricata/suricata.yaml to your capture interface (e.g. eth0, ens3)"
+    HARDN_STATUS "info" "Then run: suricata-update && systemctl restart suricata"
 
 else
     HARDN_STATUS "error" "Suricata command not found after installation attempt"

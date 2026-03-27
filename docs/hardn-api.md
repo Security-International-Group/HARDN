@@ -3,65 +3,118 @@
 
 ## Purpose
 
-The HARDN API provides comprehensive overwatch and health monitoring for endpoints in distributed environments. It integrates with HARDN security services and the Legion monitoring daemon to enable real-time system monitoring, diagnostics, and management. This API facilitates secure access to endpoint health data, service status, and system metrics for administrators and automated monitoring systems.
+The HARDN API provides comprehensive overwatch and health monitoring for endpoints in distributed environments. It integrates with HARDN security services and the Legion monitoring daemon to enable real-time system monitoring, diagnostics, and management.
 
-This server does not replace the **Grafana** endpoint system or the **Wazuh** agent, but provides an open-source option for those interested in holistic monitoring within their own toolsets. 
+> **SSH port 22 is closed on HARDN-hardened systems.** Remote access is restricted to two channels only:
+> - **Grafana dashboard** — port **9002** (visual monitoring)
+> - **HARDN API** — port **8000** (programmatic access, documented here)
 
-## Authentication
+This server does not replace the **Grafana** endpoint system, but provides an open-source option for those interested in holistic monitoring within their own toolsets.
 
-All API requests require authentication using SSH key-based Bearer tokens. Generate an SSH key pair locally and use the public key value in the Authorization header.
+## Setup: Register Your SSH Public Key
 
-### Generate SSH Key Pair
+Before the API will accept requests, your SSH public key must be added to `/etc/hardn/authorized_keys` on the server:
 
 ```bash
-# Generate a new SSH key pair (RSA recommended for compatibility)
-ssh-keygen -t rsa -b 4096 -C "hardn-api-key" -f ~/.ssh/hardn_api_key
+# On the HARDN server
+sudo install -d -m 750 /etc/hardn
+sudo install -m 640 /dev/null /etc/hardn/authorized_keys
+cat ~/.ssh/id_ed25519.pub | sudo tee -a /etc/hardn/authorized_keys
 
-# Or generate Ed25519 key (more secure, but check compatibility)
-ssh-keygen -t ed25519 -C "hardn-api-key" -f ~/.ssh/hardn_api_key
+# Restart the API service to pick up the new key
+sudo systemctl restart hardn-api.service
 ```
 
-**Note:** Store the private key securely and never share it.
+Each line in `/etc/hardn/authorized_keys` holds one SSH public key (same format as `~/.ssh/authorized_keys`). Only keys listed here will be accepted — format-valid but unlisted keys are rejected with HTTP 401.
 
-### Extract Public Key for API Authentication
+All API requests (except `GET /health`) require an SSH public key as a Bearer token. The key must be pre-registered in `/etc/hardn/authorized_keys` on the server — see **Setup** above.
+
+### Generate a Key Pair (client side)
 
 ```bash
-# Get the public key content (single line)
+# Ed25519 is preferred
+ssh-keygen -t ed25519 -C "hardn-api" -f ~/.ssh/hardn_api_key
+
+# RSA 4096 also accepted
+ssh-keygen -t rsa -b 4096 -C "hardn-api" -f ~/.ssh/hardn_api_key
+```
+
+**Keep the private key (`~/.ssh/hardn_api_key`) secret. Never share it.**
+
+### Register the Public Key (server side)
+
+```bash
+cat ~/.ssh/hardn_api_key.pub | sudo tee -a /etc/hardn/authorized_keys
+sudo systemctl restart hardn-api.service
+```
+
+### Transferring a Key from a Remote Machine
+
+Because SSH (port 22) is closed, you cannot use `ssh-copy-id`. You have two practical options depending on whether you still have **temporary SSH access** during initial setup or not:
+
+**Option A — During initial setup (SSH still open)**
+
+Use this window before SSH is locked out to push the public key:
+
+```bash
+# On the CLIENT — copy the public key to the server's tmp directory
+scp ~/.ssh/hardn_api_key.pub admin@your-server:/tmp/new_key.pub
+
+# On the SERVER — append and secure
+sudo tee -a /etc/hardn/authorized_keys < /tmp/new_key.pub
+sudo rm /tmp/new_key.pub
+sudo systemctl restart hardn-api.service
+```
+
+**Option B — Out-of-band (no SSH, air-gapped or already locked down)**
+
+Physically or via an admin console, paste the public key directly:
+
+```bash
+# On the client — print the public key to copy it:
 cat ~/.ssh/hardn_api_key.pub
+# Output looks like:
+# ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... hardn-api
 
-# Example output: ssh-rsa <API KEY>... user@hostname
+# On the SERVER — paste it in as root:
+sudo bash -c 'echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... hardn-api" >> /etc/hardn/authorized_keys'
+sudo systemctl restart hardn-api.service
 ```
 
-### Use Public Key in API Requests
+**Key exchange security rules:**
 
-Include the full public key content in the Authorization header:
+| Rule | Reason |
+|------|--------|
+| Only the **public key** (`.pub`) is ever transferred | The private key never leaves the client machine |
+| Use `>>` (append), not `>` (overwrite) | Prevents wiping existing authorized keys |
+| `chmod 600 /etc/hardn/authorized_keys` | Prevents other users from reading or modifying the keystore |
+| Revoke access by removing that key's line from the file | Instant revocation — the private key becomes useless |
 
-```
-Authorization: Bearer ssh-rsa <PUT YOUR API KEY HERE>...
-```
-
-**Note:** Use the complete public key string (starting with `ssh-rsa` or `ssh-ed25519`) as the Bearer token value.
-
-### Example: Generate and Use SSH Key
+**Revoking a client key:**
 
 ```bash
-# 1. Generate SSH key pair
-ssh-keygen -t rsa -b 4096 -C "hardn-api-key" -f ~/.ssh/hardn_api_key
-
-# 2. Extract public key for use in API calls
-SSH_KEY=$(cat ~/.ssh/hardn_api_key.pub)
-echo $SSH_KEY
-
-# Example output: ssh-rsa <YOUR_API_KEY_HERE> hardn-test-key
-
-# 3. Use in curl command
-curl -H "Authorization: Bearer $SSH_KEY" http://localhost:8000/health
-# Response: {"status":"healthy","service":"hardn-api","version":"1.0.0-1","timestamp":"2025-09-24T18:21:04.055365"}
-
-# 4. Get system health data
-curl -H "Authorization: Bearer $SSH_KEY" http://localhost:8000/overwatch/system | jq '.system_health.cpu_percent'
-# Response: 9.5
+# Remove the specific key by matching its comment or fingerprint
+sudo grep -v "hardn-api" /etc/hardn/authorized_keys | sudo tee /etc/hardn/authorized_keys.tmp
+sudo mv /etc/hardn/authorized_keys.tmp /etc/hardn/authorized_keys
+sudo systemctl restart hardn-api.service
 ```
+
+### Make Authenticated Requests
+
+```bash
+SSH_KEY=$(cat ~/.ssh/hardn_api_key.pub)
+
+# Health check (no auth needed)
+curl http://your-server:8000/health
+
+# Authenticated request
+curl -H "Authorization: Bearer $SSH_KEY" http://your-server:8000/overwatch/system
+
+# Get service status
+curl -H "Authorization: Bearer $SSH_KEY" http://your-server:8000/overwatch/services
+```
+
+> Use `your-server:8000` — **not** `localhost:8000` unless you are on the machine itself. SSH (port 22) is closed; this API is your remote access path.
 
 ## API Endpoints
 
@@ -85,7 +138,9 @@ curl -H "Authorization: Bearer $SSH_KEY" http://localhost:8000/overwatch/system 
 
 ## Usage for Remote Servers
 
-### Monitoring from Remote Server
+> Reminder: SSH (port 22) is closed. Use port **8000** for API access and port **9002** for Grafana.
+
+### Monitoring from a Remote Machine
 
 ```bash
 # Check system health

@@ -1,7 +1,7 @@
 [package]
 name = "hardn"
-version = "1.0.0-1"
-edition = "2021"
+version = "1.2.92"
+edition = "2024"
 authors = ["Security International Group"]
 description = "HARDN - Linux Security Hardening Framework (Demo Version)"
 license = "MIT"
