@@ -36,7 +36,7 @@
 //! sudo hardn run-module hardening
 //!
 //! # Run a specific security tool
-//! sudo hardn run-tool lynis
+//! sudo hardn run-tool rkhunter
 //!
 //! # List available modules
 //! sudo hardn --list-modules
@@ -878,7 +878,7 @@ fn get_tool_categories() -> Vec<ToolCategory> {
     vec![
         ToolCategory::new(
             "Security Scanners",
-            vec!["lynis", "rkhunter", "aide", "debsums", "yara", "legion", "chkrootkit"],
+            vec!["rkhunter", "aide", "debsums", "yara", "legion", "chkrootkit"],
         ),
         ToolCategory::new(
             "Access Control",
@@ -1048,12 +1048,6 @@ fn get_security_tools() -> Vec<SecurityToolInfo> {
             service_name: "ossec",
             _process_name: "ossec-analysisd",
             description: "Host-based Intrusion Detection System",
-        },
-        SecurityToolInfo {
-            name: "Lynis",
-            service_name: "lynis",
-            _process_name: "lynis",
-            description: "Security auditing and compliance testing",
         },
     ]
 }

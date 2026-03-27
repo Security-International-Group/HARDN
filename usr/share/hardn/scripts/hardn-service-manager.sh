@@ -29,7 +29,7 @@ readonly LOG_DIR="/var/log/hardn"
 ### ISSUE 76 update 
 readonly HARDN_SERVICES="hardn.service hardn-api.service legion-daemon.service hardn-monitor.service"
 readonly DEFAULT_TOOL_PATHS="/usr/share/hardn/tools:/usr/lib/hardn/src/setup/tools"
-declare -ar DEFAULT_TOOL_COMMANDS=(aide apparmor auditd clamv fail2ban firejail grafana lynis ossec selinux suricata ufw)
+declare -ar DEFAULT_TOOL_COMMANDS=(aide apparmor auditd clamv fail2ban firejail grafana ossec selinux suricata ufw)
 HARDN_BIN="${HARDN_BINARY:-}"
 
 print_colored() {
@@ -55,9 +55,6 @@ format_tool_display() {
             ;;
         fail2ban)
             echo "Fail2Ban (Brute-force Defense)"
-            ;;
-        lynis)
-            echo "Lynis (Security Audit)"
             ;;
         ossec)
             echo "OSSEC (HIDS)"

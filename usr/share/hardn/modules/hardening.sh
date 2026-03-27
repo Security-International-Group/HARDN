@@ -1571,22 +1571,6 @@ if ! grep -q "umask 022" /etc/bash.bashrc 2>/dev/null; then
 fi
 
 # ==========================================
-# LYNIS VALIDATION
-# ==========================================
-HARDN_STATUS "Running Lynis baseline scan..."
-if apt_install "lynis" "Installing Lynis" 180 lynis; then
-    LYNIS_LOG="/var/log/hardn/lynis-baseline.log"
-    LYNIS_REPORT="/var/log/hardn/lynis-report.dat"
-    if ! timeout 900 lynis audit system --quick --no-colors --logfile "$LYNIS_LOG" --report-file "$LYNIS_REPORT" >/dev/null 2>&1; then
-        log_warning "Lynis baseline scan encountered issues; review $LYNIS_LOG"
-    else
-        HARDN_STATUS "Lynis baseline complete. Report: $LYNIS_REPORT"
-    fi
-else
-    log_warning "Lynis installation failed; skipping baseline scan"
-fi
-
-# ==========================================
 # SUMMARY REPORT
 # ==========================================
 echo ""
@@ -1610,10 +1594,8 @@ echo "  - Core dumps disabled"
 echo "  - AppArmor profiles configured (native apps disabled, others enforced)"
 echo "  - Compiler access restricted"
 echo "  - Network parameters tuned"
-echo "  - Lynis baseline scan completed"
 echo ""
 echo -e "${YELLOW}Note:${NC} System reboot recommended for all changes to take effect."
-echo -e "${YELLOW}Note:${NC} Run 'lynis audit system' to verify improvements."
 echo ""
 
 HARDN_STATUS "Enhanced hardening module completed successfully!"

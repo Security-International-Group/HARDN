@@ -19,10 +19,38 @@ HARDN is a security hardening toolkit for Debian-based Linux systems. It automat
 
 - **Automated System Hardening** - One-command security configuration
 - **Continuous Security Monitoring** - Real-time threat detection via LEGION daemon
-- **Security Scanner Integration** - Built-in Lynis, AIDE, and custom security tools
+- **Security Scanner Integration** - Built-in AIDE and custom security tools
 - **Network Protection** - Fail2ban integration with advanced network monitoring
 - **Interactive GUI** - Real-time monitoring dashboard
 - **Service Management** - Easy-to-use command-line service manager
+- **Zero SSH Exposure** - Port 22 is closed by default; remote access is exclusively through Grafana (port 9002) and the HARDN API (port 8000)
+
+## Remote Access
+
+> **SSH port 22 is blocked by the HARDN firewall policy. There is no standard SSH remote access.**
+
+All remote access to a HARDN-hardened system is restricted to two channels:
+
+| Channel | Port | Auth | Purpose |
+|---------|------|------|---------|
+| **Grafana Dashboard** | 9002 | Grafana credentials | Visual monitoring, dashboards, alerting |
+| **HARDN API** | 8000 | SSH public key (Bearer token) | Programmatic control, health queries, diagnostics |
+
+Before running `ufw.sh`, register your SSH public key so the HARDN API can authenticate you:
+
+```bash
+sudo install -d -m 750 /etc/hardn
+sudo install -m 640 /dev/null /etc/hardn/authorized_keys
+cat ~/.ssh/id_ed25519.pub | sudo tee -a /etc/hardn/authorized_keys
+```
+
+Then access the API from any remote machine:
+
+```bash
+SSH_KEY=$(cat ~/.ssh/id_ed25519.pub)
+curl -H "Authorization: Bearer $SSH_KEY" http://your-server:8000/health
+curl -H "Authorization: Bearer $SSH_KEY" http://your-server:8000/overwatch/system
+```
 
 ## Quick Start
 
