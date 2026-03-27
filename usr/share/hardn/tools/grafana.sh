@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # ------------------------------------------------------------
 # Grafana Installation + Configuration Script
@@ -19,6 +20,7 @@
 source "$(cd "$(dirname "$0")" && pwd)/functions.sh"
 
 check_root
+log_tool_execution "grafana.sh"
 
 
 # ------------------------------------------------------------
@@ -147,7 +149,7 @@ grafana_health_check() {
         sleep "$delay"
     done
 
-    HARDN_STATUS "fail" "Grafana did not report healthy on port 9002"
+    HARDN_STATUS "error" "Grafana did not report healthy on port 9002"
     return 1
 }
 
@@ -191,6 +193,16 @@ fi
 systemctl restart grafana-server 2>/dev/null || true
 grafana_health_check || true
 
+# Open UFW rule for Grafana port if UFW is active
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "^Status: active"; then
+    if ufw allow in 9002/tcp comment 'Grafana dashboard' 2>/dev/null; then
+        HARDN_STATUS "pass" "UFW rule added: allow inbound port 9002/tcp (Grafana)"
+    else
+        HARDN_STATUS "warning" "Failed to add UFW rule for port 9002 — add manually: ufw allow in 9002/tcp"
+    fi
+else
+    HARDN_STATUS "info" "UFW not active — if UFW is enabled later, run: ufw allow in 9002/tcp"
+fi
 
 HARDN_STATUS "info" "Grafana setup complete"
 HARDN_STATUS "info" "Access URL: http://localhost:9002"

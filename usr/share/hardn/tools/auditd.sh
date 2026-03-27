@@ -14,6 +14,15 @@ if command -v auditctl >/dev/null 2>&1; then
     cat > /etc/audit/rules.d/99-hardn-hardening.rules <<'EOF'
 # HARDN Audit Rules (MITRE ATT&CK framework thanks to @4nt11 )
 
+# Flush existing rules first
+-D
+
+# Buffer Size
+-b 8192
+
+# Failure Mode
+-f 1
+
 # T1059 – Command execution (focus on interactive users)
 -a always,exit -F arch=b64 -S execve -F exe=/usr/bin/bash  -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
 -a always,exit -F arch=b64 -S execve -F exe=/bin/sh        -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
@@ -30,7 +39,7 @@ if command -v auditctl >/dev/null 2>&1; then
 -w /etc/cron.d/      -p war -k mitre_scheduled
 -w /etc/cron.daily/  -p war -k mitre_scheduled
 -w /etc/cron.weekly/ -p war -k mitre_scheduled
--w /etc/cron.monthly/-p war -k mitre_scheduled
+-w /etc/cron.monthly/ -p war -k mitre_scheduled
 -w /var/spool/cron/  -p war -k mitre_scheduled
 
 # T1547 – Boot or logon autostart persistence
@@ -50,14 +59,6 @@ if command -v auditctl >/dev/null 2>&1; then
 # T1041 – Exfiltration over C2 channels
 -a always,exit -F arch=b64 -S connect -F a0=2 -F auid>=1000 -F auid!=4294967295 -k mitre_exfil  # IPv4 sockets
 -a always,exit -F arch=b64 -S sendto,sendmsg -F auid>=1000 -F auid!=4294967295 -k mitre_exfil
-
--D
-
-# Buffer Size
--b 8192
-
-# Failure Mode
--f 1
 
 # Monitor authentication events
 -w /var/log/faillog -p wa -k auth_failures
