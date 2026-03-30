@@ -5,6 +5,7 @@
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
+export DEBCONF_NONINTERACTIVE_SEEN=true
 # Prevent tools (ufw, apt, etc.) from emitting ANSI cursor-movement sequences.
 # Without this, tools that detect a colour-capable PTY output \r / \033[G style
 # codes that GTK's TextView renders as literal characters, causing each line to
@@ -48,7 +49,7 @@ ensure_apt_update() {
     if [ "${APT_UPDATED:-0}" -eq 0 ]; then
         local update_log="$APT_LOG_DIR/apt-get-update.log"
         HARDN_STATUS "Refreshing APT package lists (details: $update_log)"
-        if timeout "$APT_TIMEOUT_DEFAULT" apt-get update >"$update_log" 2>&1; then
+        if timeout "$APT_TIMEOUT_DEFAULT" apt-get update </dev/null >"$update_log" 2>&1; then
             APT_UPDATED=1
         else
             log_warning "apt-get update failed; see $update_log"
@@ -76,7 +77,7 @@ apt_install() {
     local log_file="$APT_LOG_DIR/${log_key}.log"
     HARDN_STATUS "$description (details: $log_file)"
     ensure_apt_update
-    if timeout "$timeout" apt-get install "${APT_INSTALL_FLAGS[@]}" "$@" >"$log_file" 2>&1; then
+    if timeout "$timeout" apt-get install "${APT_INSTALL_FLAGS[@]}" "$@" </dev/null >"$log_file" 2>&1; then
         HARDN_STATUS "$description completed"
         return 0
     else
