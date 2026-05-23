@@ -103,6 +103,11 @@ impl Config {
             }
         }
     }
+
+    /// Path to the SQLite database holding baseline snapshots and anomalies.
+    pub fn database_path(&self) -> String {
+        format!("{}/baselines/legion_baselines.db", self.baseline_dir)
+    }
 }
 
 impl Default for Config {
