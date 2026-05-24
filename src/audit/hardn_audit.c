@@ -8,6 +8,7 @@
 #include <limits.h>
 #include <pwd.h>
 #include <grp.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -773,7 +774,156 @@ static rule_result_t check_ensure_shadow_group_empty(const rule_definition_t *ru
     return result;
 }
 
-////////////// Rule table 
+/* ---------- File ownership / permission helpers ---------- */
+
+static rule_result_t pass_evidence(const char *fmt, ...) {
+    rule_result_t r = { RULE_STATUS_PASS, "" };
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(r.evidence, sizeof(r.evidence), fmt, ap);
+    va_end(ap);
+    return r;
+}
+
+static rule_result_t fail_evidence(const char *fmt, ...) {
+    rule_result_t r = { RULE_STATUS_FAIL, "" };
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(r.evidence, sizeof(r.evidence), fmt, ap);
+    va_end(ap);
+    return r;
+}
+
+static rule_result_t na_evidence(const char *fmt, ...) {
+    rule_result_t r = { RULE_STATUS_NOT_APPLICABLE, "" };
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(r.evidence, sizeof(r.evidence), fmt, ap);
+    va_end(ap);
+    return r;
+}
+
+static rule_result_t check_file_owner_named(const char *path, const char *expected_user) {
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        if (errno == ENOENT) {
+            return na_evidence("%s does not exist", path);
+        }
+        return check_error("unable to stat path");
+    }
+    struct passwd *pw = getpwuid(st.st_uid);
+    const char *actual = pw ? pw->pw_name : NULL;
+    if (actual && strcmp(actual, expected_user) == 0) {
+        return pass_evidence("%s owner=%s", path, actual);
+    }
+    if (actual) {
+        return fail_evidence("%s owner=%s (expected %s)", path, actual, expected_user);
+    }
+    return fail_evidence("%s owner uid=%u (expected %s)", path, (unsigned)st.st_uid, expected_user);
+}
+
+static rule_result_t check_file_group_named(const char *path, const char *expected_group) {
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        if (errno == ENOENT) {
+            return na_evidence("%s does not exist", path);
+        }
+        return check_error("unable to stat path");
+    }
+    struct group *gr = getgrgid(st.st_gid);
+    const char *actual = gr ? gr->gr_name : NULL;
+    if (actual && strcmp(actual, expected_group) == 0) {
+        return pass_evidence("%s group=%s", path, actual);
+    }
+    if (actual) {
+        return fail_evidence("%s group=%s (expected %s)", path, actual, expected_group);
+    }
+    return fail_evidence("%s gid=%u (expected %s)", path, (unsigned)st.st_gid, expected_group);
+}
+
+static rule_result_t check_file_mode_max(const char *path, mode_t max_mode) {
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        if (errno == ENOENT) {
+            return na_evidence("%s does not exist", path);
+        }
+        return check_error("unable to stat path");
+    }
+    mode_t actual = st.st_mode & 07777;
+    if ((actual & ~max_mode) == 0) {
+        return pass_evidence("%s mode=%04o (<= %04o)", path, actual, max_mode);
+    }
+    return fail_evidence("%s mode=%04o (expected <= %04o)", path, actual, max_mode);
+}
+
+#define DEF_FILE_OWNER(name, path, owner) \
+static rule_result_t check_##name(const rule_definition_t *rule) { \
+    (void)rule; return check_file_owner_named(path, owner); \
+}
+
+#define DEF_FILE_GROUP(name, path, grp) \
+static rule_result_t check_##name(const rule_definition_t *rule) { \
+    (void)rule; return check_file_group_named(path, grp); \
+}
+
+#define DEF_FILE_MODE(name, path, max_mode) \
+static rule_result_t check_##name(const rule_definition_t *rule) { \
+    (void)rule; return check_file_mode_max(path, (mode_t)(max_mode)); \
+}
+
+/* Owner = root for the password / shadow / group files and their backups */
+DEF_FILE_OWNER(file_owner_etc_passwd,           "/etc/passwd",   "root")
+DEF_FILE_OWNER(file_owner_etc_group,            "/etc/group",    "root")
+DEF_FILE_OWNER(file_owner_etc_shadow,           "/etc/shadow",   "root")
+DEF_FILE_OWNER(file_owner_etc_gshadow,          "/etc/gshadow",  "root")
+DEF_FILE_OWNER(file_owner_backup_etc_passwd,    "/etc/passwd-",  "root")
+DEF_FILE_OWNER(file_owner_backup_etc_group,     "/etc/group-",   "root")
+DEF_FILE_OWNER(file_owner_backup_etc_shadow,    "/etc/shadow-",  "root")
+DEF_FILE_OWNER(file_owner_backup_etc_gshadow,   "/etc/gshadow-", "root")
+
+/* Group ownership: Debian convention keeps shadow/gshadow group-owned by `shadow`;
+   the SCAP rule expects `root` group ownership which matches RHEL/STIG. We follow
+   the SCAP rule expectation; Debian deployments may legitimately fail this. */
+DEF_FILE_GROUP(file_groupowner_etc_passwd,         "/etc/passwd",   "root")
+DEF_FILE_GROUP(file_groupowner_etc_group,          "/etc/group",    "root")
+DEF_FILE_GROUP(file_groupowner_etc_shadow,         "/etc/shadow",   "root")
+DEF_FILE_GROUP(file_groupowner_etc_gshadow,        "/etc/gshadow",  "root")
+DEF_FILE_GROUP(file_groupowner_backup_etc_passwd,  "/etc/passwd-",  "root")
+DEF_FILE_GROUP(file_groupowner_backup_etc_group,   "/etc/group-",   "root")
+DEF_FILE_GROUP(file_groupowner_backup_etc_shadow,  "/etc/shadow-",  "root")
+DEF_FILE_GROUP(file_groupowner_backup_etc_gshadow, "/etc/gshadow-", "root")
+
+/* Permissions: SCAP expects passwd/group at <= 0644; shadow/gshadow at <= 0640. */
+DEF_FILE_MODE(file_permissions_etc_passwd,           "/etc/passwd",   0644)
+DEF_FILE_MODE(file_permissions_etc_group,            "/etc/group",    0644)
+DEF_FILE_MODE(file_permissions_etc_shadow,           "/etc/shadow",   0640)
+DEF_FILE_MODE(file_permissions_etc_gshadow,          "/etc/gshadow",  0640)
+DEF_FILE_MODE(file_permissions_backup_etc_passwd,    "/etc/passwd-",  0644)
+DEF_FILE_MODE(file_permissions_backup_etc_group,     "/etc/group-",   0644)
+DEF_FILE_MODE(file_permissions_backup_etc_shadow,    "/etc/shadow-",  0640)
+DEF_FILE_MODE(file_permissions_backup_etc_gshadow,   "/etc/gshadow-", 0640)
+
+/* Crontab and per-frequency cron directories: owner root, group root, mode <= 0700 */
+DEF_FILE_OWNER(file_owner_crontab,         "/etc/crontab",        "root")
+DEF_FILE_OWNER(file_owner_cron_d,          "/etc/cron.d",         "root")
+DEF_FILE_OWNER(file_owner_cron_daily,      "/etc/cron.daily",     "root")
+DEF_FILE_OWNER(file_owner_cron_hourly,     "/etc/cron.hourly",    "root")
+DEF_FILE_OWNER(file_owner_cron_monthly,    "/etc/cron.monthly",   "root")
+DEF_FILE_OWNER(file_owner_cron_weekly,     "/etc/cron.weekly",    "root")
+DEF_FILE_GROUP(file_groupowner_crontab,       "/etc/crontab",      "root")
+DEF_FILE_GROUP(file_groupowner_cron_d,        "/etc/cron.d",       "root")
+DEF_FILE_GROUP(file_groupowner_cron_daily,    "/etc/cron.daily",   "root")
+DEF_FILE_GROUP(file_groupowner_cron_hourly,   "/etc/cron.hourly",  "root")
+DEF_FILE_GROUP(file_groupowner_cron_monthly,  "/etc/cron.monthly", "root")
+DEF_FILE_GROUP(file_groupowner_cron_weekly,   "/etc/cron.weekly",  "root")
+DEF_FILE_MODE(file_permissions_crontab,        "/etc/crontab",       0600)
+DEF_FILE_MODE(file_permissions_cron_d,         "/etc/cron.d",        0700)
+DEF_FILE_MODE(file_permissions_cron_daily,     "/etc/cron.daily",    0700)
+DEF_FILE_MODE(file_permissions_cron_hourly,    "/etc/cron.hourly",   0700)
+DEF_FILE_MODE(file_permissions_cron_monthly,   "/etc/cron.monthly",  0700)
+DEF_FILE_MODE(file_permissions_cron_weekly,    "/etc/cron.weekly",   0700)
+
+////////////// Rule table
 
 #define RULE_DEF(ID, TITLE, CATEGORY, SEVERITY, CHECK) \
     { (ID), (TITLE), (CATEGORY), (SEVERITY), (CHECK) }
@@ -809,6 +959,52 @@ static void initialize_rule_overrides(void) {
     patch_rule_check("xccdf_org.ssgproject.content_rule_group_unique_id", check_group_unique_id);
     patch_rule_check("xccdf_org.ssgproject.content_rule_group_unique_name", check_group_unique_name);
     patch_rule_check("xccdf_org.ssgproject.content_rule_ensure_shadow_group_empty", check_ensure_shadow_group_empty);
+
+    /* File owner / group / permissions on the password & shadow databases and their backups */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_owner_etc_passwd", check_file_owner_etc_passwd);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_owner_etc_group", check_file_owner_etc_group);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_owner_etc_shadow", check_file_owner_etc_shadow);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_owner_etc_gshadow", check_file_owner_etc_gshadow);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_owner_backup_etc_passwd", check_file_owner_backup_etc_passwd);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_owner_backup_etc_group", check_file_owner_backup_etc_group);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_owner_backup_etc_shadow", check_file_owner_backup_etc_shadow);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_owner_backup_etc_gshadow", check_file_owner_backup_etc_gshadow);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupowner_etc_passwd", check_file_groupowner_etc_passwd);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupowner_etc_group", check_file_groupowner_etc_group);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupowner_etc_shadow", check_file_groupowner_etc_shadow);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupowner_etc_gshadow", check_file_groupowner_etc_gshadow);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupowner_backup_etc_passwd", check_file_groupowner_backup_etc_passwd);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupowner_backup_etc_group", check_file_groupowner_backup_etc_group);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupowner_backup_etc_shadow", check_file_groupowner_backup_etc_shadow);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupowner_backup_etc_gshadow", check_file_groupowner_backup_etc_gshadow);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_etc_passwd", check_file_permissions_etc_passwd);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_etc_group", check_file_permissions_etc_group);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_etc_shadow", check_file_permissions_etc_shadow);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_etc_gshadow", check_file_permissions_etc_gshadow);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_backup_etc_passwd", check_file_permissions_backup_etc_passwd);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_backup_etc_group", check_file_permissions_backup_etc_group);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_backup_etc_shadow", check_file_permissions_backup_etc_shadow);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_backup_etc_gshadow", check_file_permissions_backup_etc_gshadow);
+
+    /* Crontab and the per-frequency cron directories */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_owner_crontab", check_file_owner_crontab);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_owner_cron_d", check_file_owner_cron_d);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_owner_cron_daily", check_file_owner_cron_daily);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_owner_cron_hourly", check_file_owner_cron_hourly);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_owner_cron_monthly", check_file_owner_cron_monthly);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_owner_cron_weekly", check_file_owner_cron_weekly);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupowner_crontab", check_file_groupowner_crontab);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupowner_cron_d", check_file_groupowner_cron_d);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupowner_cron_daily", check_file_groupowner_cron_daily);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupowner_cron_hourly", check_file_groupowner_cron_hourly);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupowner_cron_monthly", check_file_groupowner_cron_monthly);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupowner_cron_weekly", check_file_groupowner_cron_weekly);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_crontab", check_file_permissions_crontab);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_cron_d", check_file_permissions_cron_d);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_cron_daily", check_file_permissions_cron_daily);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_cron_hourly", check_file_permissions_cron_hourly);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_cron_monthly", check_file_permissions_cron_monthly);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_cron_weekly", check_file_permissions_cron_weekly);
 }
 
 int main(void) {
