@@ -1,8 +1,11 @@
 [Unit]
-Description=HARDN LEGION Security Monitoring Daemon
+Description=HARDN LEGION Security Monitoring Daemon (observe-only variant)
 # Bring LEGION up after the network is actually online
 After=network-online.target
 Wants=network-online.target
+# hardn.service is the default daemon entry; we refuse to co-exist with it
+# because both processes open the same baseline SQLite DB.
+Conflicts=hardn.service
 StartLimitIntervalSec=300
 StartLimitBurst=5
 

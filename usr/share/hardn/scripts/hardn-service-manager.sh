@@ -891,11 +891,12 @@ dangerous_operations_menu() {
         echo -e "─────────────────────────────────────────────────"
         echo
         echo "1) Enable SELinux (REQUIRES REBOOT - DISABLES AppArmor)"
+        echo "2) Uninstall HARDN (remove services, drop-in configs, runtime data)"
         echo
         echo "0) Back to Main Menu"
         echo
-        read -p "Select option [0-1]: " danger_choice || { echo; return; }
-        
+        read -p "Select option [0-2]: " danger_choice || { echo; return; }
+
         case $danger_choice in
             1)
                 echo -e "\n${BOLD}${RED}EXTREME WARNING${NC}"
@@ -918,6 +919,37 @@ dangerous_operations_menu() {
                     fi
                 else
                     echo "Operation cancelled."
+                fi
+                read -p $'\nPress Enter to continue...' || true
+                ;;
+            2)
+                echo -e "\n${BOLD}${RED}HARDN UNINSTALL${NC}"
+                echo -e "${RED}This will:"
+                echo "  - Stop and disable all HARDN services"
+                echo "  - Remove HARDN drop-in config files (99-hardn-*.conf etc.)"
+                echo "  - Remove /var/log/hardn and /var/lib/hardn"
+                echo "  - Purge the hardn package"
+                echo "  - Remove the hardn system user/group"
+                echo ""
+                echo "It will NOT (unless you opt in via flags):"
+                echo "  - Re-enable SSH if HARDN disabled it"
+                echo "  - Reset the firewall (dangerous over remote SSH)"
+                echo "  - Purge installed security packages (aide, clamav, fail2ban, ...)"
+                echo -e "${NC}"
+                read -p "Type 'YES UNINSTALL' to confirm: " final_confirm || { echo; continue; }
+                if [[ "$final_confirm" == "YES UNINSTALL" ]]; then
+                    extra_flags=""
+                    read -p "Also re-enable SSH (--restore-ssh)? [y/N]: " ans
+                    [[ "$ans" =~ ^[yY] ]] && extra_flags="$extra_flags --restore-ssh"
+                    read -p "Also purge security packages (--purge-packages)? [y/N]: " ans
+                    [[ "$ans" =~ ^[yY] ]] && extra_flags="$extra_flags --purge-packages"
+                    read -p "Also reset the firewall (--reset-firewall, DANGEROUS)? [y/N]: " ans
+                    [[ "$ans" =~ ^[yY] ]] && extra_flags="$extra_flags --reset-firewall"
+                    echo -e "\n${BOLD}Running uninstall...${NC}"
+                    # shellcheck disable=SC2086
+                    "$HARDN_BIN" --uninstall --yes $extra_flags
+                else
+                    echo "Uninstall cancelled."
                 fi
                 read -p $'\nPress Enter to continue...' || true
                 ;;

@@ -3,6 +3,10 @@ Description=HARDN Security Monitoring and Response Service
 # Bring HARDN up after the network is actually online
 After=network-online.target
 Wants=network-online.target
+# legion-daemon.service runs the same binary against the same baseline DB.
+# We refuse to run alongside it to avoid two processes racing on the SQLite
+# WAL during schema bootstrap.
+Conflicts=legion-daemon.service
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
@@ -14,9 +18,17 @@ Group=root
 # Optional, but nice for consistency if you ever add relative paths
 WorkingDirectory=/usr/share/hardn
 
+# Optional environment file for operators. Set HARDN_LEGION_EXTRA_ARGS here to
+# inject additional LEGION flags (most commonly --response-enabled). Leaving
+# the file absent means LEGION runs in observe-only mode, which is the
+# safer default and prevents auto-response actions from firing on every boot.
+EnvironmentFile=-/etc/hardn/legion.env
+
 # First run: if no LEGION baseline exists, create one, then start the daemon.
 # On subsequent restarts, it just runs the daemon.
-ExecStart=/bin/bash -c 'if [ ! -d /var/lib/hardn/legion ] || [ -z "$(ls -A /var/lib/hardn/legion/baseline_*.json 2>/dev/null)" ]; then echo "Creating LEGION baseline..."; /usr/bin/hardn legion --create-baseline --json; fi; exec /usr/bin/hardn legion --daemon --response-enabled --verbose'
+# To enable automated responses, set in /etc/hardn/legion.env:
+#   HARDN_LEGION_EXTRA_ARGS="--response-enabled"
+ExecStart=/bin/bash -c 'if [ ! -d /var/lib/hardn/legion ] || [ -z "$(ls -A /var/lib/hardn/legion/baseline_*.json 2>/dev/null)" ]; then echo "Creating LEGION baseline..."; /usr/bin/hardn legion --create-baseline --json; fi; exec /usr/bin/hardn legion --daemon --verbose ${HARDN_LEGION_EXTRA_ARGS}'
 
 # If you want it to come back even after manual stop, keep "always";
 # if you want "systemctl stop hardn" to stick, change to on-failure.

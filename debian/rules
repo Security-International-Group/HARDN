@@ -40,6 +40,8 @@ override_dh_auto_install:
 	install -m 644 src/hardn-api.py debian/hardn/usr/share/hardn/src/
 	# Install service manager
 	install -m 755 usr/share/hardn/scripts/hardn-service-manager.sh debian/hardn/usr/bin/hardn-service-manager
+	# Install uninstall script
+	install -m 755 usr/share/hardn/scripts/hardn-uninstall.sh debian/hardn/usr/share/hardn/scripts/hardn-uninstall.sh
 	# Install config
 	install -d debian/hardn/etc/aide
 	install -m 644 etc/aide/aide.conf debian/hardn/etc/aide/ 2>/dev/null || true
