@@ -10,12 +10,17 @@ log_tool_execution "apparmor.sh"
 
 HARDN_STATUS "info" "Setting critical native Linux applications to appropriate AppArmor modes"
 
+# Ensure the AppArmor utilities (which provide aa-complain / aa-disable) are
+# installed first. The earlier version of this block only ran the install
+# command if aa-complain already existed, which made the install a no-op on
+# fresh systems.
+if install_package apparmor && install_package apparmor-utils && install_package apparmor-profiles; then
+    HARDN_STATUS "pass" "AppArmor profiles and utilities installed"
+else
+    HARDN_STATUS "warning" "Failed to install one or more AppArmor packages; continuing with best effort"
+fi
+
 if command -v aa-complain >/dev/null 2>&1; then
-    if apt-get install -y apparmor-profiles apparmor-utils >/dev/null 2>&1; then
-        HARDN_STATUS "pass" "AppArmor profiles and utilities installed"
-    else
-        HARDN_STATUS "warning" "Failed to install AppArmor utilities; continuing with best effort"
-    fi
 
     # List of problematic native applications that should be DISABLED (cause segfaults)
     DISABLE_PROFILES=(

@@ -116,6 +116,10 @@ pub fn list_modules(dirs: &[PathBuf]) -> HardnResult<Vec<String>> {
     Ok(sorted_names)
 }
 
+/// Filenames in tool/module directories that are helper libraries, not runnable
+/// tools/modules. `list_modules` and `find_script` ignore them.
+const NON_TOOL_FILENAMES: &[&str] = &["functions.sh", "check_tool_config.sh"];
+
 /// Helper function to extract module name from a directory entry
 /// Returns Some(name) if the entry is a valid .sh file, None otherwise
 fn extract_module_name(entry: io::Result<fs::DirEntry>) -> Option<String> {
@@ -126,6 +130,11 @@ fn extract_module_name(entry: io::Result<fs::DirEntry>) -> Option<String> {
     // Check if it's a .sh file
     let extension = path.extension()?.to_str()?;
     if extension != "sh" {
+        return None;
+    }
+
+    let file_name = path.file_name()?.to_str()?;
+    if NON_TOOL_FILENAMES.contains(&file_name) {
         return None;
     }
 
@@ -144,4 +153,29 @@ pub fn join_paths(dirs: &[PathBuf]) -> String {
         .map(|p| p.display().to_string())
         .collect::<Vec<_>>()
         .join(":")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::Write;
+
+    #[test]
+    fn list_modules_skips_helper_libraries_and_non_sh_files() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        for (name, contents) in &[
+            ("real_tool.sh", "#!/bin/bash\necho ok\n"),
+            ("functions.sh", "# helper library, not a tool\n"),
+            ("check_tool_config.sh", "# helper library, not a tool\n"),
+            ("selinux.sh.DANGEROUS", "#!/bin/bash\necho dangerous\n"),
+            ("README.md", "not a script\n"),
+        ] {
+            let mut f = File::create(dir.path().join(name)).expect("create file");
+            f.write_all(contents.as_bytes()).expect("write file");
+        }
+
+        let tools = list_modules(&[dir.path().to_path_buf()]).expect("list_modules");
+        assert_eq!(tools, vec!["real_tool".to_string()]);
+    }
 }
