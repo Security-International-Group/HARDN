@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #define _DEFAULT_SOURCE
+#define _GNU_SOURCE
 
 /// This file is an openscap based compliance module for internal auditing 
 
@@ -7,6 +8,7 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <ftw.h>
 #include <limits.h>
 #include <pwd.h>
 #include <grp.h>
@@ -2830,6 +2832,515 @@ static rule_result_t check_rsyslog_remote_loghost(const rule_definition_t *rule)
     return fail_evidence("no rsyslog remote-forward rule found");
 }
 
+/* ---------- Firewall loopback traffic rules ---------- */
+
+static rule_result_t check_xtables_loopback(const char *const *bins, const char *family) {
+    const char *bin = first_executable(bins);
+    if (!bin) return na_evidence("%s binary not present", family);
+    char cmd[256];
+    int n = snprintf(cmd, sizeof(cmd), "%s -L INPUT -n -v 2>/dev/null", bin);
+    if (n < 0 || (size_t)n >= sizeof(cmd)) return check_error("command too long");
+    char out[16384];
+    if (popen_capture(cmd, out, sizeof(out)) == -1) {
+        return check_error("popen failed");
+    }
+    if (out[0] == '\0') {
+        return check_error("no output from iptables (run as root)");
+    }
+    /* Expect an INPUT ACCEPT rule with in iface "lo". iptables -v output
+     * prints the iface column as the source iface (5th column). We match
+     * the substring " lo " (surrounded by whitespace) on an ACCEPT line. */
+    char *saveptr = NULL;
+    bool found = false;
+    char *line;
+    for (line = strtok_r(out, "\n", &saveptr); line; line = strtok_r(NULL, "\n", &saveptr)) {
+        if (!strstr(line, "ACCEPT")) continue;
+        if (strstr(line, " lo ")) { found = true; break; }
+    }
+    if (found) {
+        return pass_evidence("%s INPUT has ACCEPT rule for lo", family);
+    }
+    return fail_evidence("%s INPUT has no ACCEPT rule for loopback (lo)", family);
+}
+
+static rule_result_t check_set_loopback_traffic(const rule_definition_t *rule) {
+    (void)rule;
+    static const char *bins[] = { "/usr/sbin/iptables", "/sbin/iptables", NULL };
+    return check_xtables_loopback(bins, "iptables");
+}
+
+static rule_result_t check_set_ipv6_loopback_traffic(const rule_definition_t *rule) {
+    (void)rule;
+    static const char *bins[] = { "/usr/sbin/ip6tables", "/sbin/ip6tables", NULL };
+    return check_xtables_loopback(bins, "ip6tables");
+}
+
+static rule_result_t check_set_ufw_loopback_traffic(const rule_definition_t *rule) {
+    (void)rule;
+    static const char *bins[] = { "/usr/sbin/ufw", "/sbin/ufw", "/usr/bin/ufw", NULL };
+    const char *bin = first_executable(bins);
+    if (!bin) return na_evidence("ufw binary not present");
+    char cmd[256];
+    int n = snprintf(cmd, sizeof(cmd), "%s status verbose 2>/dev/null", bin);
+    if (n < 0 || (size_t)n >= sizeof(cmd)) return check_error("command too long");
+    char out[16384];
+    if (popen_capture(cmd, out, sizeof(out)) == -1) {
+        return check_error("popen failed");
+    }
+    /* ufw allow on lo is implicit when status is active; explicit "allow in on lo"
+     * may also appear. Treat status=active with no deny-lo rule as pass. */
+    if (strstr(out, "Status: inactive")) {
+        return fail_evidence("ufw inactive — loopback not protected");
+    }
+    if (strstr(out, "Anywhere on lo") || strstr(out, "ALLOW IN") || strstr(out, "Status: active")) {
+        return pass_evidence("ufw allows loopback (implicit when active)");
+    }
+    return fail_evidence("ufw status did not confirm loopback allow");
+}
+
+static rule_result_t check_set_nftables_loopback_traffic(const rule_definition_t *rule) {
+    (void)rule;
+    static const char *bins[] = { "/usr/sbin/nft", "/sbin/nft", "/usr/bin/nft", NULL };
+    const char *bin = first_executable(bins);
+    if (!bin) return na_evidence("nft binary not present");
+    char cmd[256];
+    int n = snprintf(cmd, sizeof(cmd), "%s list ruleset 2>/dev/null", bin);
+    if (n < 0 || (size_t)n >= sizeof(cmd)) return check_error("command too long");
+    char out[65536];
+    if (popen_capture(cmd, out, sizeof(out)) == -1) {
+        return check_error("popen failed");
+    }
+    if (out[0] == '\0') {
+        return fail_evidence("no nftables ruleset present");
+    }
+    /* Look for "iif lo accept" or "iif \"lo\" accept" on an input chain. */
+    if (strstr(out, "iif lo accept") || strstr(out, "iif \"lo\" accept")) {
+        return pass_evidence("nftables accepts traffic on loopback");
+    }
+    return fail_evidence("nftables ruleset has no 'iif lo accept' rule");
+}
+
+/* ---------- nftables structural ---------- */
+
+static int nft_list_ruleset(char *out, size_t out_size) {
+    static const char *bins[] = { "/usr/sbin/nft", "/sbin/nft", "/usr/bin/nft", NULL };
+    const char *bin = first_executable(bins);
+    if (!bin) return -1;
+    char cmd[256];
+    int n = snprintf(cmd, sizeof(cmd), "%s list ruleset 2>/dev/null", bin);
+    if (n < 0 || (size_t)n >= sizeof(cmd)) return -1;
+    return popen_capture(cmd, out, out_size);
+}
+
+static rule_result_t check_set_nftables_table(const rule_definition_t *rule) {
+    (void)rule;
+    char out[65536];
+    if (nft_list_ruleset(out, sizeof(out)) == -1) {
+        return na_evidence("nft binary not present");
+    }
+    /* Any line starting with "table" indicates a defined table. */
+    char *saveptr = NULL;
+    char *line;
+    for (line = strtok_r(out, "\n", &saveptr); line; line = strtok_r(NULL, "\n", &saveptr)) {
+        const char *p = line;
+        while (*p && isspace((unsigned char)*p)) p++;
+        if (strncmp(p, "table ", 6) == 0) {
+            return pass_evidence("nftables table declared: %s", p);
+        }
+    }
+    return fail_evidence("no nftables table found in ruleset");
+}
+
+static rule_result_t check_set_nftables_base_chain(const rule_definition_t *rule) {
+    (void)rule;
+    char out[65536];
+    if (nft_list_ruleset(out, sizeof(out)) == -1) {
+        return na_evidence("nft binary not present");
+    }
+    if (strstr(out, "type filter hook input")) {
+        return pass_evidence("nftables base chain with hook input present");
+    }
+    return fail_evidence("no base chain with 'type filter hook input' found");
+}
+
+static rule_result_t check_nftables_rules_permanent(const rule_definition_t *rule) {
+    (void)rule;
+    /* On Debian/Ubuntu, nftables persistence is provided by either
+     * /etc/nftables.conf (loaded by nftables.service) or a snippet in
+     * /etc/nftables.d/. We accept either: file present AND non-empty,
+     * AND nftables.service is enabled. */
+    struct stat st;
+    bool conf_present = false;
+    if (stat("/etc/nftables.conf", &st) == 0 && st.st_size > 0) conf_present = true;
+    if (!conf_present) {
+        DIR *d = opendir("/etc/nftables.d");
+        if (d) {
+            struct dirent *ent;
+            while ((ent = readdir(d)) != NULL) {
+                if (ent->d_name[0] == '.') continue;
+                conf_present = true;
+                break;
+            }
+            closedir(d);
+        }
+    }
+    if (!conf_present) {
+        return fail_evidence("no /etc/nftables.conf or /etc/nftables.d entries");
+    }
+    char unit_state[64];
+    if (systemctl_query("is-enabled", "nftables.service", unit_state, sizeof(unit_state)) != 0) {
+        return pass_evidence("nftables config present (systemctl unavailable)");
+    }
+    if (unit_state[0] == '\0' || strcmp(unit_state, "not-found") == 0) {
+        return fail_evidence("nftables config present but nftables.service is not installed");
+    }
+    if (strcmp(unit_state, "enabled") == 0 || strcmp(unit_state, "static") == 0) {
+        return pass_evidence("nftables config present and unit %s", unit_state);
+    }
+    return fail_evidence("nftables config present but unit is %s", unit_state);
+}
+
+/* ---------- Listening ports cross-checked against firewall ---------- */
+
+/* Collect listening TCP ports from `ss -lnt`. Output looks like:
+ *   State  Recv-Q  Send-Q  Local Address:Port  Peer Address:Port
+ *   LISTEN 0       128     0.0.0.0:22          0.0.0.0:*
+ * We extract the port from the Local Address column. v6 entries appear as
+ * `[::]:8000`, which we strip the brackets from.
+ */
+static int collect_listening_tcp_ports(int *ports, size_t cap, size_t *count_out, bool ipv6) {
+    static const char *bins[] = { "/usr/bin/ss", "/bin/ss", "/usr/sbin/ss", "/sbin/ss", NULL };
+    const char *bin = first_executable(bins);
+    if (!bin) return -1;
+    char cmd[256];
+    int n = snprintf(cmd, sizeof(cmd), "%s -lntH 2>/dev/null", bin);
+    if (n < 0 || (size_t)n >= sizeof(cmd)) return -1;
+    char out[32768];
+    if (popen_capture(cmd, out, sizeof(out)) == -1) return -1;
+    size_t count = 0;
+    char *saveptr = NULL;
+    char *line;
+    for (line = strtok_r(out, "\n", &saveptr); line; line = strtok_r(NULL, "\n", &saveptr)) {
+        /* Skip header */
+        if (strncmp(line, "State", 5) == 0) continue;
+        /* Tokenize on whitespace, take the 4th column (Local Address:Port) */
+        char *tok_save = NULL;
+        char *t = strtok_r(line, " \t", &tok_save);
+        int col = 0;
+        char *local = NULL;
+        while (t) {
+            col++;
+            if (col == 4) { local = t; break; }
+            t = strtok_r(NULL, " \t", &tok_save);
+        }
+        if (!local) continue;
+        bool is_v6 = (local[0] == '[');
+        if (is_v6 != ipv6) continue;
+        /* Find the last ':' before the port */
+        char *colon = strrchr(local, ':');
+        if (!colon) continue;
+        long port = strtol(colon + 1, NULL, 10);
+        if (port <= 0 || port > 65535) continue;
+        if (count < cap) {
+            ports[count++] = (int)port;
+        }
+    }
+    *count_out = count;
+    return 0;
+}
+
+static rule_result_t check_xtables_ports_have_rules(const char *const *bins, const char *family, bool ipv6) {
+    const char *bin = first_executable(bins);
+    if (!bin) return na_evidence("%s binary not present", family);
+
+    int ports[256];
+    size_t port_count = 0;
+    if (collect_listening_tcp_ports(ports, sizeof(ports) / sizeof(ports[0]), &port_count, ipv6) != 0) {
+        return check_error("unable to enumerate listening ports (ss missing?)");
+    }
+    if (port_count == 0) {
+        return pass_evidence("no listening %s ports to verify", family);
+    }
+
+    char cmd[256];
+    int n = snprintf(cmd, sizeof(cmd), "%s -S 2>/dev/null", bin);
+    if (n < 0 || (size_t)n >= sizeof(cmd)) return check_error("command too long");
+    char out[65536];
+    if (popen_capture(cmd, out, sizeof(out)) == -1) {
+        return check_error("popen failed");
+    }
+    if (out[0] == '\0') {
+        return check_error("no output from %s -S (run as root)");
+    }
+
+    /* For each port, check if there's a rule containing "dport <port>" or "--dport <port>". */
+    for (size_t i = 0; i < port_count; ++i) {
+        char needle[32];
+        snprintf(needle, sizeof(needle), "dport %d", ports[i]);
+        if (!strstr(out, needle)) {
+            char alt[32];
+            snprintf(alt, sizeof(alt), "--dport %d", ports[i]);
+            if (!strstr(out, alt)) {
+                return fail_evidence("%s port %d has no firewall rule", family, ports[i]);
+            }
+        }
+    }
+    return pass_evidence("all %zu listening %s port(s) covered by firewall", port_count, family);
+}
+
+static rule_result_t check_iptables_rules_for_open_ports(const rule_definition_t *rule) {
+    (void)rule;
+    static const char *bins[] = { "/usr/sbin/iptables", "/sbin/iptables", NULL };
+    return check_xtables_ports_have_rules(bins, "iptables", false);
+}
+
+static rule_result_t check_ip6tables_rules_for_open_ports(const rule_definition_t *rule) {
+    (void)rule;
+    static const char *bins[] = { "/usr/sbin/ip6tables", "/sbin/ip6tables", NULL };
+    return check_xtables_ports_have_rules(bins, "ip6tables", true);
+}
+
+static rule_result_t check_ufw_rules_for_open_ports(const rule_definition_t *rule) {
+    (void)rule;
+    static const char *bins[] = { "/usr/sbin/ufw", "/sbin/ufw", "/usr/bin/ufw", NULL };
+    const char *bin = first_executable(bins);
+    if (!bin) return na_evidence("ufw binary not present");
+
+    int ports[256];
+    size_t port_count = 0;
+    if (collect_listening_tcp_ports(ports, sizeof(ports) / sizeof(ports[0]), &port_count, false) != 0) {
+        return check_error("unable to enumerate listening ports");
+    }
+    if (port_count == 0) {
+        return pass_evidence("no listening ports to verify");
+    }
+
+    char cmd[256];
+    int n = snprintf(cmd, sizeof(cmd), "%s status 2>/dev/null", bin);
+    if (n < 0 || (size_t)n >= sizeof(cmd)) return check_error("command too long");
+    char out[16384];
+    if (popen_capture(cmd, out, sizeof(out)) == -1) return check_error("popen failed");
+    if (strstr(out, "Status: inactive")) {
+        return fail_evidence("ufw inactive — no rules enforced");
+    }
+
+    for (size_t i = 0; i < port_count; ++i) {
+        /* ufw status shows rules like "22/tcp ALLOW Anywhere" */
+        char needle[32];
+        snprintf(needle, sizeof(needle), "%d/tcp", ports[i]);
+        if (!strstr(out, needle)) {
+            return fail_evidence("ufw has no rule for listening port %d/tcp", ports[i]);
+        }
+    }
+    return pass_evidence("all %zu listening port(s) covered by ufw", port_count);
+}
+
+/* ---------- Filesystem walks: world-writable, unowned, ungroupowned ----------
+ *
+ * One nftw-based walker visits the filesystem rooted at "/", skips
+ * pseudo-filesystems (/proc, /sys, /dev, /run) and network mounts (nfs,
+ * fuse, cifs), and for each regular file or directory invokes the supplied
+ * predicate. The walk stops at the first FAIL or after a hard cap on visited
+ * inodes to keep audit time predictable.
+ */
+
+#define FS_WALK_MAX_INODES 250000
+
+typedef enum {
+    FS_FAIL_NONE,
+    FS_FAIL_WORLD_WRITABLE,
+    FS_FAIL_UNOWNED_USER,
+    FS_FAIL_UNOWNED_GROUP,
+} fs_fail_kind_t;
+
+typedef struct {
+    fs_fail_kind_t fail_kind;
+    char offending_path[PATH_MAX];
+    size_t visited;
+    fs_fail_kind_t target;
+} fs_walk_ctx_t;
+
+static fs_walk_ctx_t g_fs_ctx;
+
+static bool path_is_skipped(const char *path) {
+    /* Skip kernel and runtime pseudo-filesystems and obvious noise. */
+    static const char *prefixes[] = {
+        "/proc/", "/sys/", "/dev/", "/run/", "/var/run/",
+        "/snap/", "/var/lib/docker/", "/var/lib/containers/",
+        "/var/lib/lxd/", "/var/lib/lxc/",
+        NULL,
+    };
+    for (size_t i = 0; prefixes[i]; ++i) {
+        size_t plen = strlen(prefixes[i]);
+        if (strncmp(path, prefixes[i], plen) == 0) return true;
+    }
+    return false;
+}
+
+static int fs_walk_visitor(const char *fpath, const struct stat *sb,
+                           int typeflag, struct FTW *ftwbuf) {
+    (void)ftwbuf;
+    if (path_is_skipped(fpath)) return FTW_SKIP_SUBTREE;
+    if (g_fs_ctx.visited++ > FS_WALK_MAX_INODES) return FTW_STOP;
+
+    if (typeflag != FTW_F && typeflag != FTW_D) return FTW_CONTINUE;
+
+    switch (g_fs_ctx.target) {
+        case FS_FAIL_WORLD_WRITABLE:
+            /* World-writable AND not sticky (sticky on dirs like /tmp is fine).
+             * Symlinks excluded — they're never traversed by nftw without FOLLOW. */
+            if ((sb->st_mode & S_IWOTH) && !(sb->st_mode & S_ISVTX)) {
+                g_fs_ctx.fail_kind = FS_FAIL_WORLD_WRITABLE;
+                snprintf(g_fs_ctx.offending_path, sizeof(g_fs_ctx.offending_path),
+                         "%s", fpath);
+                return FTW_STOP;
+            }
+            break;
+        case FS_FAIL_UNOWNED_USER:
+            if (getpwuid(sb->st_uid) == NULL) {
+                g_fs_ctx.fail_kind = FS_FAIL_UNOWNED_USER;
+                snprintf(g_fs_ctx.offending_path, sizeof(g_fs_ctx.offending_path),
+                         "%s (uid=%u)", fpath, (unsigned)sb->st_uid);
+                return FTW_STOP;
+            }
+            break;
+        case FS_FAIL_UNOWNED_GROUP:
+            if (getgrgid(sb->st_gid) == NULL) {
+                g_fs_ctx.fail_kind = FS_FAIL_UNOWNED_GROUP;
+                snprintf(g_fs_ctx.offending_path, sizeof(g_fs_ctx.offending_path),
+                         "%s (gid=%u)", fpath, (unsigned)sb->st_gid);
+                return FTW_STOP;
+            }
+            break;
+        case FS_FAIL_NONE:
+            break;
+    }
+    return FTW_CONTINUE;
+}
+
+static rule_result_t run_fs_walk(fs_fail_kind_t target, const char *pass_msg, const char *fail_label) {
+    g_fs_ctx.fail_kind = FS_FAIL_NONE;
+    g_fs_ctx.offending_path[0] = '\0';
+    g_fs_ctx.visited = 0;
+    g_fs_ctx.target = target;
+
+    /* FTW_PHYS = don't follow symlinks. FTW_MOUNT = don't cross mountpoints
+     * (skips network mounts, /proc submounts, etc. without us having to
+     * enumerate them). FTW_ACTIONRETVAL = honor FTW_SKIP_SUBTREE / FTW_STOP. */
+    int flags = FTW_PHYS | FTW_MOUNT | FTW_ACTIONRETVAL;
+    int rc = nftw("/", fs_walk_visitor, 64, flags);
+    if (rc < 0) return check_error("nftw walk failed");
+
+    if (g_fs_ctx.visited > FS_WALK_MAX_INODES) {
+        return na_evidence("walk exceeded %d inodes — partial scan only", FS_WALK_MAX_INODES);
+    }
+    if (g_fs_ctx.fail_kind != FS_FAIL_NONE) {
+        return fail_evidence("%s: %s", fail_label, g_fs_ctx.offending_path);
+    }
+    return pass_evidence("%s (scanned %zu paths)", pass_msg, g_fs_ctx.visited);
+}
+
+static rule_result_t check_file_permissions_unauthorized_world_writable(const rule_definition_t *rule) {
+    (void)rule;
+    return run_fs_walk(FS_FAIL_WORLD_WRITABLE,
+                       "no unauthorized world-writable files",
+                       "world-writable without sticky");
+}
+
+static rule_result_t check_no_files_unowned_by_user(const rule_definition_t *rule) {
+    (void)rule;
+    return run_fs_walk(FS_FAIL_UNOWNED_USER,
+                       "every file owned by a valid user",
+                       "file with unknown user");
+}
+
+static rule_result_t check_file_permissions_ungroupowned(const rule_definition_t *rule) {
+    (void)rule;
+    return run_fs_walk(FS_FAIL_UNOWNED_GROUP,
+                       "every file owned by a valid group",
+                       "file with unknown group");
+}
+
+/* ---------- PATH directory writability ---------- */
+
+static bool dir_is_world_or_group_writable(const char *path) {
+    struct stat st;
+    if (stat(path, &st) != 0) return false;
+    if (!S_ISDIR(st.st_mode)) return false;
+    return (st.st_mode & (S_IWGRP | S_IWOTH)) != 0;
+}
+
+/* Extract PATH= entries from a shell rc file and return the first unsafe
+ * directory found, or NULL if all entries are safe. Caller-owned static
+ * buffer reused on each call. */
+static const char *find_unsafe_path_dir_in_shell_file(const char *file) {
+    static char offender[PATH_MAX];
+    offender[0] = '\0';
+    char **lines = NULL;
+    size_t count = 0;
+    if (load_file_lines(file, &lines, &count) != 0) return NULL;
+    for (size_t i = 0; i < count; ++i) {
+        char *p = lines[i];
+        while (isspace((unsigned char)*p)) p++;
+        if (*p == '#' || *p == '\0') continue;
+        const char *eq = strstr(p, "PATH=");
+        if (!eq) continue;
+        const char *val = eq + 5;
+        if (*val == '"' || *val == '\'') val++;
+        const char *cursor = val;
+        while (*cursor && *cursor != '"' && *cursor != '\'' && *cursor != ' ' && *cursor != '\t') {
+            const char *colon = strchr(cursor, ':');
+            size_t len = colon ? (size_t)(colon - cursor) : strlen(cursor);
+            if (len > 0 && len < sizeof(offender)) {
+                char dir[PATH_MAX];
+                memcpy(dir, cursor, len);
+                dir[len] = '\0';
+                if (dir[0] == '/' && dir_is_world_or_group_writable(dir)) {
+                    snprintf(offender, sizeof(offender), "%.512s in %.512s", dir, file);
+                    free_lines(lines, count);
+                    return offender;
+                }
+            }
+            cursor += len;
+            if (!*cursor || *cursor != ':') break;
+            cursor++;
+        }
+    }
+    free_lines(lines, count);
+    return NULL;
+}
+
+static rule_result_t check_accounts_root_path_dirs_no_write(const rule_definition_t *rule) {
+    (void)rule;
+    const char *paths[] = { "/root/.bashrc", "/root/.profile", "/root/.bash_profile", NULL };
+    for (size_t i = 0; paths[i]; ++i) {
+        const char *off = find_unsafe_path_dir_in_shell_file(paths[i]);
+        if (off) return fail_evidence("root PATH entry is writable: %s", off);
+    }
+    return pass_evidence("root PATH contains no writable directories");
+}
+
+static rule_result_t per_user_dot_no_writable_path(const struct passwd *pw) {
+    if (!pw->pw_dir || !*pw->pw_dir) return pass_evidence("%s no home", pw->pw_name);
+    const char *dotfiles[] = {
+        ".bashrc", ".bash_profile", ".bash_login", ".profile",
+        ".zshrc", ".cshrc", ".tcshrc", ".login", ".kshrc", NULL
+    };
+    for (size_t i = 0; dotfiles[i]; ++i) {
+        char path[PATH_MAX];
+        int n = snprintf(path, sizeof(path), "%s/%s", pw->pw_dir, dotfiles[i]);
+        if (n < 0 || (size_t)n >= sizeof(path)) continue;
+        const char *off = find_unsafe_path_dir_in_shell_file(path);
+        if (off) return fail_evidence("user %s PATH entry writable: %s", pw->pw_name, off);
+    }
+    return pass_evidence("user %s init dotfiles have safe PATH entries", pw->pw_name);
+}
+
+static rule_result_t check_accounts_user_dot_no_world_writable_programs(const rule_definition_t *rule) {
+    (void)rule;
+    return for_each_interactive_user(per_user_dot_no_writable_path);
+}
+
 ////////////// Rule table
 
 #define RULE_DEF(ID, TITLE, CATEGORY, SEVERITY, CHECK) \
@@ -3087,6 +3598,31 @@ static void initialize_rule_overrides(void) {
 
     /* /var/log permissions tree walk */
     patch_rule_check("xccdf_org.ssgproject.content_rule_permissions_local_var_log", check_permissions_local_var_log);
+
+    /* Loopback firewall traffic */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_set_loopback_traffic", check_set_loopback_traffic);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_set_ipv6_loopback_traffic", check_set_ipv6_loopback_traffic);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_set_ufw_loopback_traffic", check_set_ufw_loopback_traffic);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_set_nftables_loopback_traffic", check_set_nftables_loopback_traffic);
+
+    /* nftables structural */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_set_nftables_table", check_set_nftables_table);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_set_nftables_base_chain", check_set_nftables_base_chain);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_nftables_rules_permanent", check_nftables_rules_permanent);
+
+    /* Listening ports cross-checked against firewall rules */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_iptables_rules_for_open_ports", check_iptables_rules_for_open_ports);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_ip6tables_rules_for_open_ports", check_ip6tables_rules_for_open_ports);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_ufw_rules_for_open_ports", check_ufw_rules_for_open_ports);
+
+    /* Filesystem walks */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_unauthorized_world_writable", check_file_permissions_unauthorized_world_writable);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_no_files_unowned_by_user", check_no_files_unowned_by_user);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_ungroupowned", check_file_permissions_ungroupowned);
+
+    /* PATH dir writability */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_root_path_dirs_no_write", check_accounts_root_path_dirs_no_write);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_user_dot_no_world_writable_programs", check_accounts_user_dot_no_world_writable_programs);
 }
 
 int main(void) {
