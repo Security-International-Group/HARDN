@@ -1747,6 +1747,83 @@ DEF_SERVICE_DISABLED(service_apport_disabled,             "apport.service")
 DEF_SERVICE_DISABLED(service_avahi_daemon_disabled,       "avahi-daemon.service")
 DEF_SERVICE_DISABLED(socket_systemd_journal_remote_disabled, "systemd-journal-remote.socket")
 
+/* ---------- dpkg-query driven package state ---------- */
+
+static bool package_name_is_safe(const char *pkg) {
+    if (!pkg || !*pkg) return false;
+    for (const char *p = pkg; *p; ++p) {
+        unsigned char c = (unsigned char)*p;
+        /* Debian policy allows lowercase letters, digits, +, -, . in package names. */
+        if (!(islower(c) || isdigit(c)) && c != '+' && c != '-' && c != '.') {
+            return false;
+        }
+    }
+    return true;
+}
+
+static int dpkg_is_installed(const char *pkg, bool *installed_out) {
+    static const char *candidates[] = { "/usr/bin/dpkg-query", "/bin/dpkg-query", NULL };
+    const char *bin = NULL;
+    for (size_t i = 0; candidates[i]; ++i) {
+        if (access(candidates[i], X_OK) == 0) { bin = candidates[i]; break; }
+    }
+    if (!bin) return -1;
+    if (!package_name_is_safe(pkg)) return -1;
+
+    char cmd[256];
+    int n = snprintf(cmd, sizeof(cmd), "%s -W -f='${Status}\\n' %s 2>/dev/null", bin, pkg);
+    if (n < 0 || (size_t)n >= sizeof(cmd)) return -1;
+
+    FILE *fp = popen(cmd, "r");
+    if (!fp) return -1;
+    char status[128] = "";
+    if (fgets(status, sizeof(status), fp) == NULL) {
+        status[0] = '\0';
+    }
+    pclose(fp);
+    *installed_out = (strstr(status, "install ok installed") != NULL);
+    return 0;
+}
+
+static rule_result_t check_package_installed(const char *pkg) {
+    bool installed = false;
+    if (dpkg_is_installed(pkg, &installed) != 0) {
+        return check_error("dpkg-query not available");
+    }
+    return installed
+        ? pass_evidence("%s installed", pkg)
+        : fail_evidence("%s not installed", pkg);
+}
+
+static rule_result_t check_package_removed(const char *pkg) {
+    bool installed = false;
+    if (dpkg_is_installed(pkg, &installed) != 0) {
+        return check_error("dpkg-query not available");
+    }
+    return installed
+        ? fail_evidence("%s installed (expected removed)", pkg)
+        : pass_evidence("%s not installed", pkg);
+}
+
+#define DEF_PACKAGE_INSTALLED(name, pkg) \
+static rule_result_t check_##name(const rule_definition_t *rule) { \
+    (void)rule; return check_package_installed(pkg); \
+}
+
+#define DEF_PACKAGE_REMOVED(name, pkg) \
+static rule_result_t check_##name(const rule_definition_t *rule) { \
+    (void)rule; return check_package_removed(pkg); \
+}
+
+DEF_PACKAGE_INSTALLED(package_apparmor_installed,                "apparmor")
+DEF_PACKAGE_INSTALLED(package_rsyslog_installed,                 "rsyslog")
+DEF_PACKAGE_INSTALLED(package_systemd_journal_remote_installed,  "systemd-journal-remote")
+DEF_PACKAGE_INSTALLED(package_iptables_installed,                "iptables")
+DEF_PACKAGE_INSTALLED(package_nftables_installed,                "nftables")
+DEF_PACKAGE_REMOVED(package_iptables_persistent_removed,         "iptables-persistent")
+DEF_PACKAGE_REMOVED(package_ufw_removed,                         "ufw")
+DEF_PACKAGE_REMOVED(package_avahi_removed,                       "avahi-daemon")
+
 ////////////// Rule table
 
 #define RULE_DEF(ID, TITLE, CATEGORY, SEVERITY, CHECK) \
@@ -1922,6 +1999,16 @@ static void initialize_rule_overrides(void) {
     patch_rule_check("xccdf_org.ssgproject.content_rule_service_apport_disabled", check_service_apport_disabled);
     patch_rule_check("xccdf_org.ssgproject.content_rule_service_avahi-daemon_disabled", check_service_avahi_daemon_disabled);
     patch_rule_check("xccdf_org.ssgproject.content_rule_socket_systemd-journal-remote_disabled", check_socket_systemd_journal_remote_disabled);
+
+    /* dpkg package install state */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_package_apparmor_installed", check_package_apparmor_installed);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_package_rsyslog_installed", check_package_rsyslog_installed);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_package_systemd-journal-remote_installed", check_package_systemd_journal_remote_installed);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_package_iptables_installed", check_package_iptables_installed);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_package_nftables_installed", check_package_nftables_installed);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_package_iptables-persistent_removed", check_package_iptables_persistent_removed);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_package_ufw_removed", check_package_ufw_removed);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_package_avahi_removed", check_package_avahi_removed);
 }
 
 int main(void) {
