@@ -12,6 +12,7 @@ use super::framework_pipeline;
 use crate::core::config::{DEFAULT_LIB_DIR, DEFAULT_LOG_DIR};
 use crate::core::cron::CronOrchestrator;
 use crate::legion::functions;
+use crate::utils::emit_alert;
 use crate::legion::modules::auth::auth as auth_mod;
 use crate::legion::modules::behavioral::{
     BehaviorClassification, BehavioralAnalyzer, ProcessBehavior,
@@ -30,7 +31,7 @@ use crate::legion::modules::permissions::permissions as permissions_mod;
 use crate::legion::modules::processes::processes as processes_mod;
 use crate::legion::modules::response::{Anomaly, ResponseAction, ResponseEngine};
 use crate::legion::modules::risk_scoring::{
-    BaselineDriftSummary, RiskScore, RiskScoringManager, ScriptResult, ScriptStatus,
+    BaselineDriftSummary, RiskLevel, RiskScore, RiskScoringManager, ScriptResult, ScriptStatus,
     SecurityPlatformStatus, SystemState, ThreatIndicator as RiskThreatIndicator,
 };
 use crate::legion::modules::services as services_mod;
@@ -912,8 +913,45 @@ impl Legion {
                     }
                 }
 
+                // Surface high-risk cycles into the alert channel so the GUI
+                // shows them. Dedup key is the risk level so a sustained
+                // high-risk state shows as one updating row, not a stream.
+                match risk_score.risk_level {
+                    RiskLevel::Critical | RiskLevel::High => {
+                        let severity = if matches!(risk_score.risk_level, RiskLevel::Critical) {
+                            "critical"
+                        } else {
+                            "error"
+                        };
+                        let top_factor = risk_score
+                            .contributing_factors
+                            .first()
+                            .map(|s| s.as_str())
+                            .unwrap_or("no factor reported");
+                        emit_alert(
+                            severity,
+                            "legion",
+                            &format!(
+                                "Risk level {} (score {:.3}) — {}",
+                                risk_score.risk_level, risk_score.overall_score, top_factor
+                            ),
+                            &format!("legion-risk:{}", risk_score.risk_level),
+                        );
+                    }
+                    _ => {}
+                }
+
                 // Execute automated responses if enabled
                 if self.response_enabled && risk_score.overall_score > 0.7 {
+                    emit_alert(
+                        "warning",
+                        "legion",
+                        &format!(
+                            "Automated response triggered at risk {:.3}",
+                            risk_score.overall_score
+                        ),
+                        "legion-response-triggered",
+                    );
                     self.execute_automated_response(&risk_score).await?;
                 }
 
