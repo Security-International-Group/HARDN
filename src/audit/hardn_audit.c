@@ -1824,6 +1824,378 @@ DEF_PACKAGE_REMOVED(package_iptables_persistent_removed,         "iptables-persi
 DEF_PACKAGE_REMOVED(package_ufw_removed,                         "ufw")
 DEF_PACKAGE_REMOVED(package_avahi_removed,                       "avahi-daemon")
 
+/* ---------- Directory-walking helpers ---------- */
+
+typedef enum {
+    DIRWALK_OWNER,
+    DIRWALK_GROUP,
+    DIRWALK_MODE,
+} dirwalk_kind_t;
+
+static rule_result_t walk_dir_files(const char *dir, dirwalk_kind_t kind,
+                                    const char *expected_str, mode_t expected_mode) {
+    DIR *d = opendir(dir);
+    if (!d) {
+        if (errno == ENOENT) return na_evidence("%s does not exist", dir);
+        return check_error("unable to opendir");
+    }
+    struct dirent *ent;
+    rule_result_t result = pass_evidence("all files in %s compliant", dir);
+    while ((ent = readdir(d)) != NULL) {
+        if (ent->d_name[0] == '.') continue;
+        char path[PATH_MAX];
+        int n = snprintf(path, sizeof(path), "%s/%s", dir, ent->d_name);
+        if (n < 0 || (size_t)n >= sizeof(path)) continue;
+        struct stat st;
+        if (stat(path, &st) != 0) continue;
+        if (!S_ISREG(st.st_mode)) continue;
+        if (kind == DIRWALK_OWNER) {
+            struct passwd *pw = getpwuid(st.st_uid);
+            if (!pw || strcmp(pw->pw_name, expected_str) != 0) {
+                result = fail_evidence("%s owner=%s (expected %s)", path,
+                                       pw ? pw->pw_name : "?", expected_str);
+                break;
+            }
+        } else if (kind == DIRWALK_GROUP) {
+            struct group *gr = getgrgid(st.st_gid);
+            if (!gr || strcmp(gr->gr_name, expected_str) != 0) {
+                result = fail_evidence("%s group=%s (expected %s)", path,
+                                       gr ? gr->gr_name : "?", expected_str);
+                break;
+            }
+        } else if (kind == DIRWALK_MODE) {
+            mode_t actual = st.st_mode & 07777;
+            if ((actual & ~expected_mode) != 0) {
+                result = fail_evidence("%s mode=%04o (expected <= %04o)",
+                                       path, actual, expected_mode);
+                break;
+            }
+        }
+    }
+    closedir(d);
+    return result;
+}
+
+/* ---------- Audit subsystem files / binaries ---------- */
+
+DEF_FILE_MODE(file_permissions_etc_audit_auditd_conf, "/etc/audit/auditd.conf", 0640)
+
+static rule_result_t check_file_permissions_etc_audit_rulesd(const rule_definition_t *rule) {
+    (void)rule;
+    return walk_dir_files("/etc/audit/rules.d", DIRWALK_MODE, NULL, 0640);
+}
+
+static rule_result_t check_file_ownership_audit_configuration(const rule_definition_t *rule) {
+    (void)rule;
+    rule_result_t r = check_file_owner_named("/etc/audit/auditd.conf", "root");
+    if (r.status != RULE_STATUS_PASS) return r;
+    return walk_dir_files("/etc/audit/rules.d", DIRWALK_OWNER, "root", 0);
+}
+
+static rule_result_t check_file_groupownership_audit_configuration(const rule_definition_t *rule) {
+    (void)rule;
+    rule_result_t r = check_file_group_named("/etc/audit/auditd.conf", "root");
+    if (r.status != RULE_STATUS_PASS) return r;
+    return walk_dir_files("/etc/audit/rules.d", DIRWALK_GROUP, "root", 0);
+}
+
+/* /var/log/audit log files */
+DEF_FILE_MODE(directory_permissions_var_log_audit_dir, "/var/log/audit", 0750)
+static rule_result_t check_file_ownership_var_log_audit_stig(const rule_definition_t *rule) {
+    (void)rule; return walk_dir_files("/var/log/audit", DIRWALK_OWNER, "root", 0);
+}
+static rule_result_t check_file_group_ownership_var_log_audit(const rule_definition_t *rule) {
+    (void)rule; return walk_dir_files("/var/log/audit", DIRWALK_GROUP, "root", 0);
+}
+static rule_result_t check_file_permissions_var_log_audit(const rule_definition_t *rule) {
+    (void)rule; return walk_dir_files("/var/log/audit", DIRWALK_MODE, NULL, 0640);
+}
+
+/* Audit binaries: auditctl, auditd, aureport, ausearch, autrace, augenrules */
+static const char *AUDIT_BINARIES[] = {
+    "/sbin/auditctl", "/usr/sbin/auditctl",
+    "/sbin/auditd", "/usr/sbin/auditd",
+    "/sbin/aureport", "/usr/sbin/aureport",
+    "/sbin/ausearch", "/usr/sbin/ausearch",
+    "/sbin/autrace", "/usr/sbin/autrace",
+    "/sbin/augenrules", "/usr/sbin/augenrules",
+    NULL,
+};
+
+static rule_result_t check_audit_binaries_attr(dirwalk_kind_t kind, const char *expected, mode_t mode_max) {
+    bool any_seen = false;
+    for (size_t i = 0; AUDIT_BINARIES[i]; ++i) {
+        struct stat st;
+        if (stat(AUDIT_BINARIES[i], &st) != 0) continue;
+        any_seen = true;
+        if (kind == DIRWALK_OWNER) {
+            struct passwd *pw = getpwuid(st.st_uid);
+            if (!pw || strcmp(pw->pw_name, expected) != 0) {
+                return fail_evidence("%s owner=%s (expected %s)",
+                                     AUDIT_BINARIES[i], pw ? pw->pw_name : "?", expected);
+            }
+        } else if (kind == DIRWALK_GROUP) {
+            struct group *gr = getgrgid(st.st_gid);
+            if (!gr || strcmp(gr->gr_name, expected) != 0) {
+                return fail_evidence("%s group=%s (expected %s)",
+                                     AUDIT_BINARIES[i], gr ? gr->gr_name : "?", expected);
+            }
+        } else if (kind == DIRWALK_MODE) {
+            mode_t actual = st.st_mode & 07777;
+            if ((actual & ~mode_max) != 0) {
+                return fail_evidence("%s mode=%04o (expected <= %04o)",
+                                     AUDIT_BINARIES[i], actual, mode_max);
+            }
+        }
+    }
+    if (!any_seen) return na_evidence("audit binaries not installed");
+    return pass_evidence("all installed audit binaries compliant");
+}
+
+static rule_result_t check_file_ownership_audit_binaries(const rule_definition_t *rule) {
+    (void)rule; return check_audit_binaries_attr(DIRWALK_OWNER, "root", 0);
+}
+static rule_result_t check_file_groupownership_audit_binaries(const rule_definition_t *rule) {
+    (void)rule; return check_audit_binaries_attr(DIRWALK_GROUP, "root", 0);
+}
+static rule_result_t check_file_permissions_audit_binaries(const rule_definition_t *rule) {
+    (void)rule; return check_audit_binaries_attr(DIRWALK_MODE, NULL, 0755);
+}
+
+/* ---------- GRUB config ownership / perms ---------- */
+
+static rule_result_t check_file_owner_grub2_cfg(const rule_definition_t *rule) {
+    (void)rule;
+    const char *paths[] = { "/boot/grub/grub.cfg", "/boot/grub2/grub.cfg", "/boot/efi/EFI/debian/grub.cfg", NULL };
+    for (size_t i = 0; paths[i]; ++i) {
+        struct stat st;
+        if (stat(paths[i], &st) == 0) {
+            return check_file_owner_named(paths[i], "root");
+        }
+    }
+    return na_evidence("grub.cfg not found in known locations");
+}
+
+static rule_result_t check_file_permissions_grub2_cfg(const rule_definition_t *rule) {
+    (void)rule;
+    const char *paths[] = { "/boot/grub/grub.cfg", "/boot/grub2/grub.cfg", "/boot/efi/EFI/debian/grub.cfg", NULL };
+    for (size_t i = 0; paths[i]; ++i) {
+        struct stat st;
+        if (stat(paths[i], &st) == 0) {
+            return check_file_mode_max(paths[i], 0700);
+        }
+    }
+    return na_evidence("grub.cfg not found in known locations");
+}
+
+/* ---------- journald.conf simple key/value ---------- */
+
+static int read_keyvalue_from_file(const char *path, const char *key, char *out, size_t out_size) {
+    char **lines = NULL;
+    size_t count = 0;
+    if (load_file_lines(path, &lines, &count) != 0) return -1;
+    bool found = false;
+    size_t klen = strlen(key);
+    for (size_t i = 0; i < count; ++i) {
+        char *p = lines[i];
+        while (isspace((unsigned char)*p)) p++;
+        if (*p == '#' || *p == '\0') continue;
+        if (strncmp(p, key, klen) == 0 && p[klen] == '=') {
+            char *val = p + klen + 1;
+            while (*val && isspace((unsigned char)*val)) val++;
+            snprintf(out, out_size, "%s", val);
+            char *end = out + strlen(out);
+            while (end > out && isspace((unsigned char)end[-1])) end--;
+            *end = '\0';
+            found = true;
+            break;
+        }
+    }
+    free_lines(lines, count);
+    return found ? 0 : -1;
+}
+
+static rule_result_t check_journald_compress(const rule_definition_t *rule) {
+    (void)rule;
+    char val[64];
+    if (read_keyvalue_from_file("/etc/systemd/journald.conf", "Compress", val, sizeof(val)) != 0) {
+        return fail_evidence("Compress= not set in /etc/systemd/journald.conf");
+    }
+    if (strcasecmp(val, "yes") == 0 || strcasecmp(val, "true") == 0 || strcmp(val, "1") == 0) {
+        return pass_evidence("Compress=%s", val);
+    }
+    return fail_evidence("Compress=%s (expected yes)", val);
+}
+
+static rule_result_t check_journald_storage(const rule_definition_t *rule) {
+    (void)rule;
+    char val[64];
+    if (read_keyvalue_from_file("/etc/systemd/journald.conf", "Storage", val, sizeof(val)) != 0) {
+        return fail_evidence("Storage= not set in /etc/systemd/journald.conf");
+    }
+    if (strcmp(val, "persistent") == 0) {
+        return pass_evidence("Storage=%s", val);
+    }
+    return fail_evidence("Storage=%s (expected persistent)", val);
+}
+
+/* ---------- rsyslog FileCreateMode ---------- */
+
+static int rsyslog_filecreatemode_in_file(const char *path, long *out) {
+    char **lines = NULL;
+    size_t count = 0;
+    if (load_file_lines(path, &lines, &count) != 0) return -1;
+    bool found = false;
+    long strictest = -1;
+    for (size_t i = 0; i < count; ++i) {
+        char *p = lines[i];
+        while (isspace((unsigned char)*p)) p++;
+        if (*p == '#' || *p == '\0') continue;
+        if (strncmp(p, "$FileCreateMode", 15) != 0) continue;
+        if (!isspace((unsigned char)p[15])) continue;
+        char *val = p + 15;
+        while (isspace((unsigned char)*val)) val++;
+        char *endp = NULL;
+        errno = 0;
+        long parsed = strtol(val, &endp, 8);
+        if (endp != val && errno == 0) {
+            if (!found || parsed > strictest) strictest = parsed;
+            found = true;
+        }
+    }
+    free_lines(lines, count);
+    if (!found) return -1;
+    *out = strictest;
+    return 0;
+}
+
+static rule_result_t check_rsyslog_filecreatemode(const rule_definition_t *rule) {
+    (void)rule;
+    long mode = -1;
+    long candidate = -1;
+    if (rsyslog_filecreatemode_in_file("/etc/rsyslog.conf", &candidate) == 0) {
+        mode = candidate;
+    }
+    DIR *d = opendir("/etc/rsyslog.d");
+    if (d) {
+        struct dirent *ent;
+        while ((ent = readdir(d)) != NULL) {
+            size_t nlen = strlen(ent->d_name);
+            if (nlen <= 5 || strcmp(ent->d_name + nlen - 5, ".conf") != 0) continue;
+            char path[PATH_MAX];
+            int n = snprintf(path, sizeof(path), "/etc/rsyslog.d/%s", ent->d_name);
+            if (n < 0 || (size_t)n >= sizeof(path)) continue;
+            if (rsyslog_filecreatemode_in_file(path, &candidate) == 0) {
+                if (mode < 0 || candidate > mode) mode = candidate;
+            }
+        }
+        closedir(d);
+    }
+    if (mode < 0) {
+        return fail_evidence("$FileCreateMode not set in rsyslog config");
+    }
+    if ((mode & ~(long)0640) == 0) {
+        return pass_evidence("$FileCreateMode=%04lo", mode);
+    }
+    return fail_evidence("$FileCreateMode=%04lo (expected <= 0640)", mode);
+}
+
+/* ---------- limits.conf core dumps ---------- */
+
+static bool limits_file_disables_coredumps(const char *path) {
+    char **lines = NULL;
+    size_t count = 0;
+    if (load_file_lines(path, &lines, &count) != 0) return false;
+    bool ok = false;
+    for (size_t i = 0; i < count; ++i) {
+        char *p = lines[i];
+        while (isspace((unsigned char)*p)) p++;
+        if (*p == '#' || *p == '\0') continue;
+        /* Match: "* hard core 0" (whitespace-separated) */
+        char *saveptr = NULL;
+        char *dup = strdup(p);
+        if (!dup) continue;
+        char *domain = strtok_r(dup, " \t", &saveptr);
+        char *type   = strtok_r(NULL, " \t", &saveptr);
+        char *item   = strtok_r(NULL, " \t", &saveptr);
+        char *value  = strtok_r(NULL, " \t", &saveptr);
+        if (domain && type && item && value
+            && strcmp(domain, "*") == 0
+            && strcmp(type, "hard") == 0
+            && strcmp(item, "core") == 0
+            && strcmp(value, "0") == 0) {
+            ok = true;
+        }
+        free(dup);
+        if (ok) break;
+    }
+    free_lines(lines, count);
+    return ok;
+}
+
+static rule_result_t check_disable_users_coredumps(const rule_definition_t *rule) {
+    (void)rule;
+    if (limits_file_disables_coredumps("/etc/security/limits.conf")) {
+        return pass_evidence("'* hard core 0' set in /etc/security/limits.conf");
+    }
+    DIR *d = opendir("/etc/security/limits.d");
+    if (d) {
+        struct dirent *ent;
+        while ((ent = readdir(d)) != NULL) {
+            if (ent->d_name[0] == '.') continue;
+            char path[PATH_MAX];
+            int n = snprintf(path, sizeof(path), "/etc/security/limits.d/%s", ent->d_name);
+            if (n < 0 || (size_t)n >= sizeof(path)) continue;
+            if (limits_file_disables_coredumps(path)) {
+                closedir(d);
+                return pass_evidence("'* hard core 0' set in %s", path);
+            }
+        }
+        closedir(d);
+    }
+    return fail_evidence("no '* hard core 0' limit found");
+}
+
+/* ---------- Wireless interfaces present ---------- */
+
+static rule_result_t check_wireless_disable_interfaces(const rule_definition_t *rule) {
+    (void)rule;
+    DIR *d = opendir("/sys/class/net");
+    if (!d) {
+        return na_evidence("/sys/class/net not available");
+    }
+    struct dirent *ent;
+    char offending[256] = "";
+    while ((ent = readdir(d)) != NULL) {
+        if (ent->d_name[0] == '.') continue;
+        char path[PATH_MAX];
+        int n = snprintf(path, sizeof(path), "/sys/class/net/%s/wireless", ent->d_name);
+        if (n < 0 || (size_t)n >= sizeof(path)) continue;
+        struct stat st;
+        if (stat(path, &st) == 0) {
+            snprintf(offending, sizeof(offending), "%s", ent->d_name);
+            break;
+        }
+    }
+    closedir(d);
+    if (offending[0]) {
+        return fail_evidence("wireless interface present: %s", offending);
+    }
+    return pass_evidence("no wireless interfaces detected");
+}
+
+/* ---------- wheel group empty ---------- */
+
+static rule_result_t check_ensure_pam_wheel_group_empty(const rule_definition_t *rule) {
+    (void)rule;
+    struct group *gr = getgrnam("wheel");
+    if (!gr) return pass_evidence("wheel group does not exist");
+    if (!gr->gr_mem || !gr->gr_mem[0]) {
+        return pass_evidence("wheel group has no members");
+    }
+    return fail_evidence("wheel group has members (e.g. %s)", gr->gr_mem[0]);
+}
+
 ////////////// Rule table
 
 #define RULE_DEF(ID, TITLE, CATEGORY, SEVERITY, CHECK) \
@@ -2009,6 +2381,39 @@ static void initialize_rule_overrides(void) {
     patch_rule_check("xccdf_org.ssgproject.content_rule_package_iptables-persistent_removed", check_package_iptables_persistent_removed);
     patch_rule_check("xccdf_org.ssgproject.content_rule_package_ufw_removed", check_package_ufw_removed);
     patch_rule_check("xccdf_org.ssgproject.content_rule_package_avahi_removed", check_package_avahi_removed);
+
+    /* Audit subsystem configuration files */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_ownership_audit_configuration", check_file_ownership_audit_configuration);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupownership_audit_configuration", check_file_groupownership_audit_configuration);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_etc_audit_auditd", check_file_permissions_etc_audit_auditd_conf);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_etc_audit_rulesd", check_file_permissions_etc_audit_rulesd);
+
+    /* /var/log/audit ownership / mode */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_directory_permissions_var_log_audit", check_directory_permissions_var_log_audit_dir);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_ownership_var_log_audit_stig", check_file_ownership_var_log_audit_stig);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_group_ownership_var_log_audit", check_file_group_ownership_var_log_audit);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_var_log_audit", check_file_permissions_var_log_audit);
+
+    /* Audit binaries */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_ownership_audit_binaries", check_file_ownership_audit_binaries);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupownership_audit_binaries", check_file_groupownership_audit_binaries);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_audit_binaries", check_file_permissions_audit_binaries);
+
+    /* GRUB config */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_owner_grub2_cfg", check_file_owner_grub2_cfg);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_grub2_cfg", check_file_permissions_grub2_cfg);
+
+    /* journald */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_journald_compress", check_journald_compress);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_journald_storage", check_journald_storage);
+
+    /* rsyslog */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_rsyslog_filecreatemode", check_rsyslog_filecreatemode);
+
+    /* Coredumps, wireless, wheel group */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_disable_users_coredumps", check_disable_users_coredumps);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_wireless_disable_interfaces", check_wireless_disable_interfaces);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_ensure_pam_wheel_group_empty", check_ensure_pam_wheel_group_empty);
 }
 
 int main(void) {
