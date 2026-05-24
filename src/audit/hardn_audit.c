@@ -1658,6 +1658,95 @@ static rule_result_t check_kernel_module_usb_storage_disabled(const rule_definit
     (void)rule; return check_kernel_module_disabled("usb-storage");
 }
 
+/* ---------- systemctl-driven service state ---------- */
+
+/* Restrict unit names to a conservative character set to keep the popen command safe. */
+static bool unit_name_is_safe(const char *unit) {
+    if (!unit || !*unit) return false;
+    for (const char *p = unit; *p; ++p) {
+        unsigned char c = (unsigned char)*p;
+        if (!isalnum(c) && c != '.' && c != '_' && c != '-' && c != '@' && c != ':') {
+            return false;
+        }
+    }
+    return true;
+}
+
+static int systemctl_query(const char *verb, const char *unit, char *out, size_t out_size) {
+    static const char *candidates[] = { "/usr/bin/systemctl", "/bin/systemctl", NULL };
+    const char *bin = NULL;
+    for (size_t i = 0; candidates[i]; ++i) {
+        if (access(candidates[i], X_OK) == 0) { bin = candidates[i]; break; }
+    }
+    if (!bin) return -1;
+    if (!unit_name_is_safe(unit)) return -1;
+
+    char cmd[512];
+    int n = snprintf(cmd, sizeof(cmd), "%s %s %s 2>/dev/null", bin, verb, unit);
+    if (n < 0 || (size_t)n >= sizeof(cmd)) return -1;
+
+    FILE *fp = popen(cmd, "r");
+    if (!fp) return -1;
+    out[0] = '\0';
+    if (fgets(out, out_size, fp)) {
+        char *nl = strchr(out, '\n');
+        if (nl) *nl = '\0';
+    }
+    pclose(fp);
+    return 0;
+}
+
+static rule_result_t check_service_enabled(const char *unit) {
+    char out[64];
+    if (systemctl_query("is-enabled", unit, out, sizeof(out)) != 0) {
+        return check_error("systemctl not available");
+    }
+    if (out[0] == '\0') {
+        return fail_evidence("%s: no unit file found", unit);
+    }
+    if (strcmp(out, "enabled") == 0 || strcmp(out, "enabled-runtime") == 0
+        || strcmp(out, "static") == 0 || strcmp(out, "alias") == 0
+        || strcmp(out, "indirect") == 0) {
+        return pass_evidence("%s is-enabled=%s", unit, out);
+    }
+    return fail_evidence("%s is-enabled=%s", unit, out);
+}
+
+static rule_result_t check_service_disabled(const char *unit) {
+    char out[64];
+    if (systemctl_query("is-enabled", unit, out, sizeof(out)) != 0) {
+        return check_error("systemctl not available");
+    }
+    if (out[0] == '\0' || strcmp(out, "not-found") == 0) {
+        return pass_evidence("%s: unit not present", unit);
+    }
+    if (strcmp(out, "disabled") == 0 || strcmp(out, "masked") == 0
+        || strcmp(out, "masked-runtime") == 0) {
+        return pass_evidence("%s is-enabled=%s", unit, out);
+    }
+    return fail_evidence("%s is-enabled=%s (expected disabled/masked)", unit, out);
+}
+
+#define DEF_SERVICE_ENABLED(name, unit) \
+static rule_result_t check_##name(const rule_definition_t *rule) { \
+    (void)rule; return check_service_enabled(unit); \
+}
+
+#define DEF_SERVICE_DISABLED(name, unit) \
+static rule_result_t check_##name(const rule_definition_t *rule) { \
+    (void)rule; return check_service_disabled(unit); \
+}
+
+DEF_SERVICE_ENABLED(service_cron_enabled,                 "cron.service")
+DEF_SERVICE_ENABLED(service_rsyslog_enabled,              "rsyslog.service")
+DEF_SERVICE_ENABLED(service_systemd_journald_enabled,     "systemd-journald.service")
+DEF_SERVICE_ENABLED(service_nftables_enabled,             "nftables.service")
+DEF_SERVICE_ENABLED(service_ufw_enabled,                  "ufw.service")
+DEF_SERVICE_DISABLED(service_autofs_disabled,             "autofs.service")
+DEF_SERVICE_DISABLED(service_apport_disabled,             "apport.service")
+DEF_SERVICE_DISABLED(service_avahi_daemon_disabled,       "avahi-daemon.service")
+DEF_SERVICE_DISABLED(socket_systemd_journal_remote_disabled, "systemd-journal-remote.socket")
+
 ////////////// Rule table
 
 #define RULE_DEF(ID, TITLE, CATEGORY, SEVERITY, CHECK) \
@@ -1822,6 +1911,17 @@ static void initialize_rule_overrides(void) {
     /* Kernel modules disabled via modprobe.d */
     patch_rule_check("xccdf_org.ssgproject.content_rule_kernel_module_cramfs_disabled", check_kernel_module_cramfs_disabled);
     patch_rule_check("xccdf_org.ssgproject.content_rule_kernel_module_usb-storage_disabled", check_kernel_module_usb_storage_disabled);
+
+    /* systemd service / socket state */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_service_cron_enabled", check_service_cron_enabled);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_service_rsyslog_enabled", check_service_rsyslog_enabled);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_service_systemd-journald_enabled", check_service_systemd_journald_enabled);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_service_nftables_enabled", check_service_nftables_enabled);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_service_ufw_enabled", check_service_ufw_enabled);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_service_autofs_disabled", check_service_autofs_disabled);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_service_apport_disabled", check_service_apport_disabled);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_service_avahi-daemon_disabled", check_service_avahi_daemon_disabled);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_socket_systemd-journal-remote_disabled", check_socket_systemd_journal_remote_disabled);
 }
 
 int main(void) {
