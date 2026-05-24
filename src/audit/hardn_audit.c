@@ -5,6 +5,7 @@
 
 
 #include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <limits.h>
 #include <pwd.h>
@@ -1569,6 +1570,94 @@ static rule_result_t check_accounts_user_dot_group_ownership(const rule_definiti
     (void)rule; return for_each_interactive_user(per_user_dotfile_group);
 }
 
+/* ---------- Kernel module disabled ---------- */
+
+static bool modprobe_disables_module(const char *dir, const char *module) {
+    DIR *d = opendir(dir);
+    if (!d) return false;
+    bool disabled = false;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        const char *name = ent->d_name;
+        size_t nlen = strlen(name);
+        bool is_conf = nlen > 5 && strcmp(name + nlen - 5, ".conf") == 0;
+        if (!is_conf) continue;
+        char path[PATH_MAX];
+        int n = snprintf(path, sizeof(path), "%s/%s", dir, name);
+        if (n < 0 || (size_t)n >= sizeof(path)) continue;
+        char **lines = NULL;
+        size_t count = 0;
+        if (load_file_lines(path, &lines, &count) != 0) continue;
+        for (size_t i = 0; i < count && !disabled; ++i) {
+            char *p = lines[i];
+            while (isspace((unsigned char)*p)) p++;
+            if (*p == '#' || *p == '\0') continue;
+            /* blacklist <module> */
+            if (strncmp(p, "blacklist", 9) == 0 && isspace((unsigned char)p[9])) {
+                char *m = p + 9;
+                while (isspace((unsigned char)*m)) m++;
+                if (strcmp(m, module) == 0) { disabled = true; break; }
+            }
+            /* install <module> /bin/true|false  (or /sbin/...) */
+            if (strncmp(p, "install", 7) == 0 && isspace((unsigned char)p[7])) {
+                char *m = p + 7;
+                while (isspace((unsigned char)*m)) m++;
+                size_t mlen = strlen(module);
+                if (strncmp(m, module, mlen) == 0 && isspace((unsigned char)m[mlen])) {
+                    char *cmd = m + mlen;
+                    while (isspace((unsigned char)*cmd)) cmd++;
+                    if (strstr(cmd, "/true") || strstr(cmd, "/false")) {
+                        disabled = true;
+                        break;
+                    }
+                }
+            }
+        }
+        free_lines(lines, count);
+        if (disabled) break;
+    }
+    closedir(d);
+    return disabled;
+}
+
+static bool module_currently_loaded(const char *module) {
+    FILE *fp = fopen("/proc/modules", "r");
+    if (!fp) return false;
+    char line[1024];
+    bool loaded = false;
+    size_t mlen = strlen(module);
+    while (fgets(line, sizeof(line), fp)) {
+        if (strncmp(line, module, mlen) == 0 && line[mlen] == ' ') {
+            loaded = true;
+            break;
+        }
+    }
+    fclose(fp);
+    return loaded;
+}
+
+static rule_result_t check_kernel_module_disabled(const char *module) {
+    if (module_currently_loaded(module)) {
+        return fail_evidence("module %s currently loaded", module);
+    }
+    bool disabled = modprobe_disables_module("/etc/modprobe.d", module)
+                 || modprobe_disables_module("/lib/modprobe.d", module)
+                 || modprobe_disables_module("/run/modprobe.d", module)
+                 || modprobe_disables_module("/usr/lib/modprobe.d", module);
+    if (disabled) {
+        return pass_evidence("module %s blacklisted or install-disabled", module);
+    }
+    return fail_evidence("module %s not blacklisted in any modprobe.d", module);
+}
+
+static rule_result_t check_kernel_module_cramfs_disabled(const rule_definition_t *rule) {
+    (void)rule; return check_kernel_module_disabled("cramfs");
+}
+
+static rule_result_t check_kernel_module_usb_storage_disabled(const rule_definition_t *rule) {
+    (void)rule; return check_kernel_module_disabled("usb-storage");
+}
+
 ////////////// Rule table
 
 #define RULE_DEF(ID, TITLE, CATEGORY, SEVERITY, CHECK) \
@@ -1729,6 +1818,10 @@ static void initialize_rule_overrides(void) {
     patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_home_directories", check_file_permissions_home_directories);
     patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_user_dot_user_ownership", check_accounts_user_dot_user_ownership);
     patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_user_dot_group_ownership", check_accounts_user_dot_group_ownership);
+
+    /* Kernel modules disabled via modprobe.d */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_kernel_module_cramfs_disabled", check_kernel_module_cramfs_disabled);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_kernel_module_usb-storage_disabled", check_kernel_module_usb_storage_disabled);
 }
 
 int main(void) {
