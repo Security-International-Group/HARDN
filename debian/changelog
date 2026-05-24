@@ -1,3 +1,53 @@
+hardn (1.1.0-1) bookworm; urgency=medium
+
+  [ Audit framework — 100% coverage (194/194 rules) ]
+  * Implement 25 sysctl-based audit checks for kernel network hardening
+  * Implement 19 mount-option audit checks via /proc/mounts
+  * Implement 19 audit checks for audit subsystem, GRUB, journald, rsyslog,
+    coredumps, wireless and wheel-group restrictions
+  * Implement 16 audit checks for shadow ages, PAM faillock, GRUB,
+    AppArmor and rsyslog network configuration
+  * Implement the final 15 audit checks — 100% coverage (194/194 rules)
+  * Implement 12 audit checks for account structure, password ages, umask
+  * Implement 9 systemd service-state audit checks via systemctl
+  * Implement 8 dpkg-based package install-state audit checks
+  * Implement 8 audit checks for home directory and dotfile hygiene
+  * Implement firewall default-policy and /var/log permissions audit checks
+  * Implement audit checks for passwd/shadow/cron file owner, group and mode
+  * Implement 2 kernel-module-disabled audit checks (cramfs, usb-storage)
+
+  [ LEGION and alerting ]
+  * LEGION emits alerts to the shared alert channel on high/critical risk
+  * Structured alert channel from hardn-monitor to hardn-gui
+  * Unify LEGION baseline DB path via Config::database_path()
+
+  [ hardn-gui ]
+  * Tail all HARDN log files and follow correctly from the left pane
+  * Clean security report warning output
+  * Inline CSS path validation; remove deleted path_security dependency
+  * Fix GTK app output error (ISSUE_135)
+
+  [ Packaging and installation ]
+  * Full uninstall script with boot-safety fixes for hardn-api,
+    hardn.service and legion-daemon.service
+  * Harden tool-launch safety — rename selinux.sh to selinux.sh.DANGEROUS,
+    filter helper libraries, fix install logic
+  * Ignore dpkg-buildpackage hardn.debhelper.log artifact
+  * Fix dpkg failure for monitor output
+  * Fix version mismatch in hardn-monitor (ISSUE_134)
+  * Fix staircasing output issue
+
+  [ CI and release ]
+  * Richer Discord release notification — embeds the new tag, a short
+    changelog of commits since the previous release, and a working URL
+    to the actual release page
+  * Add .github/CODEOWNERS with @OpenSource-For-Freedom as global owner
+  * Run ci.yml on pull requests to main; gate release job to main pushes
+  * Apply least-privilege permissions per job in CI
+  * Various GitHub Actions and Rust dependency bumps via Dependabot
+
+ -- Security International Group <contact@sig.com>  Sun, 24 May 2026 19:30:00 +0000
+
 hardn (1.0.0-1) bookworm; urgency=medium
 
   * Initial public demo release
