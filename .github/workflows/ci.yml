@@ -427,13 +427,37 @@ jobs:
           STATUS="${{ job.status }}"
           VERSION="${{ steps.version.outputs.version }}"
           DEB_NAME="${{ steps.version.outputs.deb_name }}"
-          MSG="https://github.com/${{ github.repository }}/releases/tag/latest"
-          IMG_URL="/docs/assets/IMG_1233.jpeg"
+          PREV_TAG="${{ steps.tag.outputs.latest_tag }}"
+          NEW_TAG="${{ steps.tag.outputs.new_tag }}"
+          REPO="${{ github.repository }}"
+          RELEASE_URL="https://github.com/${REPO}/releases/tag/${NEW_TAG}"
+          COMPARE_URL="https://github.com/${REPO}/compare/${PREV_TAG}...${NEW_TAG}"
+
           COLOR=15105570
           [[ "$STATUS" == "success" ]] && COLOR=3066993 || true
           [[ "$STATUS" == "failure" ]] && COLOR=15158332 || true
 
-          DESCRIPTION="Status: ${STATUS} on ${DEB_NAME} (v${VERSION})"
+          # Build short changelog from commits since previous tag (max 10 lines).
+          # Skip merge commits; trim each subject to 100 chars to keep the embed tidy.
+          CHANGES=""
+          if [[ -n "$PREV_TAG" ]] && git rev-parse "$PREV_TAG" >/dev/null 2>&1; then
+            CHANGES=$(git log "${PREV_TAG}..HEAD" --no-merges --pretty=format:'%s' \
+              | head -n 10 \
+              | awk '{ if (length($0) > 100) print "- " substr($0,1,97) "..."; else print "- " $0 }')
+          fi
+          [[ -z "$CHANGES" ]] && CHANGES="- (no commits since ${PREV_TAG:-previous release})"
+
+          TITLE="HARDN Release ${NEW_TAG}"
+          DESCRIPTION=$(printf 'Status: **%s** — `%s`\n\n**Changes since %s:**\n%s\n\n[Full changelog](%s)' \
+            "$STATUS" "$DEB_NAME" "${PREV_TAG:-initial}" "$CHANGES" "$COMPARE_URL")
+
+          # Build payload with jq so commit subjects are escaped safely.
+          PAYLOAD=$(jq -n \
+            --arg title "$TITLE" \
+            --arg description "$DESCRIPTION" \
+            --arg url "$RELEASE_URL" \
+            --argjson color "$COLOR" \
+            '{embeds:[{title:$title, description:$description, color:$color, url:$url}]}')
 
           curl -H "Content-Type: application/json" -X POST "$WEBHOOK" \
-            -d "{\"embeds\":[{\"title\":\"HARDN Release\",\"description\":\"$DESCRIPTION\",\"color\":$COLOR,\"url\":\"$MSG\"}]}" || true
+            -d "$PAYLOAD" || true
