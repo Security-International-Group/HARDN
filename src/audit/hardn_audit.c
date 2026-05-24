@@ -2640,6 +2640,172 @@ static bool rsyslog_forwards(const char *path) {
     return found;
 }
 
+/* ---------- Firewall default policies (iptables, ip6tables, nftables, ufw) ---------- */
+
+static const char *first_executable(const char *const *candidates) {
+    for (size_t i = 0; candidates[i]; ++i) {
+        if (access(candidates[i], X_OK) == 0) return candidates[i];
+    }
+    return NULL;
+}
+
+static int popen_capture(const char *cmd, char *out, size_t out_size) {
+    FILE *fp = popen(cmd, "r");
+    if (!fp) return -1;
+    out[0] = '\0';
+    char *p = out;
+    size_t remaining = (out_size > 0) ? out_size - 1 : 0;
+    while (remaining > 0) {
+        if (fgets(p, (int)remaining + 1, fp) == NULL) break;
+        size_t len = strlen(p);
+        if (len == 0) break;
+        p += len;
+        remaining -= len;
+    }
+    return pclose(fp);
+}
+
+static rule_result_t check_xtables_input_default(const char *const *bins, const char *family) {
+    const char *bin = first_executable(bins);
+    if (!bin) return na_evidence("%s binary not present", family);
+    char cmd[256];
+    int n = snprintf(cmd, sizeof(cmd), "%s -L INPUT -n 2>/dev/null", bin);
+    if (n < 0 || (size_t)n >= sizeof(cmd)) return check_error("command too long");
+    char out[4096];
+    if (popen_capture(cmd, out, sizeof(out)) == -1) {
+        return check_error("popen failed");
+    }
+    if (out[0] == '\0') {
+        return check_error("no output from iptables (run as root)");
+    }
+    if (strstr(out, "policy DROP") || strstr(out, "policy REJECT")) {
+        return pass_evidence("%s INPUT default policy is DROP/REJECT", family);
+    }
+    if (strstr(out, "policy ACCEPT")) {
+        return fail_evidence("%s INPUT default policy is ACCEPT", family);
+    }
+    return check_error("could not determine INPUT policy");
+}
+
+static rule_result_t check_set_iptables_default_rule(const rule_definition_t *rule) {
+    (void)rule;
+    static const char *bins[] = { "/usr/sbin/iptables", "/sbin/iptables", NULL };
+    return check_xtables_input_default(bins, "iptables");
+}
+
+static rule_result_t check_set_ip6tables_default_rule(const rule_definition_t *rule) {
+    (void)rule;
+    static const char *bins[] = { "/usr/sbin/ip6tables", "/sbin/ip6tables", NULL };
+    return check_xtables_input_default(bins, "ip6tables");
+}
+
+static rule_result_t check_nftables_ensure_default_deny_policy(const rule_definition_t *rule) {
+    (void)rule;
+    static const char *bins[] = { "/usr/sbin/nft", "/sbin/nft", "/usr/bin/nft", NULL };
+    const char *bin = first_executable(bins);
+    if (!bin) return na_evidence("nft binary not present");
+    char cmd[256];
+    int n = snprintf(cmd, sizeof(cmd), "%s list ruleset 2>/dev/null", bin);
+    if (n < 0 || (size_t)n >= sizeof(cmd)) return check_error("command too long");
+    char out[65536];
+    if (popen_capture(cmd, out, sizeof(out)) == -1) {
+        return check_error("popen failed");
+    }
+    if (out[0] == '\0') {
+        return fail_evidence("no nftables ruleset present");
+    }
+    /* Find each "hook input" line and confirm the chain's policy is drop. */
+    bool saw_input_hook = false;
+    bool saw_permissive = false;
+    char *saveptr = NULL;
+    char *line;
+    for (line = strtok_r(out, "\n", &saveptr); line; line = strtok_r(NULL, "\n", &saveptr)) {
+        if (!strstr(line, "hook input")) continue;
+        saw_input_hook = true;
+        if (strstr(line, "policy drop") == NULL) {
+            saw_permissive = true;
+            break;
+        }
+    }
+    if (!saw_input_hook) {
+        return fail_evidence("no nftables chain with hook input found");
+    }
+    if (saw_permissive) {
+        return fail_evidence("nftables input chain not policy drop");
+    }
+    return pass_evidence("all nftables input chains policy drop");
+}
+
+static rule_result_t check_set_ufw_default_rule(const rule_definition_t *rule) {
+    (void)rule;
+    static const char *bins[] = { "/usr/sbin/ufw", "/sbin/ufw", "/usr/bin/ufw", NULL };
+    const char *bin = first_executable(bins);
+    if (!bin) return na_evidence("ufw binary not present");
+    char cmd[256];
+    int n = snprintf(cmd, sizeof(cmd), "%s status verbose 2>/dev/null", bin);
+    if (n < 0 || (size_t)n >= sizeof(cmd)) return check_error("command too long");
+    char out[8192];
+    if (popen_capture(cmd, out, sizeof(out)) == -1) {
+        return check_error("popen failed");
+    }
+    if (out[0] == '\0') {
+        return check_error("no output from ufw (run as root)");
+    }
+    if (strstr(out, "Status: inactive")) {
+        return fail_evidence("ufw status is inactive");
+    }
+    if (strstr(out, "Default: deny (incoming)") || strstr(out, "Default: reject (incoming)")) {
+        return pass_evidence("ufw default incoming policy is deny/reject");
+    }
+    return fail_evidence("ufw default incoming policy is not deny/reject");
+}
+
+/* ---------- /var/log permission walk (recursive, mode <= 0640 for files, 0750 for dirs) ---------- */
+
+static rule_result_t walk_var_log_permissions(const char *root, int depth) {
+    if (depth > 8) return pass_evidence("recursion limit reached");
+    DIR *d = opendir(root);
+    if (!d) {
+        if (errno == ENOENT) return na_evidence("%s does not exist", root);
+        return check_error("unable to opendir /var/log");
+    }
+    struct dirent *ent;
+    rule_result_t result = pass_evidence("%s tree permissions compliant", root);
+    while ((ent = readdir(d)) != NULL) {
+        if (ent->d_name[0] == '.'
+            && (ent->d_name[1] == '\0' || (ent->d_name[1] == '.' && ent->d_name[2] == '\0'))) continue;
+        char path[PATH_MAX];
+        int n = snprintf(path, sizeof(path), "%s/%s", root, ent->d_name);
+        if (n < 0 || (size_t)n >= sizeof(path)) continue;
+        struct stat st;
+        if (lstat(path, &st) != 0) continue;
+        mode_t actual = st.st_mode & 07777;
+        if (S_ISDIR(st.st_mode)) {
+            if ((actual & ~(mode_t)0750) != 0) {
+                result = fail_evidence("dir %s mode=%04o (expected <= 0750)", path, actual);
+                break;
+            }
+            rule_result_t sub = walk_var_log_permissions(path, depth + 1);
+            if (sub.status == RULE_STATUS_FAIL || sub.status == RULE_STATUS_ERROR) {
+                result = sub;
+                break;
+            }
+        } else if (S_ISREG(st.st_mode)) {
+            if ((actual & ~(mode_t)0640) != 0) {
+                result = fail_evidence("file %s mode=%04o (expected <= 0640)", path, actual);
+                break;
+            }
+        }
+    }
+    closedir(d);
+    return result;
+}
+
+static rule_result_t check_permissions_local_var_log(const rule_definition_t *rule) {
+    (void)rule;
+    return walk_var_log_permissions("/var/log", 0);
+}
+
 static rule_result_t check_rsyslog_remote_loghost(const rule_definition_t *rule) {
     (void)rule;
     if (rsyslog_forwards("/etc/rsyslog.conf")) {
@@ -2912,6 +3078,15 @@ static void initialize_rule_overrides(void) {
     /* rsyslog network behavior */
     patch_rule_check("xccdf_org.ssgproject.content_rule_rsyslog_nolisten", check_rsyslog_nolisten);
     patch_rule_check("xccdf_org.ssgproject.content_rule_rsyslog_remote_loghost", check_rsyslog_remote_loghost);
+
+    /* Firewall default policies */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_set_iptables_default_rule", check_set_iptables_default_rule);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_set_ip6tables_default_rule", check_set_ip6tables_default_rule);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_nftables_ensure_default_deny_policy", check_nftables_ensure_default_deny_policy);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_set_ufw_default_rule", check_set_ufw_default_rule);
+
+    /* /var/log permissions tree walk */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_permissions_local_var_log", check_permissions_local_var_log);
 }
 
 int main(void) {
