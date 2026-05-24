@@ -123,6 +123,109 @@ struct AlertsState {
     legion_summary: Option<String>, // e.g., "risk=0.123 level=Low indicators=2 issues=1"
 }
 
+/// One actionable alert emitted by hardn-monitor (or any other producer) into
+/// /var/log/hardn/alerts.jsonl. Alerts with the same `key` collapse to a
+/// single row in the GUI so a service that's down for many poll cycles
+/// produces one alert that updates in place rather than a flood.
+#[derive(Clone, Debug)]
+struct Alert {
+    ts: String,
+    severity: String,
+    source: String,
+    message: String,
+    key: String,
+}
+
+#[derive(Default)]
+struct AlertsList {
+    /// Insertion-ordered map from dedup key to alert. We use Vec<(key, Alert)>
+    /// rather than HashMap so display order stays stable.
+    entries: Vec<(String, Alert)>,
+    /// Monotonic counter of alerts seen since GUI start. Used for the badge.
+    total_seen: usize,
+}
+
+impl AlertsList {
+    fn ingest(&mut self, alert: Alert) {
+        self.total_seen += 1;
+        let key = if alert.key.is_empty() {
+            // No key supplied — treat each alert as unique
+            format!("noKey:{}:{}", alert.ts, self.total_seen)
+        } else {
+            alert.key.clone()
+        };
+        if let Some(slot) = self.entries.iter_mut().find(|(k, _)| k == &key) {
+            slot.1 = alert;
+        } else {
+            self.entries.push((key, alert));
+        }
+    }
+
+    fn render_text(&self) -> String {
+        if self.entries.is_empty() {
+            return String::from("(no alerts)\n");
+        }
+        let mut out = String::new();
+        for (_, a) in &self.entries {
+            out.push_str(&format!(
+                "[{}] {} {} :: {}\n",
+                a.severity.to_uppercase(),
+                a.ts,
+                a.source,
+                a.message,
+            ));
+        }
+        out
+    }
+
+    fn count_by_max_severity(&self) -> (usize, &'static str) {
+        let mut count = 0usize;
+        let mut max_sev = "info";
+        let rank = |s: &str| match s {
+            "critical" => 4,
+            "error" => 3,
+            "warning" => 2,
+            "info" => 1,
+            _ => 0,
+        };
+        for (_, a) in &self.entries {
+            count += 1;
+            if rank(&a.severity) > rank(max_sev) {
+                max_sev = match a.severity.as_str() {
+                    "critical" => "critical",
+                    "error" => "error",
+                    "warning" => "warning",
+                    _ => "info",
+                };
+            }
+        }
+        (count, max_sev)
+    }
+}
+
+fn parse_alert_line(line: &str) -> Option<Alert> {
+    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    Some(Alert {
+        ts: v.get("ts")?.as_str()?.to_string(),
+        severity: v
+            .get("severity")
+            .and_then(|s| s.as_str())
+            .unwrap_or("info")
+            .to_string(),
+        source: v
+            .get("source")
+            .and_then(|s| s.as_str())
+            .unwrap_or("unknown")
+            .to_string(),
+        message: v.get("message")?.as_str()?.to_string(),
+        key: v
+            .get("key")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .to_string(),
+    })
+}
+
 fn parse_service_status(line: &str) -> Option<ServiceHealth> {
     if !line.contains("Service Status -") {
         return None;
@@ -240,6 +343,68 @@ fn now_iso() -> String {
     let now = SystemTime::now();
     let dt: chrono::DateTime<chrono::Utc> = now.into();
     dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mk(severity: &str, key: &str, msg: &str) -> Alert {
+        Alert {
+            ts: "2026-05-24T00:00:00Z".into(),
+            severity: severity.into(),
+            source: "test".into(),
+            message: msg.into(),
+            key: key.into(),
+        }
+    }
+
+    #[test]
+    fn alerts_dedupe_by_key_and_update_in_place() {
+        let mut list = AlertsList::default();
+        list.ingest(mk("warning", "svc-down:hardn.service", "first"));
+        list.ingest(mk("warning", "svc-down:hardn.service", "second"));
+        list.ingest(mk("error", "svc-restart-failed:legion-daemon", "boom"));
+        assert_eq!(list.entries.len(), 2);
+        assert_eq!(list.entries[0].1.message, "second");
+        assert_eq!(list.entries[1].1.severity, "error");
+        assert_eq!(list.total_seen, 3);
+    }
+
+    #[test]
+    fn alerts_without_key_never_collapse() {
+        let mut list = AlertsList::default();
+        list.ingest(mk("info", "", "a"));
+        list.ingest(mk("info", "", "b"));
+        list.ingest(mk("info", "", "c"));
+        assert_eq!(list.entries.len(), 3);
+    }
+
+    #[test]
+    fn max_severity_picks_worst() {
+        let mut list = AlertsList::default();
+        list.ingest(mk("info", "k1", "x"));
+        list.ingest(mk("warning", "k2", "y"));
+        list.ingest(mk("error", "k3", "z"));
+        let (count, max_sev) = list.count_by_max_severity();
+        assert_eq!(count, 3);
+        assert_eq!(max_sev, "error");
+    }
+
+    #[test]
+    fn parse_alert_line_handles_well_formed_json() {
+        let line = r#"{"ts":"2026-05-24T00:00:00Z","severity":"warning","source":"hardn-monitor","message":"hardn.service down","key":"svc-down:hardn.service"}"#;
+        let a = parse_alert_line(line).expect("parse ok");
+        assert_eq!(a.severity, "warning");
+        assert_eq!(a.source, "hardn-monitor");
+        assert_eq!(a.key, "svc-down:hardn.service");
+    }
+
+    #[test]
+    fn parse_alert_line_rejects_garbage() {
+        assert!(parse_alert_line("not json").is_none());
+        assert!(parse_alert_line("{}").is_none()); // missing required ts/message
+    }
 }
 
 fn main() {
@@ -415,9 +580,31 @@ fn main() {
     // Default to half the right column height (approx). Users can drag the sash.
     split_paned.set_position(400);
 
+    // Alerts tab: deduplicated, severity-tagged view of /var/log/hardn/alerts.jsonl
+    let alerts_buffer: TextBuffer = TextBuffer::new(None);
+    let alerts_text_view = TextView::new();
+    alerts_text_view.set_editable(false);
+    alerts_text_view.set_cursor_visible(false);
+    alerts_text_view.set_monospace(true);
+    alerts_text_view.set_wrap_mode(gtk4::WrapMode::WordChar);
+    alerts_text_view.add_css_class("view");
+    alerts_text_view.set_buffer(Some(&alerts_buffer));
+    let alerts_scroll = ScrolledWindow::new();
+    alerts_scroll.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
+    alerts_scroll.set_child(Some(&alerts_text_view));
+    alerts_scroll.set_overlay_scrolling(false);
+    alerts_scroll.set_hexpand(true);
+    alerts_scroll.set_vexpand(true);
+    let alerts_box = GtkBox::new(Orientation::Vertical, 0);
+    alerts_box.set_hexpand(true);
+    alerts_box.set_vexpand(true);
+    alerts_box.append(&alerts_scroll);
+    let tab_alerts_label = gtk4::Label::new(Some("Alerts"));
+
     notebook.append_page(&logs_box, Some(&tab_logs_label));
     notebook.append_page(&term_box, Some(&tab_term_label));
     notebook.append_page(&split_paned, Some(&tab_split_label));
+    notebook.append_page(&alerts_box, Some(&tab_alerts_label));
         notebook.set_tab_pos(gtk4::PositionType::Top);
 
         // Prepare on-demand terminal launch per tab selection (one-time per view)
@@ -516,6 +703,10 @@ fn main() {
         badge_box.append(&badge_api);
         badge_box.append(&badge_legion);
         badge_box.append(&badge_monitor);
+        let badge_alerts = Label::new(Some("ALERTS: 0"));
+        badge_alerts.add_css_class("badge");
+        badge_alerts.add_css_class("badge-unknown");
+        badge_box.append(&badge_alerts);
 
         // Root-right container: header + badges + tabs (this will be the
         // right-hand pane of the main two-column layout)
@@ -567,6 +758,7 @@ fn main() {
         let event_buffer = Arc::new(Mutex::new(EventBuffer::new(250_000)));
         let service_health = Arc::new(Mutex::new(ServiceHealth::default()));
         let alerts_state = Arc::new(Mutex::new(AlertsState::default()));
+        let alerts_list = Arc::new(Mutex::new(AlertsList::default()));
 
         // Journald support removed; this GUI reads only HARDN log files.
         let child: Option<std::process::Child> = None;
@@ -585,6 +777,25 @@ fn main() {
         ] {
             if let Ok(ch) = spawn_file_tail(path) {
                 file_children.push((path.to_string(), ch));
+            }
+        }
+
+        // Separate tail for structured alerts (JSON lines).
+        let alerts_child = spawn_file_tail("/var/log/hardn/alerts.jsonl").ok();
+        if let Some(mut ch) = alerts_child {
+            if let Some(stdout) = ch.stdout.take() {
+                let alerts_list_for_tail = alerts_list.clone();
+                std::thread::spawn(move || {
+                    use std::io::{BufRead, BufReader};
+                    let reader = BufReader::new(stdout);
+                    for line in reader.lines().map_while(Result::ok) {
+                        if let Some(alert) = parse_alert_line(&line) {
+                            if let Ok(mut list) = alerts_list_for_tail.lock() {
+                                list.ingest(alert);
+                            }
+                        }
+                    }
+                });
             }
         }
 
@@ -636,6 +847,9 @@ fn main() {
     let rb_c = rb.clone();
     let buf_for_ui_c = buf_for_ui.clone();
     let alerts_ref_c = alerts_ref.clone();
+    let alerts_list_c = alerts_list.clone();
+    let alerts_buffer_c = alerts_buffer.clone();
+    let badge_alerts_c = badge_alerts.clone();
     let health_ref_c = health_ref.clone();
     let badge_hardn_c = badge_hardn.clone();
     let badge_api_c = badge_api.clone();
@@ -698,6 +912,24 @@ fn main() {
             if should_update {
                 *last_len_c.borrow_mut() = len;
                 buf_for_ui_c.set_text(&(header + &alerts + &body));
+            }
+
+            // Refresh the Alerts tab + header badge from the dedup'd alerts list
+            if let Ok(list) = alerts_list_c.lock() {
+                alerts_buffer_c.set_text(&list.render_text());
+                let (count, max_sev) = list.count_by_max_severity();
+                badge_alerts_c.set_label(&format!("ALERTS: {}", count));
+                let ctx = badge_alerts_c.style_context();
+                ctx.remove_class("badge-ok");
+                ctx.remove_class("badge-down");
+                ctx.remove_class("badge-unknown");
+                if count == 0 {
+                    ctx.add_class("badge-ok");
+                } else if max_sev == "error" || max_sev == "critical" {
+                    ctx.add_class("badge-down");
+                } else {
+                    ctx.add_class("badge-unknown");
+                }
             }
 
             // Scroll to end if auto-follow is active for each view
