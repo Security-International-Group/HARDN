@@ -10,6 +10,7 @@
 #include <limits.h>
 #include <pwd.h>
 #include <grp.h>
+#include <shadow.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -2196,6 +2197,473 @@ static rule_result_t check_ensure_pam_wheel_group_empty(const rule_definition_t 
     return fail_evidence("wheel group has members (e.g. %s)", gr->gr_mem[0]);
 }
 
+/* ---------- /etc/shadow age fields ---------- */
+
+/* Walk interactive users via getpwent; for each, call getspnam and pass the
+ * shadow entry to the supplied callback. Returns the first FAIL/ERROR, or PASS
+ * if all entries comply. NOT_APPLICABLE if /etc/shadow can't be read. */
+typedef rule_result_t (*shadow_check_fn)(const struct spwd *sp);
+
+static rule_result_t for_each_interactive_shadow(shadow_check_fn fn) {
+    setpwent();
+    struct passwd *pw;
+    bool any = false;
+    bool any_shadow = false;
+    while ((pw = getpwent()) != NULL) {
+        if (!user_is_interactive(pw)) continue;
+        any = true;
+        struct spwd *sp = getspnam(pw->pw_name);
+        if (!sp) continue;
+        any_shadow = true;
+        rule_result_t r = fn(sp);
+        if (r.status == RULE_STATUS_FAIL || r.status == RULE_STATUS_ERROR) {
+            endpwent();
+            return r;
+        }
+    }
+    endpwent();
+    if (!any) return na_evidence("no interactive users");
+    if (!any_shadow) return check_error("/etc/shadow not readable (run as root)");
+    return pass_evidence("all interactive shadow entries compliant");
+}
+
+static rule_result_t shadow_check_max_life(const struct spwd *sp) {
+    /* sp_max == -1 means never expire */
+    if (sp->sp_max <= 0 || sp->sp_max > 365) {
+        return fail_evidence("%s sp_max=%ld (expected 1-365)", sp->sp_namp, sp->sp_max);
+    }
+    return pass_evidence("%s sp_max=%ld", sp->sp_namp, sp->sp_max);
+}
+
+static rule_result_t shadow_check_min_life(const struct spwd *sp) {
+    if (sp->sp_min < 1) {
+        return fail_evidence("%s sp_min=%ld (expected >=1)", sp->sp_namp, sp->sp_min);
+    }
+    return pass_evidence("%s sp_min=%ld", sp->sp_namp, sp->sp_min);
+}
+
+static rule_result_t shadow_check_last_change_in_past(const struct spwd *sp) {
+    long today_days = time(NULL) / (24L * 60L * 60L);
+    if (sp->sp_lstchg < 0) {
+        return pass_evidence("%s never changed (sp_lstchg=-1)", sp->sp_namp);
+    }
+    if (sp->sp_lstchg > today_days) {
+        return fail_evidence("%s sp_lstchg=%ld in future (today=%ld)",
+                             sp->sp_namp, sp->sp_lstchg, today_days);
+    }
+    return pass_evidence("%s sp_lstchg=%ld", sp->sp_namp, sp->sp_lstchg);
+}
+
+static rule_result_t check_accounts_password_set_max_life_existing(const rule_definition_t *rule) {
+    (void)rule; return for_each_interactive_shadow(shadow_check_max_life);
+}
+
+static rule_result_t check_accounts_password_set_min_life_existing(const rule_definition_t *rule) {
+    (void)rule; return for_each_interactive_shadow(shadow_check_min_life);
+}
+
+static rule_result_t check_accounts_password_last_change_is_in_past(const rule_definition_t *rule) {
+    (void)rule; return for_each_interactive_shadow(shadow_check_last_change_in_past);
+}
+
+/* ---------- root has a hashed password ---------- */
+
+static rule_result_t check_ensure_root_password_configured(const rule_definition_t *rule) {
+    (void)rule;
+    struct spwd *sp = getspnam("root");
+    if (!sp) {
+        if (errno == EACCES) return check_error("/etc/shadow not readable (run as root)");
+        return fail_evidence("root has no /etc/shadow entry");
+    }
+    const char *pw = sp->sp_pwdp ? sp->sp_pwdp : "";
+    if (pw[0] == '\0' || pw[0] == '!' || pw[0] == '*' || strcmp(pw, "x") == 0) {
+        return fail_evidence("root password not set (sp_pwdp='%s')", pw);
+    }
+    if (pw[0] != '$') {
+        return fail_evidence("root password not hashed (sp_pwdp='%c…')", pw[0]);
+    }
+    return pass_evidence("root has hashed password");
+}
+
+/* ---------- PAM faillock interval / unlock_time ---------- */
+
+static int read_pam_faillock_param(const char *key, long *out) {
+    const char *paths[] = {
+        "/etc/security/faillock.conf",
+        "/etc/pam.d/common-auth",
+        "/etc/pam.d/system-auth",
+        NULL,
+    };
+    bool found = false;
+    long value = LONG_MIN;
+    for (size_t i = 0; paths[i]; ++i) {
+        char **lines = NULL;
+        size_t count = 0;
+        if (load_file_lines(paths[i], &lines, &count) != 0) continue;
+        for (size_t j = 0; j < count; ++j) {
+            char *p = lines[j];
+            while (isspace((unsigned char)*p)) p++;
+            if (*p == '#' || *p == '\0') continue;
+            /* faillock.conf uses `key = value`; pam.d uses `pam_faillock.so key=value` */
+            const char *src = NULL;
+            if (strstr(p, "pam_faillock.so") || strstr(paths[i], "faillock.conf")) {
+                src = strstr(p, key);
+            }
+            if (!src) continue;
+            const char *after = src + strlen(key);
+            while (*after && (isspace((unsigned char)*after) || *after == '=')) after++;
+            char *endp = NULL;
+            errno = 0;
+            long parsed = strtol(after, &endp, 10);
+            if (endp != after && errno == 0) {
+                value = parsed;
+                found = true;
+                break;
+            }
+        }
+        free_lines(lines, count);
+        if (found) break;
+    }
+    if (!found) return -1;
+    *out = value;
+    return 0;
+}
+
+static rule_result_t check_accounts_passwords_pam_faillock_interval(const rule_definition_t *rule) {
+    (void)rule;
+    long v;
+    if (read_pam_faillock_param("fail_interval", &v) != 0
+        && read_pam_faillock_param("interval", &v) != 0) {
+        return fail_evidence("pam_faillock interval not configured");
+    }
+    if (v >= 900) return pass_evidence("faillock interval=%ld", v);
+    return fail_evidence("faillock interval=%ld (expected >=900)", v);
+}
+
+static rule_result_t check_accounts_passwords_pam_faillock_unlock_time(const rule_definition_t *rule) {
+    (void)rule;
+    long v;
+    if (read_pam_faillock_param("unlock_time", &v) != 0) {
+        return fail_evidence("pam_faillock unlock_time not configured");
+    }
+    if (v >= 600) return pass_evidence("faillock unlock_time=%ld", v);
+    return fail_evidence("faillock unlock_time=%ld (expected >=600)", v);
+}
+
+/* ---------- pam_wheel for su ---------- */
+
+static rule_result_t check_use_pam_wheel_group_for_su(const rule_definition_t *rule) {
+    (void)rule;
+    char **lines = NULL;
+    size_t count = 0;
+    if (load_file_lines("/etc/pam.d/su", &lines, &count) != 0) {
+        return check_error("unable to read /etc/pam.d/su");
+    }
+    bool found = false;
+    bool has_group = false;
+    for (size_t i = 0; i < count; ++i) {
+        char *p = lines[i];
+        while (isspace((unsigned char)*p)) p++;
+        if (*p == '#' || *p == '\0') continue;
+        if (!strstr(p, "pam_wheel.so")) continue;
+        /* Must be auth required (or auth sufficient), not commented */
+        if (!strstr(p, "auth")) continue;
+        found = true;
+        if (strstr(p, "group=")) has_group = true;
+        if (found && has_group) break;
+    }
+    free_lines(lines, count);
+    if (!found) return fail_evidence("pam_wheel.so not enabled in /etc/pam.d/su");
+    if (!has_group) return fail_evidence("pam_wheel.so in /etc/pam.d/su lacks group= parameter");
+    return pass_evidence("pam_wheel.so enabled with group= in /etc/pam.d/su");
+}
+
+/* ---------- AppArmor profile states ---------- */
+
+static rule_result_t check_all_apparmor_profiles_in_enforce_complain_mode(const rule_definition_t *rule) {
+    (void)rule;
+    const char *path = "/sys/kernel/security/apparmor/profiles";
+    char **lines = NULL;
+    size_t count = 0;
+    if (load_file_lines(path, &lines, &count) != 0) {
+        return na_evidence("%s not available", path);
+    }
+    if (count == 0) {
+        free_lines(lines, count);
+        return na_evidence("no AppArmor profiles loaded");
+    }
+    char offending[256] = "";
+    for (size_t i = 0; i < count; ++i) {
+        const char *line = lines[i];
+        if (strstr(line, "(enforce)") == NULL && strstr(line, "(complain)") == NULL) {
+            snprintf(offending, sizeof(offending), "%s", line);
+            break;
+        }
+    }
+    free_lines(lines, count);
+    if (offending[0]) {
+        return fail_evidence("profile not in enforce/complain: %s", offending);
+    }
+    return pass_evidence("all AppArmor profiles in enforce or complain mode");
+}
+
+/* ---------- GRUB: AppArmor cmdline + bootloader password ---------- */
+
+static rule_result_t check_grub2_enable_apparmor(const rule_definition_t *rule) {
+    (void)rule;
+    char **lines = NULL;
+    size_t count = 0;
+    if (load_file_lines("/etc/default/grub", &lines, &count) != 0) {
+        return check_error("unable to read /etc/default/grub");
+    }
+    bool found_apparmor = false;
+    bool found_security = false;
+    for (size_t i = 0; i < count; ++i) {
+        char *p = lines[i];
+        while (isspace((unsigned char)*p)) p++;
+        if (*p == '#' || *p == '\0') continue;
+        if (strncmp(p, "GRUB_CMDLINE_LINUX", 18) != 0) continue;
+        if (strstr(p, "apparmor=1"))          found_apparmor = true;
+        if (strstr(p, "security=apparmor"))   found_security = true;
+    }
+    free_lines(lines, count);
+    if (found_apparmor && found_security) {
+        return pass_evidence("GRUB cmdline enables apparmor");
+    }
+    return fail_evidence("GRUB cmdline missing apparmor=1 and/or security=apparmor");
+}
+
+static rule_result_t check_grub_password_in_path(const char *grub_cfg) {
+    char **lines = NULL;
+    size_t count = 0;
+    if (load_file_lines(grub_cfg, &lines, &count) != 0) {
+        return na_evidence("%s not found", grub_cfg);
+    }
+    bool has_superusers = false;
+    bool has_password = false;
+    for (size_t i = 0; i < count; ++i) {
+        const char *line = lines[i];
+        if (strstr(line, "set superusers=")) has_superusers = true;
+        if (strstr(line, "password_pbkdf2") || strstr(line, "password ")) has_password = true;
+    }
+    free_lines(lines, count);
+    if (has_superusers && has_password) {
+        return pass_evidence("GRUB superusers + password configured in %s", grub_cfg);
+    }
+    return fail_evidence("GRUB password not configured in %s", grub_cfg);
+}
+
+static rule_result_t check_grub2_password(const rule_definition_t *rule) {
+    (void)rule;
+    const char *paths[] = { "/boot/grub/grub.cfg", "/boot/grub2/grub.cfg", NULL };
+    for (size_t i = 0; paths[i]; ++i) {
+        struct stat st;
+        if (stat(paths[i], &st) == 0) return check_grub_password_in_path(paths[i]);
+    }
+    return na_evidence("BIOS grub.cfg not present");
+}
+
+static rule_result_t check_grub2_uefi_password(const rule_definition_t *rule) {
+    (void)rule;
+    const char *paths[] = {
+        "/boot/efi/EFI/debian/grub.cfg",
+        "/boot/efi/EFI/ubuntu/grub.cfg",
+        "/boot/efi/EFI/redhat/grub.cfg",
+        NULL,
+    };
+    for (size_t i = 0; paths[i]; ++i) {
+        struct stat st;
+        if (stat(paths[i], &st) == 0) return check_grub_password_in_path(paths[i]);
+    }
+    return na_evidence("UEFI grub.cfg not present");
+}
+
+/* ---------- root PATH ---------- */
+
+static rule_result_t check_root_path_no_dot(const rule_definition_t *rule) {
+    (void)rule;
+    const char *paths[] = { "/root/.bashrc", "/root/.profile", "/root/.bash_profile", NULL };
+    for (size_t i = 0; paths[i]; ++i) {
+        char **lines = NULL;
+        size_t count = 0;
+        if (load_file_lines(paths[i], &lines, &count) != 0) continue;
+        for (size_t j = 0; j < count; ++j) {
+            char *p = lines[j];
+            while (isspace((unsigned char)*p)) p++;
+            if (*p == '#' || *p == '\0') continue;
+            const char *eq = strstr(p, "PATH=");
+            if (!eq) continue;
+            const char *val = eq + 5;
+            /* Strip quotes if present */
+            if (*val == '"' || *val == '\'') val++;
+            /* Walk colon-separated dirs */
+            const char *cursor = val;
+            while (*cursor && *cursor != '"' && *cursor != '\'' && *cursor != ' ' && *cursor != '\t') {
+                const char *colon = strchr(cursor, ':');
+                size_t len = colon ? (size_t)(colon - cursor) : strlen(cursor);
+                if (len == 0 || (len == 1 && cursor[0] == '.')) {
+                    rule_result_t r = fail_evidence("root PATH contains '.' or empty entry in %s", paths[i]);
+                    free_lines(lines, count);
+                    return r;
+                }
+                cursor += len;
+                if (!*cursor || *cursor != ':') break;
+                cursor++;
+            }
+        }
+        free_lines(lines, count);
+    }
+    return pass_evidence("root PATH contains no '.' or empty entries");
+}
+
+/* ---------- Composite: interactive-user umask ---------- */
+
+static rule_result_t check_accounts_umask_interactive_users(const rule_definition_t *rule) {
+    (void)rule;
+    long v;
+    if (read_login_defs_long("UMASK", &v) != 0) {
+        return fail_evidence("UMASK not set in /etc/login.defs");
+    }
+    if (v != 027 && v != 077) {
+        return fail_evidence("/etc/login.defs UMASK=%03lo (expected 027 or 077)", v);
+    }
+    rule_result_t r = check_umask_in_shell_file("/etc/profile");
+    if (r.status == RULE_STATUS_PASS) {
+        return pass_evidence("interactive umask 027/077 enforced by login.defs and /etc/profile");
+    }
+    return r;
+}
+
+/* ---------- /etc/default/useradd INACTIVE ---------- */
+
+static rule_result_t check_account_disable_post_pw_expiration(const rule_definition_t *rule) {
+    (void)rule;
+    char **lines = NULL;
+    size_t count = 0;
+    if (load_file_lines("/etc/default/useradd", &lines, &count) != 0) {
+        return check_error("unable to read /etc/default/useradd");
+    }
+    long inactive = LONG_MIN;
+    for (size_t i = 0; i < count; ++i) {
+        char *p = lines[i];
+        while (isspace((unsigned char)*p)) p++;
+        if (*p == '#' || *p == '\0') continue;
+        if (strncmp(p, "INACTIVE", 8) != 0) continue;
+        char *eq = strchr(p, '=');
+        if (!eq) continue;
+        char *val = eq + 1;
+        while (*val && isspace((unsigned char)*val)) val++;
+        char *endp = NULL;
+        errno = 0;
+        long parsed = strtol(val, &endp, 10);
+        if (endp != val && errno == 0) inactive = parsed;
+    }
+    free_lines(lines, count);
+    if (inactive == LONG_MIN) {
+        return fail_evidence("INACTIVE not set in /etc/default/useradd");
+    }
+    if (inactive >= 1 && inactive <= 30) {
+        return pass_evidence("INACTIVE=%ld in /etc/default/useradd", inactive);
+    }
+    return fail_evidence("INACTIVE=%ld (expected 1-30)", inactive);
+}
+
+/* ---------- rsyslog nolisten / remote loghost ---------- */
+
+static bool rsyslog_loads_listener(const char *path) {
+    char **lines = NULL;
+    size_t count = 0;
+    if (load_file_lines(path, &lines, &count) != 0) return false;
+    bool listener = false;
+    for (size_t i = 0; i < count; ++i) {
+        char *p = lines[i];
+        while (isspace((unsigned char)*p)) p++;
+        if (*p == '#' || *p == '\0') continue;
+        if (strstr(p, "imtcp") || strstr(p, "imudp")
+            || strstr(p, "ModLoad imtcp") || strstr(p, "ModLoad imudp")) {
+            listener = true;
+            break;
+        }
+    }
+    free_lines(lines, count);
+    return listener;
+}
+
+static rule_result_t check_rsyslog_nolisten(const rule_definition_t *rule) {
+    (void)rule;
+    if (rsyslog_loads_listener("/etc/rsyslog.conf")) {
+        return fail_evidence("rsyslog.conf loads imtcp/imudp listener");
+    }
+    DIR *d = opendir("/etc/rsyslog.d");
+    if (d) {
+        struct dirent *ent;
+        char offending[PATH_MAX] = "";
+        while ((ent = readdir(d)) != NULL) {
+            size_t nlen = strlen(ent->d_name);
+            if (nlen <= 5 || strcmp(ent->d_name + nlen - 5, ".conf") != 0) continue;
+            char path[PATH_MAX];
+            int n = snprintf(path, sizeof(path), "/etc/rsyslog.d/%s", ent->d_name);
+            if (n < 0 || (size_t)n >= sizeof(path)) continue;
+            if (rsyslog_loads_listener(path)) {
+                snprintf(offending, sizeof(offending), "%s", path);
+                break;
+            }
+        }
+        closedir(d);
+        if (offending[0]) {
+            return fail_evidence("%s loads imtcp/imudp listener", offending);
+        }
+    }
+    return pass_evidence("no rsyslog network listener configured");
+}
+
+static bool rsyslog_forwards(const char *path) {
+    char **lines = NULL;
+    size_t count = 0;
+    if (load_file_lines(path, &lines, &count) != 0) return false;
+    bool found = false;
+    for (size_t i = 0; i < count; ++i) {
+        char *p = lines[i];
+        while (isspace((unsigned char)*p)) p++;
+        if (*p == '#' || *p == '\0') continue;
+        /* @host = UDP forward, @@host = TCP forward; either anywhere on a syslog rule line. */
+        if (strstr(p, "@@") || strchr(p, '@')) {
+            /* Avoid hits in module/comment lines: require it after whitespace. */
+            char *at = strchr(p, '@');
+            if (at && (at == p || isspace((unsigned char)at[-1]))) {
+                found = true;
+                break;
+            }
+        }
+    }
+    free_lines(lines, count);
+    return found;
+}
+
+static rule_result_t check_rsyslog_remote_loghost(const rule_definition_t *rule) {
+    (void)rule;
+    if (rsyslog_forwards("/etc/rsyslog.conf")) {
+        return pass_evidence("rsyslog.conf forwards to remote loghost");
+    }
+    DIR *d = opendir("/etc/rsyslog.d");
+    if (d) {
+        struct dirent *ent;
+        while ((ent = readdir(d)) != NULL) {
+            size_t nlen = strlen(ent->d_name);
+            if (nlen <= 5 || strcmp(ent->d_name + nlen - 5, ".conf") != 0) continue;
+            char path[PATH_MAX];
+            int n = snprintf(path, sizeof(path), "/etc/rsyslog.d/%s", ent->d_name);
+            if (n < 0 || (size_t)n >= sizeof(path)) continue;
+            if (rsyslog_forwards(path)) {
+                closedir(d);
+                return pass_evidence("%s forwards to remote loghost", path);
+            }
+        }
+        closedir(d);
+    }
+    return fail_evidence("no rsyslog remote-forward rule found");
+}
+
 ////////////// Rule table
 
 #define RULE_DEF(ID, TITLE, CATEGORY, SEVERITY, CHECK) \
@@ -2414,6 +2882,36 @@ static void initialize_rule_overrides(void) {
     patch_rule_check("xccdf_org.ssgproject.content_rule_disable_users_coredumps", check_disable_users_coredumps);
     patch_rule_check("xccdf_org.ssgproject.content_rule_wireless_disable_interfaces", check_wireless_disable_interfaces);
     patch_rule_check("xccdf_org.ssgproject.content_rule_ensure_pam_wheel_group_empty", check_ensure_pam_wheel_group_empty);
+
+    /* /etc/shadow age checks (require root readable shadow) */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_password_set_max_life_existing", check_accounts_password_set_max_life_existing);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_password_set_min_life_existing", check_accounts_password_set_min_life_existing);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_password_last_change_is_in_past", check_accounts_password_last_change_is_in_past);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_ensure_root_password_configured", check_ensure_root_password_configured);
+
+    /* PAM faillock and pam_wheel for su */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_passwords_pam_faillock_interval", check_accounts_passwords_pam_faillock_interval);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_passwords_pam_faillock_unlock_time", check_accounts_passwords_pam_faillock_unlock_time);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_use_pam_wheel_group_for_su", check_use_pam_wheel_group_for_su);
+
+    /* AppArmor */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_all_apparmor_profiles_in_enforce_complain_mode", check_all_apparmor_profiles_in_enforce_complain_mode);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_grub2_enable_apparmor", check_grub2_enable_apparmor);
+
+    /* GRUB password */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_grub2_password", check_grub2_password);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_grub2_uefi_password", check_grub2_uefi_password);
+
+    /* root PATH and interactive-user umask composite */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_root_path_no_dot", check_root_path_no_dot);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_umask_interactive_users", check_accounts_umask_interactive_users);
+
+    /* useradd INACTIVE */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_account_disable_post_pw_expiration", check_account_disable_post_pw_expiration);
+
+    /* rsyslog network behavior */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_rsyslog_nolisten", check_rsyslog_nolisten);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_rsyslog_remote_loghost", check_rsyslog_remote_loghost);
 }
 
 int main(void) {
