@@ -981,6 +981,114 @@ DEF_SYSCTL(sysctl_net_ipv4_ip_forward,                    "net/ipv4/ip_forward",
 DEF_SYSCTL(sysctl_fs_suid_dumpable,                       "fs/suid_dumpable",                       0)
 DEF_SYSCTL(sysctl_kernel_randomize_va_space,              "kernel/randomize_va_space",              2)
 
+/* ---------- /proc/mounts helpers ---------- */
+
+typedef struct {
+    char *target;
+    char *options;
+} mount_entry_t;
+
+static void free_mount_entries(mount_entry_t *entries, size_t count) {
+    if (!entries) return;
+    for (size_t i = 0; i < count; ++i) {
+        free(entries[i].target);
+        free(entries[i].options);
+    }
+    free(entries);
+}
+
+static int load_mount_entries(mount_entry_t **out, size_t *out_count) {
+    FILE *fp = fopen("/proc/mounts", "r");
+    if (!fp) return -1;
+    size_t cap = 64, count = 0;
+    mount_entry_t *entries = calloc(cap, sizeof(mount_entry_t));
+    if (!entries) { fclose(fp); return -1; }
+    char line[4096];
+    while (fgets(line, sizeof(line), fp)) {
+        char *saveptr = NULL;
+        strtok_r(line, " \t\n", &saveptr);                  /* device */
+        char *target  = strtok_r(NULL, " \t\n", &saveptr);
+        strtok_r(NULL, " \t\n", &saveptr);                  /* fstype */
+        char *options = strtok_r(NULL, " \t\n", &saveptr);
+        if (!target || !options) continue;
+        if (count == cap) {
+            cap *= 2;
+            mount_entry_t *tmp = realloc(entries, cap * sizeof(mount_entry_t));
+            if (!tmp) { free_mount_entries(entries, count); fclose(fp); return -1; }
+            entries = tmp;
+        }
+        entries[count].target  = strdup(target);
+        entries[count].options = strdup(options);
+        if (!entries[count].target || !entries[count].options) {
+            free_mount_entries(entries, count + 1);
+            fclose(fp);
+            return -1;
+        }
+        count++;
+    }
+    fclose(fp);
+    *out = entries;
+    *out_count = count;
+    return 0;
+}
+
+static bool mount_options_contain(const char *options, const char *token) {
+    char *dup = strdup(options);
+    if (!dup) return false;
+    bool found = false;
+    char *saveptr = NULL;
+    for (char *t = strtok_r(dup, ",", &saveptr); t; t = strtok_r(NULL, ",", &saveptr)) {
+        if (strcmp(t, token) == 0) { found = true; break; }
+    }
+    free(dup);
+    return found;
+}
+
+static rule_result_t check_mount_option(const char *target, const char *option) {
+    mount_entry_t *entries = NULL;
+    size_t count = 0;
+    if (load_mount_entries(&entries, &count) != 0) {
+        return check_error("unable to read /proc/mounts");
+    }
+    for (size_t i = 0; i < count; ++i) {
+        if (strcmp(entries[i].target, target) == 0) {
+            bool ok = mount_options_contain(entries[i].options, option);
+            rule_result_t r = ok
+                ? pass_evidence("%s mounted with %s", target, option)
+                : fail_evidence("%s missing %s (options=%s)", target, option, entries[i].options);
+            free_mount_entries(entries, count);
+            return r;
+        }
+    }
+    free_mount_entries(entries, count);
+    return fail_evidence("%s is not a separate mount point", target);
+}
+
+#define DEF_MOUNT(name, target, option) \
+static rule_result_t check_##name(const rule_definition_t *rule) { \
+    (void)rule; return check_mount_option(target, option); \
+}
+
+DEF_MOUNT(mount_option_dev_shm_nodev,       "/dev/shm",      "nodev")
+DEF_MOUNT(mount_option_dev_shm_noexec,      "/dev/shm",      "noexec")
+DEF_MOUNT(mount_option_dev_shm_nosuid,      "/dev/shm",      "nosuid")
+DEF_MOUNT(mount_option_home_nodev,          "/home",         "nodev")
+DEF_MOUNT(mount_option_home_nosuid,         "/home",         "nosuid")
+DEF_MOUNT(mount_option_tmp_nodev,           "/tmp",          "nodev")
+DEF_MOUNT(mount_option_tmp_noexec,          "/tmp",          "noexec")
+DEF_MOUNT(mount_option_tmp_nosuid,          "/tmp",          "nosuid")
+DEF_MOUNT(mount_option_var_nodev,           "/var",          "nodev")
+DEF_MOUNT(mount_option_var_nosuid,          "/var",          "nosuid")
+DEF_MOUNT(mount_option_var_log_nodev,       "/var/log",      "nodev")
+DEF_MOUNT(mount_option_var_log_noexec,      "/var/log",      "noexec")
+DEF_MOUNT(mount_option_var_log_nosuid,      "/var/log",      "nosuid")
+DEF_MOUNT(mount_option_var_log_audit_nodev, "/var/log/audit","nodev")
+DEF_MOUNT(mount_option_var_log_audit_noexec,"/var/log/audit","noexec")
+DEF_MOUNT(mount_option_var_log_audit_nosuid,"/var/log/audit","nosuid")
+DEF_MOUNT(mount_option_var_tmp_nodev,       "/var/tmp",      "nodev")
+DEF_MOUNT(mount_option_var_tmp_noexec,      "/var/tmp",      "noexec")
+DEF_MOUNT(mount_option_var_tmp_nosuid,      "/var/tmp",      "nosuid")
+
 ////////////// Rule table
 
 #define RULE_DEF(ID, TITLE, CATEGORY, SEVERITY, CHECK) \
@@ -1090,6 +1198,27 @@ static void initialize_rule_overrides(void) {
     patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_ip_forward", check_sysctl_net_ipv4_ip_forward);
     patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_fs_suid_dumpable", check_sysctl_fs_suid_dumpable);
     patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_kernel_randomize_va_space", check_sysctl_kernel_randomize_va_space);
+
+    /* Mount options on /dev/shm, /home, /tmp, /var, /var/log, /var/log/audit, /var/tmp */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_dev_shm_nodev", check_mount_option_dev_shm_nodev);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_dev_shm_noexec", check_mount_option_dev_shm_noexec);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_dev_shm_nosuid", check_mount_option_dev_shm_nosuid);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_home_nodev", check_mount_option_home_nodev);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_home_nosuid", check_mount_option_home_nosuid);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_tmp_nodev", check_mount_option_tmp_nodev);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_tmp_noexec", check_mount_option_tmp_noexec);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_tmp_nosuid", check_mount_option_tmp_nosuid);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_var_nodev", check_mount_option_var_nodev);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_var_nosuid", check_mount_option_var_nosuid);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_var_log_nodev", check_mount_option_var_log_nodev);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_var_log_noexec", check_mount_option_var_log_noexec);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_var_log_nosuid", check_mount_option_var_log_nosuid);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_var_log_audit_nodev", check_mount_option_var_log_audit_nodev);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_var_log_audit_noexec", check_mount_option_var_log_audit_noexec);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_var_log_audit_nosuid", check_mount_option_var_log_audit_nosuid);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_var_tmp_nodev", check_mount_option_var_tmp_nodev);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_var_tmp_noexec", check_mount_option_var_tmp_noexec);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_var_tmp_nosuid", check_mount_option_var_tmp_nosuid);
 }
 
 int main(void) {
