@@ -10,6 +10,11 @@ log_tool_execution "auditd.sh"
 
 HARDN_STATUS "info" "Configuring enhanced audit rules"
 
+# Make sure auditd is present before trying to install rules.
+if ! command -v auditctl >/dev/null 2>&1; then
+    install_package auditd || true
+fi
+
 if command -v auditctl >/dev/null 2>&1; then
     cat > /etc/audit/rules.d/99-hardn-hardening.rules <<'EOF'
 # HARDN Audit Rules (MITRE ATT&CK framework thanks to @4nt11 )

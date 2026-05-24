@@ -10,10 +10,12 @@ source "$(cd "$(dirname "$0")" && pwd)/functions.sh"
 check_root
 log_tool_execution "aide.sh"
 
-# Check if AIDE is installed
+# Make sure AIDE is installed; install it if missing.
 if ! is_package_installed aide; then
-    HARDN_STATUS "error" "AIDE package not installed. Please install aide first."
-    exit 1
+    if ! install_package aide; then
+        HARDN_STATUS "error" "AIDE package not installed and install attempt failed."
+        exit 1
+    fi
 fi
 
 # Check if AIDE configuration exists

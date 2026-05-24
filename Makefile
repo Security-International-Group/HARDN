@@ -308,6 +308,9 @@ install-core:
 	@if ls usr/share/hardn/tools/*.sh >/dev/null 2>&1; then \
 		install -m 755 usr/share/hardn/tools/*.sh "$(DESTDIR)/usr/share/hardn/tools/"; \
 	fi
+	@if ls usr/share/hardn/tools/*.sh.DANGEROUS >/dev/null 2>&1; then \
+		install -m 755 usr/share/hardn/tools/*.sh.DANGEROUS "$(DESTDIR)/usr/share/hardn/tools/"; \
+	fi
 	@mkdir -p "$(DESTDIR)/usr/share/hardn/docs"
 	@mkdir -p "$(DESTDIR)/usr/share/pixmaps"
 	@install -m 644 docs/assets/IMG_1233.jpeg "$(DESTDIR)/usr/share/hardn/docs/IMG_1233.jpeg" 2>/dev/null || true

@@ -31,9 +31,10 @@ override_dh_auto_install:
 	install -d debian/hardn/usr/share/hardn/scripts
 	install -m 755 scripts/openscap.sh debian/hardn/usr/share/hardn/scripts/ 2>/dev/null || true
 	install -m 755 scripts/print-banner.sh debian/hardn/usr/share/hardn/scripts/ 2>/dev/null || true
-	# Install tools
+	# Install tools (*.sh tools + *.sh.DANGEROUS scripts gated behind explicit flags)
 	install -d debian/hardn/usr/share/hardn/tools
 	install -m 755 usr/share/hardn/tools/*.sh debian/hardn/usr/share/hardn/tools/ 2>/dev/null || true
+	install -m 755 usr/share/hardn/tools/*.sh.DANGEROUS debian/hardn/usr/share/hardn/tools/ 2>/dev/null || true
 	# Install API
 	install -d debian/hardn/usr/share/hardn/src
 	install -m 644 src/hardn-api.py debian/hardn/usr/share/hardn/src/

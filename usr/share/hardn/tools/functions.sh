@@ -228,6 +228,26 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Print the distro ID from /etc/os-release: debian, ubuntu, or unknown.
+detect_distro_id() {
+    if [ -r /etc/os-release ]; then
+        # shellcheck disable=SC1091
+        ( . /etc/os-release && printf '%s\n' "${ID:-unknown}" )
+    else
+        printf 'unknown\n'
+    fi
+}
+
+# Print VERSION_ID from /etc/os-release (e.g. 12, 13, 22.04, 24.04).
+detect_distro_version() {
+    if [ -r /etc/os-release ]; then
+        # shellcheck disable=SC1091
+        ( . /etc/os-release && printf '%s\n' "${VERSION_ID:-unknown}" )
+    else
+        printf 'unknown\n'
+    fi
+}
+
 # Log execution completion
 log_tool_execution() {
     local tool_name="$1"
@@ -271,5 +291,7 @@ export -f apt_install_quiet
 export -f install_package
 export -f enable_service
 export -f command_exists
+export -f detect_distro_id
+export -f detect_distro_version
 export -f log_tool_execution
 export -f tool_is_configured

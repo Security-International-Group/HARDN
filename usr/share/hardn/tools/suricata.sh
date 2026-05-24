@@ -96,6 +96,8 @@ if ! is_package_installed suricata; then
         # Only attempt source build if there is no repo candidate
         if has_package_candidate suricata; then
             HARDN_STATUS "warning" "APT busy or failed; repository candidate exists, skipping source build"
+        elif [ "${HARDN_SURICATA_ALLOW_SOURCE_BUILD:-0}" != "1" ]; then
+            HARDN_STATUS "warning" "Suricata not available in repository; skipping source build (set HARDN_SURICATA_ALLOW_SOURCE_BUILD=1 to enable)"
         else
             HARDN_STATUS "warning" "Suricata not available in repository; attempting source installation..."
 
