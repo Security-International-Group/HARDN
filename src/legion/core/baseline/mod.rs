@@ -94,8 +94,13 @@ impl BaselineManager {
     pub fn new(config: &super::config::Config) -> Result<Self, Box<dyn std::error::Error>> {
         fs::create_dir_all(&config.baseline_dir)?;
 
+        let db_path = config.database_path();
+        if let Some(parent) = std::path::Path::new(&db_path).parent() {
+            fs::create_dir_all(parent)?;
+        }
+
         // Initialize database if possible
-        let database = match BaselineDatabase::new("/var/lib/hardn/baselines/legion_baselines.db") {
+        let database = match BaselineDatabase::new(&db_path) {
             Ok(db) => Some(db),
             Err(e) => {
                 eprintln!("Warning: Could not initialize baseline database: {}", e);

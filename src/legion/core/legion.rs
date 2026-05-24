@@ -1033,15 +1033,15 @@ impl Legion {
         functions::blank_line();
 
         // Show database file location
-        let db_path = "/var/lib/hardn/legion/baselines/legion_baselines.db";
+        let db_path = self.config.database_path();
         functions::info(format!("Database Location: {}", db_path));
 
         // Check if database file exists
-        if std::path::Path::new(db_path).exists() {
+        if std::path::Path::new(&db_path).exists() {
             functions::success("Database file exists");
 
             // Get file metadata
-            if let Ok(metadata) = std::fs::metadata(db_path) {
+            if let Ok(metadata) = std::fs::metadata(&db_path) {
                 let size_bytes = metadata.len();
                 let size_mb = size_bytes as f64 / (1024.0 * 1024.0);
                 functions::info(format!(
@@ -3643,15 +3643,16 @@ async fn show_database_info_standalone() -> Result<(), Box<dyn std::error::Error
     functions::blank_line();
 
     // Show database file location
-    let db_path = "/var/lib/hardn/legion/baselines/legion_baselines.db";
+    let config = Config::load()?;
+    let db_path = config.database_path();
     functions::info(format!("Database Location: {}", db_path));
 
     // Check if database file exists
-    if std::path::Path::new(db_path).exists() {
+    if std::path::Path::new(&db_path).exists() {
         functions::success("Database file exists");
 
         // Get file metadata
-        if let Ok(metadata) = std::fs::metadata(db_path) {
+        if let Ok(metadata) = std::fs::metadata(&db_path) {
             let size_bytes = metadata.len();
             let size_mb = size_bytes as f64 / (1024.0 * 1024.0);
             functions::info(format!(
@@ -3697,10 +3698,11 @@ async fn check_database_health_standalone() -> Result<(), Box<dyn std::error::Er
     functions::detail("Performing integrity checks on the baseline database");
     functions::blank_line();
 
-    let db_path = "/var/lib/hardn/legion/baselines/legion_baselines.db";
+    let config = Config::load()?;
+    let db_path = config.database_path();
 
     // Check 1: File existence
-    if !std::path::Path::new(db_path).exists() {
+    if !std::path::Path::new(&db_path).exists() {
         functions::warn("Database file does not exist - no health check possible");
         functions::info(
             "Recommendation: Run 'hardn legion --create-baseline' to initialize database",
@@ -3711,7 +3713,7 @@ async fn check_database_health_standalone() -> Result<(), Box<dyn std::error::Er
     functions::success("✓ Database file exists");
 
     // Check 2: File permissions
-    if let Ok(metadata) = std::fs::metadata(db_path) {
+    if let Ok(metadata) = std::fs::metadata(&db_path) {
         let permissions = metadata.permissions();
         let mode = permissions.mode();
         if mode & 0o077 != 0 {
@@ -3726,7 +3728,6 @@ async fn check_database_health_standalone() -> Result<(), Box<dyn std::error::Er
     }
 
     // Check 3: Database connectivity and integrity
-    let config = Config::load()?;
     let baseline_manager = BaselineManager::new(&config)?;
 
     match baseline_manager.get_database_stats() {
@@ -3761,8 +3762,8 @@ async fn check_database_health_standalone() -> Result<(), Box<dyn std::error::Er
     }
 
     // Check 4: Directory permissions
-    let db_dir = "/var/lib/hardn/legion/baselines";
-    if let Ok(metadata) = std::fs::metadata(db_dir) {
+    let db_dir = format!("{}/baselines", config.baseline_dir);
+    if let Ok(metadata) = std::fs::metadata(&db_dir) {
         let permissions = metadata.permissions();
         let mode = permissions.mode();
         if mode & 0o022 != 0 {
