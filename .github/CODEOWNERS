@@ -1,0 +1,9 @@
+# HARDN code owners.
+#
+# Lines later in this file take precedence over earlier ones. The default
+# pattern below means @OpenSource-For-Freedom is requested as a reviewer
+# for any change that doesn't match a more specific pattern below.
+#
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/customizing-your-repository/about-code-owners
+
+*       @OpenSource-For-Freedom
