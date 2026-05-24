@@ -571,15 +571,20 @@ fn main() {
         // Journald support removed; this GUI reads only HARDN log files.
         let child: Option<std::process::Child> = None;
 
-        // Also try to tail primary log files if they exist
+        // Tail every HARDN log file. We rely on `tail -F` (follow by name) so
+        // files that don't exist yet at GUI start (e.g. hardn-tools.log before
+        // any tool has run) are picked up the moment they're created.
+        let _ = std::fs::create_dir_all("/var/log/hardn");
         let mut file_children: Vec<(String, std::process::Child)> = Vec::new();
         for path in [
+            "/var/log/hardn/hardn.log",
+            "/var/log/hardn/hardn-tools.log",
             "/var/log/hardn/hardn-monitor.log",
             "/var/log/hardn/legion.log",
             "/var/log/hardn/legion-audit.log",
         ] {
-            if std::path::Path::new(path).exists() {
-                if let Ok(ch) = spawn_file_tail(path) { file_children.push((path.to_string(), ch)); }
+            if let Ok(ch) = spawn_file_tail(path) {
+                file_children.push((path.to_string(), ch));
             }
         }
 
@@ -686,7 +691,10 @@ fn main() {
             let (len, body) = if let Ok(b) = rb_c.lock() {
                 (b.len(), b.to_display_text())
             } else { (0usize, String::new()) };
-            let should_update = len != *last_len_c.borrow() && (auto_follow_tab_c.lock().map(|v| *v).unwrap_or(false) || auto_follow_split_c.lock().map(|v| *v).unwrap_or(false));
+            let any_following = auto_follow_tab_c.lock().map(|v| *v).unwrap_or(false)
+                || auto_follow_split_c.lock().map(|v| *v).unwrap_or(false)
+                || auto_follow_main_c.lock().map(|v| *v).unwrap_or(false);
+            let should_update = len != *last_len_c.borrow() && any_following;
             if should_update {
                 *last_len_c.borrow_mut() = len;
                 buf_for_ui_c.set_text(&(header + &alerts + &body));
