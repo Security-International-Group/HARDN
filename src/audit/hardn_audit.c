@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#define _DEFAULT_SOURCE
 
 /// This file is an openscap based compliance module for internal auditing 
 
@@ -1388,6 +1389,186 @@ static rule_result_t check_accounts_tmout(const rule_definition_t *rule) {
     return fail_evidence("TMOUT not set in /etc/profile or /etc/bash.bashrc");
 }
 
+/* ---------- Per-user home directory and dotfile rules ---------- */
+
+static bool user_is_interactive(const struct passwd *pw) {
+    if (!pw) return false;
+    if (pw->pw_uid < 1000) return false;
+    if (pw->pw_uid == 65534) return false;          /* nobody */
+    if (!pw->pw_shell || !*pw->pw_shell) return false;
+    return !shell_is_nologin(pw->pw_shell);
+}
+
+typedef rule_result_t (*per_user_check_fn)(const struct passwd *pw);
+
+static rule_result_t for_each_interactive_user(per_user_check_fn fn) {
+    setpwent();
+    struct passwd *pw;
+    bool any = false;
+    while ((pw = getpwent()) != NULL) {
+        if (!user_is_interactive(pw)) continue;
+        any = true;
+        rule_result_t r = fn(pw);
+        if (r.status == RULE_STATUS_FAIL || r.status == RULE_STATUS_ERROR) {
+            endpwent();
+            return r;
+        }
+    }
+    endpwent();
+    if (!any) {
+        return na_evidence("no interactive users found");
+    }
+    return pass_evidence("all interactive users compliant");
+}
+
+static rule_result_t per_user_no_dotfile(const struct passwd *pw, const char *dotfile) {
+    if (!pw->pw_dir || !*pw->pw_dir) {
+        return pass_evidence("%s has no home directory set", pw->pw_name);
+    }
+    char path[PATH_MAX];
+    int n = snprintf(path, sizeof(path), "%s/%s", pw->pw_dir, dotfile);
+    if (n < 0 || (size_t)n >= sizeof(path)) {
+        return check_error("home path too long");
+    }
+    struct stat st;
+    if (lstat(path, &st) == 0) {
+        return fail_evidence("%s exists for user %s", path, pw->pw_name);
+    }
+    return pass_evidence("%s absent", path);
+}
+
+static rule_result_t per_user_no_forward(const struct passwd *pw) {
+    return per_user_no_dotfile(pw, ".forward");
+}
+
+static rule_result_t per_user_no_netrc(const struct passwd *pw) {
+    return per_user_no_dotfile(pw, ".netrc");
+}
+
+static rule_result_t per_user_home_exists(const struct passwd *pw) {
+    if (!pw->pw_dir || !*pw->pw_dir) {
+        return fail_evidence("%s has no home directory set", pw->pw_name);
+    }
+    struct stat st;
+    if (stat(pw->pw_dir, &st) != 0) {
+        return fail_evidence("%s missing home directory %s", pw->pw_name, pw->pw_dir);
+    }
+    if (!S_ISDIR(st.st_mode)) {
+        return fail_evidence("%s home %s is not a directory", pw->pw_name, pw->pw_dir);
+    }
+    return pass_evidence("%s home %s exists", pw->pw_name, pw->pw_dir);
+}
+
+static rule_result_t per_user_home_owner(const struct passwd *pw) {
+    if (!pw->pw_dir || !*pw->pw_dir) return pass_evidence("%s no home set", pw->pw_name);
+    struct stat st;
+    if (stat(pw->pw_dir, &st) != 0) return pass_evidence("%s home missing", pw->pw_name);
+    if (st.st_uid != pw->pw_uid) {
+        return fail_evidence("%s home %s owned by uid=%u (expected %u)",
+                             pw->pw_name, pw->pw_dir, (unsigned)st.st_uid, (unsigned)pw->pw_uid);
+    }
+    return pass_evidence("%s home owner OK", pw->pw_name);
+}
+
+static rule_result_t per_user_home_group(const struct passwd *pw) {
+    if (!pw->pw_dir || !*pw->pw_dir) return pass_evidence("%s no home set", pw->pw_name);
+    struct stat st;
+    if (stat(pw->pw_dir, &st) != 0) return pass_evidence("%s home missing", pw->pw_name);
+    if (st.st_gid != pw->pw_gid) {
+        return fail_evidence("%s home %s group=%u (expected primary %u)",
+                             pw->pw_name, pw->pw_dir, (unsigned)st.st_gid, (unsigned)pw->pw_gid);
+    }
+    return pass_evidence("%s home group OK", pw->pw_name);
+}
+
+static rule_result_t per_user_home_mode(const struct passwd *pw) {
+    if (!pw->pw_dir || !*pw->pw_dir) return pass_evidence("%s no home set", pw->pw_name);
+    struct stat st;
+    if (stat(pw->pw_dir, &st) != 0) return pass_evidence("%s home missing", pw->pw_name);
+    mode_t actual = st.st_mode & 07777;
+    if ((actual & ~(mode_t)0750) != 0) {
+        return fail_evidence("%s home %s mode=%04o (expected <= 0750)",
+                             pw->pw_name, pw->pw_dir, actual);
+    }
+    return pass_evidence("%s home mode=%04o", pw->pw_name, actual);
+}
+
+static rule_result_t per_user_dotfile_owner(const struct passwd *pw) {
+    if (!pw->pw_dir || !*pw->pw_dir) return pass_evidence("%s no home", pw->pw_name);
+    char pattern[PATH_MAX];
+    int n = snprintf(pattern, sizeof(pattern), "%s", pw->pw_dir);
+    if (n < 0 || (size_t)n >= sizeof(pattern)) return check_error("home path too long");
+    /* Inspect a fixed list of common init dotfiles rather than scanning the directory. */
+    const char *dotfiles[] = {
+        ".bashrc", ".bash_profile", ".bash_login", ".profile", ".zshrc", ".cshrc",
+        ".tcshrc", ".login", ".kshrc", NULL
+    };
+    for (size_t i = 0; dotfiles[i]; ++i) {
+        char path[PATH_MAX];
+        int m = snprintf(path, sizeof(path), "%s/%s", pw->pw_dir, dotfiles[i]);
+        if (m < 0 || (size_t)m >= sizeof(path)) continue;
+        struct stat st;
+        if (lstat(path, &st) != 0) continue;
+        if (st.st_uid != pw->pw_uid) {
+            return fail_evidence("%s owned by uid=%u (expected %u)",
+                                 path, (unsigned)st.st_uid, (unsigned)pw->pw_uid);
+        }
+    }
+    return pass_evidence("%s init dotfiles owned by user", pw->pw_name);
+}
+
+static rule_result_t per_user_dotfile_group(const struct passwd *pw) {
+    if (!pw->pw_dir || !*pw->pw_dir) return pass_evidence("%s no home", pw->pw_name);
+    const char *dotfiles[] = {
+        ".bashrc", ".bash_profile", ".bash_login", ".profile", ".zshrc", ".cshrc",
+        ".tcshrc", ".login", ".kshrc", NULL
+    };
+    for (size_t i = 0; dotfiles[i]; ++i) {
+        char path[PATH_MAX];
+        int m = snprintf(path, sizeof(path), "%s/%s", pw->pw_dir, dotfiles[i]);
+        if (m < 0 || (size_t)m >= sizeof(path)) continue;
+        struct stat st;
+        if (lstat(path, &st) != 0) continue;
+        if (st.st_gid != pw->pw_gid) {
+            return fail_evidence("%s group=%u (expected primary %u)",
+                                 path, (unsigned)st.st_gid, (unsigned)pw->pw_gid);
+        }
+    }
+    return pass_evidence("%s init dotfiles group-owned by primary group", pw->pw_name);
+}
+
+static rule_result_t check_no_forward_files(const rule_definition_t *rule) {
+    (void)rule; return for_each_interactive_user(per_user_no_forward);
+}
+
+static rule_result_t check_no_netrc_files(const rule_definition_t *rule) {
+    (void)rule; return for_each_interactive_user(per_user_no_netrc);
+}
+
+static rule_result_t check_accounts_user_interactive_home_directory_exists(const rule_definition_t *rule) {
+    (void)rule; return for_each_interactive_user(per_user_home_exists);
+}
+
+static rule_result_t check_file_ownership_home_directories(const rule_definition_t *rule) {
+    (void)rule; return for_each_interactive_user(per_user_home_owner);
+}
+
+static rule_result_t check_file_groupownership_home_directories(const rule_definition_t *rule) {
+    (void)rule; return for_each_interactive_user(per_user_home_group);
+}
+
+static rule_result_t check_file_permissions_home_directories(const rule_definition_t *rule) {
+    (void)rule; return for_each_interactive_user(per_user_home_mode);
+}
+
+static rule_result_t check_accounts_user_dot_user_ownership(const rule_definition_t *rule) {
+    (void)rule; return for_each_interactive_user(per_user_dotfile_owner);
+}
+
+static rule_result_t check_accounts_user_dot_group_ownership(const rule_definition_t *rule) {
+    (void)rule; return for_each_interactive_user(per_user_dotfile_group);
+}
+
 ////////////// Rule table
 
 #define RULE_DEF(ID, TITLE, CATEGORY, SEVERITY, CHECK) \
@@ -1538,6 +1719,16 @@ static void initialize_rule_overrides(void) {
 
     /* Interactive session timeout */
     patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_tmout", check_accounts_tmout);
+
+    /* Per-user home directory and dotfile rules */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_no_forward_files", check_no_forward_files);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_no_netrc_files", check_no_netrc_files);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_user_interactive_home_directory_exists", check_accounts_user_interactive_home_directory_exists);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_ownership_home_directories", check_file_ownership_home_directories);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_groupownership_home_directories", check_file_groupownership_home_directories);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_home_directories", check_file_permissions_home_directories);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_user_dot_user_ownership", check_accounts_user_dot_user_ownership);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_user_dot_group_ownership", check_accounts_user_dot_group_ownership);
 }
 
 int main(void) {
