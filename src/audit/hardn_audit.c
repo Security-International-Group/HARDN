@@ -1089,6 +1089,305 @@ DEF_MOUNT(mount_option_var_tmp_nodev,       "/var/tmp",      "nodev")
 DEF_MOUNT(mount_option_var_tmp_noexec,      "/var/tmp",      "noexec")
 DEF_MOUNT(mount_option_var_tmp_nosuid,      "/var/tmp",      "nosuid")
 
+/* ---------- Account structural checks ---------- */
+
+static rule_result_t check_accounts_no_uid_except_zero(const rule_definition_t *rule) {
+    (void)rule;
+    FILE *fp = fopen("/etc/passwd", "r");
+    if (!fp) return check_error("unable to open /etc/passwd");
+    char line[4096];
+    char offending[128] = "";
+    while (fgets(line, sizeof(line), fp)) {
+        if (line[0] == '#' || line[0] == '\n') continue;
+        char *saveptr = NULL;
+        char *user = strtok_r(line, ":", &saveptr);
+        strtok_r(NULL, ":", &saveptr);              /* password */
+        char *uid_str = strtok_r(NULL, ":", &saveptr);
+        if (!user || !uid_str) continue;
+        long uid_val = strtol(uid_str, NULL, 10);
+        if (uid_val == 0 && strcmp(user, "root") != 0) {
+            snprintf(offending, sizeof(offending), "%s", user);
+            break;
+        }
+    }
+    fclose(fp);
+    if (offending[0]) {
+        return fail_evidence("non-root account '%s' has UID 0", offending);
+    }
+    return pass_evidence("only root has UID 0");
+}
+
+static rule_result_t check_accounts_root_gid_zero(const rule_definition_t *rule) {
+    (void)rule;
+    struct passwd *pw = getpwnam("root");
+    if (!pw) return check_error("root account not found");
+    if (pw->pw_gid == 0) {
+        return pass_evidence("root primary GID=0");
+    }
+    return fail_evidence("root primary GID=%u (expected 0)", (unsigned)pw->pw_gid);
+}
+
+static rule_result_t check_no_empty_passwords_etc_shadow(const rule_definition_t *rule) {
+    (void)rule;
+    FILE *fp = fopen("/etc/shadow", "r");
+    if (!fp) {
+        if (errno == EACCES) return check_error("/etc/shadow not readable (run as root)");
+        return check_error("unable to open /etc/shadow");
+    }
+    char line[4096];
+    char offending[128] = "";
+    while (fgets(line, sizeof(line), fp)) {
+        if (line[0] == '#' || line[0] == '\n') continue;
+        char *nl = strchr(line, '\n');
+        if (nl) *nl = '\0';
+        char *saveptr = NULL;
+        char *user = strtok_r(line, ":", &saveptr);
+        char *pass = strtok_r(NULL, ":", &saveptr);
+        if (!user || !pass) continue;
+        if (pass[0] == '\0') {
+            snprintf(offending, sizeof(offending), "%s", user);
+            break;
+        }
+    }
+    fclose(fp);
+    if (offending[0]) {
+        return fail_evidence("account '%s' has empty password", offending);
+    }
+    return pass_evidence("no accounts with empty password");
+}
+
+static rule_result_t check_gid_passwd_group_same(const rule_definition_t *rule) {
+    (void)rule;
+    FILE *fp = fopen("/etc/passwd", "r");
+    if (!fp) return check_error("unable to open /etc/passwd");
+    char line[4096];
+    char offending[256] = "";
+    while (fgets(line, sizeof(line), fp)) {
+        if (line[0] == '#' || line[0] == '\n') continue;
+        char *saveptr = NULL;
+        char *user = strtok_r(line, ":", &saveptr);
+        strtok_r(NULL, ":", &saveptr);              /* password */
+        strtok_r(NULL, ":", &saveptr);              /* uid */
+        char *gid_str = strtok_r(NULL, ":", &saveptr);
+        if (!user || !gid_str) continue;
+        long gid_val = strtol(gid_str, NULL, 10);
+        if (gid_val < 0) continue;
+        if (getgrgid((gid_t)gid_val) == NULL) {
+            snprintf(offending, sizeof(offending), "%s GID=%ld", user, gid_val);
+            break;
+        }
+    }
+    fclose(fp);
+    if (offending[0]) {
+        return fail_evidence("undefined group: %s", offending);
+    }
+    return pass_evidence("all passwd GIDs defined in /etc/group");
+}
+
+static bool shell_is_nologin(const char *shell) {
+    if (!shell || !*shell) return true;       /* empty shell counts as nologin */
+    return strstr(shell, "nologin") != NULL
+        || strstr(shell, "/false") != NULL
+        || strcmp(shell, "/sbin/nologin") == 0
+        || strcmp(shell, "/usr/sbin/nologin") == 0
+        || strcmp(shell, "/bin/false") == 0
+        || strcmp(shell, "/usr/bin/false") == 0;
+}
+
+static rule_result_t check_no_shelllogin_for_systemaccounts(const rule_definition_t *rule) {
+    (void)rule;
+    FILE *fp = fopen("/etc/passwd", "r");
+    if (!fp) return check_error("unable to open /etc/passwd");
+    char line[4096];
+    char offending[128] = "";
+    while (fgets(line, sizeof(line), fp)) {
+        if (line[0] == '#' || line[0] == '\n') continue;
+        char *nl = strchr(line, '\n');
+        if (nl) *nl = '\0';
+        char *saveptr = NULL;
+        char *user = strtok_r(line, ":", &saveptr);
+        strtok_r(NULL, ":", &saveptr);              /* password */
+        char *uid_str = strtok_r(NULL, ":", &saveptr);
+        strtok_r(NULL, ":", &saveptr);              /* gid */
+        strtok_r(NULL, ":", &saveptr);              /* gecos */
+        strtok_r(NULL, ":", &saveptr);              /* home */
+        char *shell = strtok_r(NULL, ":", &saveptr);
+        if (!user || !uid_str) continue;
+        if (strcmp(user, "root") == 0) continue;
+        if (strcmp(user, "sync") == 0 || strcmp(user, "shutdown") == 0 || strcmp(user, "halt") == 0) {
+            continue;                               /* canonical exempt accounts */
+        }
+        long uid_val = strtol(uid_str, NULL, 10);
+        if (uid_val == 0 || uid_val >= 1000) continue;
+        if (!shell_is_nologin(shell)) {
+            snprintf(offending, sizeof(offending), "%s (uid=%ld, shell=%s)",
+                     user, uid_val, shell ? shell : "");
+            break;
+        }
+    }
+    fclose(fp);
+    if (offending[0]) {
+        return fail_evidence("system account has login shell: %s", offending);
+    }
+    return pass_evidence("no system accounts run a login shell");
+}
+
+/* ---------- /etc/login.defs numeric reader ---------- */
+
+static int read_login_defs_long(const char *key, long *out) {
+    char **lines = NULL;
+    size_t count = 0;
+    if (load_file_lines("/etc/login.defs", &lines, &count) != 0) return -1;
+    bool found = false;
+    long value = 0;
+    size_t klen = strlen(key);
+    for (size_t i = 0; i < count; ++i) {
+        char *p = lines[i];
+        while (isspace((unsigned char)*p)) p++;
+        if (*p == '#' || *p == '\0') continue;
+        if (strncasecmp(p, key, klen) == 0
+            && (p[klen] == ' ' || p[klen] == '\t')) {
+            char *val = p + klen;
+            while (*val && isspace((unsigned char)*val)) val++;
+            char *endp = NULL;
+            errno = 0;
+            long parsed = strtol(val, &endp, 0);   /* base 0: accepts octal "027" */
+            if (endp != val && errno == 0) {
+                value = parsed;
+                found = true;
+                break;                              /* first matching wins */
+            }
+        }
+    }
+    free_lines(lines, count);
+    if (!found) return -1;
+    *out = value;
+    return 0;
+}
+
+static rule_result_t check_accounts_maximum_age_login_defs(const rule_definition_t *rule) {
+    (void)rule;
+    long v;
+    if (read_login_defs_long("PASS_MAX_DAYS", &v) != 0) {
+        return check_error("PASS_MAX_DAYS not set in /etc/login.defs");
+    }
+    if (v > 0 && v <= 365) return pass_evidence("PASS_MAX_DAYS=%ld", v);
+    return fail_evidence("PASS_MAX_DAYS=%ld (expected 1-365)", v);
+}
+
+static rule_result_t check_accounts_minimum_age_login_defs(const rule_definition_t *rule) {
+    (void)rule;
+    long v;
+    if (read_login_defs_long("PASS_MIN_DAYS", &v) != 0) {
+        return check_error("PASS_MIN_DAYS not set in /etc/login.defs");
+    }
+    if (v >= 1) return pass_evidence("PASS_MIN_DAYS=%ld", v);
+    return fail_evidence("PASS_MIN_DAYS=%ld (expected >=1)", v);
+}
+
+static rule_result_t check_accounts_password_warn_age_login_defs(const rule_definition_t *rule) {
+    (void)rule;
+    long v;
+    if (read_login_defs_long("PASS_WARN_AGE", &v) != 0) {
+        return check_error("PASS_WARN_AGE not set in /etc/login.defs");
+    }
+    if (v >= 7) return pass_evidence("PASS_WARN_AGE=%ld", v);
+    return fail_evidence("PASS_WARN_AGE=%ld (expected >=7)", v);
+}
+
+static rule_result_t check_accounts_umask_etc_login_defs(const rule_definition_t *rule) {
+    (void)rule;
+    long v;
+    if (read_login_defs_long("UMASK", &v) != 0) {
+        return check_error("UMASK not set in /etc/login.defs");
+    }
+    /* Accept 027 (octal) or 077 — anything <= 027 group/other strictness. */
+    if (v == 027 || v == 077) return pass_evidence("UMASK=%03lo", v);
+    return fail_evidence("UMASK=%03lo (expected 027 or 077)", v);
+}
+
+/* ---------- umask in shell rc files ---------- */
+
+static rule_result_t check_umask_in_shell_file(const char *path) {
+    char **lines = NULL;
+    size_t count = 0;
+    if (load_file_lines(path, &lines, &count) != 0) {
+        return na_evidence("%s does not exist", path);
+    }
+    long strictest = -1;
+    for (size_t i = 0; i < count; ++i) {
+        char *p = lines[i];
+        while (isspace((unsigned char)*p)) p++;
+        if (*p == '#' || *p == '\0') continue;
+        if (strncmp(p, "umask", 5) != 0 || !(p[5] == ' ' || p[5] == '\t')) continue;
+        char *val = p + 5;
+        while (*val && isspace((unsigned char)*val)) val++;
+        char *endp = NULL;
+        errno = 0;
+        long parsed = strtol(val, &endp, 8);        /* umask is octal */
+        if (endp != val && errno == 0) {
+            if (strictest < 0 || parsed > strictest) strictest = parsed;
+        }
+    }
+    free_lines(lines, count);
+    if (strictest < 0) {
+        return fail_evidence("no umask directive found in %s", path);
+    }
+    if (strictest == 027 || strictest == 077) {
+        return pass_evidence("%s umask=%03lo", path, strictest);
+    }
+    return fail_evidence("%s umask=%03lo (expected 027 or 077)", path, strictest);
+}
+
+static rule_result_t check_accounts_umask_etc_bashrc(const rule_definition_t *rule) {
+    (void)rule;
+    return check_umask_in_shell_file("/etc/bash.bashrc");
+}
+
+static rule_result_t check_accounts_umask_etc_profile(const rule_definition_t *rule) {
+    (void)rule;
+    return check_umask_in_shell_file("/etc/profile");
+}
+
+/* ---------- TMOUT in /etc/profile or /etc/profile.d ---------- */
+
+static rule_result_t check_accounts_tmout(const rule_definition_t *rule) {
+    (void)rule;
+    const char *paths[] = { "/etc/profile", "/etc/bash.bashrc", NULL };
+    long tmout = -1;
+    char source[128] = "";
+    for (size_t i = 0; paths[i]; ++i) {
+        char **lines = NULL;
+        size_t count = 0;
+        if (load_file_lines(paths[i], &lines, &count) != 0) continue;
+        for (size_t j = 0; j < count; ++j) {
+            const char *needle = strstr(lines[j], "TMOUT");
+            if (!needle) continue;
+            const char *eq = strchr(needle, '=');
+            if (!eq) continue;
+            const char *val = eq + 1;
+            while (*val && isspace((unsigned char)*val)) val++;
+            char *endp = NULL;
+            errno = 0;
+            long parsed = strtol(val, &endp, 10);
+            if (endp != val && errno == 0 && parsed > 0) {
+                tmout = parsed;
+                snprintf(source, sizeof(source), "%s", paths[i]);
+                break;
+            }
+        }
+        free_lines(lines, count);
+        if (tmout > 0) break;
+    }
+    if (tmout > 0 && tmout <= 900) {
+        return pass_evidence("TMOUT=%ld in %s", tmout, source);
+    }
+    if (tmout > 900) {
+        return fail_evidence("TMOUT=%ld in %s (expected 1-900)", tmout, source);
+    }
+    return fail_evidence("TMOUT not set in /etc/profile or /etc/bash.bashrc");
+}
+
 ////////////// Rule table
 
 #define RULE_DEF(ID, TITLE, CATEGORY, SEVERITY, CHECK) \
@@ -1219,6 +1518,26 @@ static void initialize_rule_overrides(void) {
     patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_var_tmp_nodev", check_mount_option_var_tmp_nodev);
     patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_var_tmp_noexec", check_mount_option_var_tmp_noexec);
     patch_rule_check("xccdf_org.ssgproject.content_rule_mount_option_var_tmp_nosuid", check_mount_option_var_tmp_nosuid);
+
+    /* Account structural rules */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_no_uid_except_zero", check_accounts_no_uid_except_zero);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_root_gid_zero", check_accounts_root_gid_zero);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_no_empty_passwords_etc_shadow", check_no_empty_passwords_etc_shadow);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_gid_passwd_group_same", check_gid_passwd_group_same);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_no_shelllogin_for_systemaccounts", check_no_shelllogin_for_systemaccounts);
+
+    /* login.defs age and umask defaults */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_maximum_age_login_defs", check_accounts_maximum_age_login_defs);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_minimum_age_login_defs", check_accounts_minimum_age_login_defs);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_password_warn_age_login_defs", check_accounts_password_warn_age_login_defs);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_umask_etc_login_defs", check_accounts_umask_etc_login_defs);
+
+    /* umask in shell rc files */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_umask_etc_bashrc", check_accounts_umask_etc_bashrc);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_umask_etc_profile", check_accounts_umask_etc_profile);
+
+    /* Interactive session timeout */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_tmout", check_accounts_tmout);
 }
 
 int main(void) {
