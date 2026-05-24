@@ -28,6 +28,67 @@ fn log_message(level: &str, message: &str) {
     eprintln!("{}", log_entry.trim());
 }
 
+/// Build the JSON-lines payload for one alert. Separated from the file I/O
+/// so it can be unit-tested without touching /var/log/hardn.
+fn build_alert_payload(ts: &str, severity: &str, source: &str, message: &str, key: &str) -> String {
+    serde_json::json!({
+        "ts": ts,
+        "severity": severity,
+        "source": source,
+        "message": message,
+        "key": key,
+    })
+    .to_string()
+}
+
+/// Append one JSON-lines alert record to /var/log/hardn/alerts.jsonl.
+///
+/// The GUI tails this file and renders alerts in a dedicated panel. `key`
+/// lets the GUI deduplicate repeats of the same condition (e.g. a service
+/// being down across many poll cycles produces one alert row, updated in
+/// place rather than appended).
+fn emit_alert(severity: &str, source: &str, message: &str, key: &str) {
+    let _ = fs::create_dir_all("/var/log/hardn");
+    let ts = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let payload = build_alert_payload(&ts, severity, source, message, key);
+    if let Ok(mut f) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/var/log/hardn/alerts.jsonl")
+    {
+        let _ = writeln!(f, "{}", payload);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn alert_payload_is_valid_json_with_expected_fields() {
+        let s = build_alert_payload(
+            "2026-05-24T00:00:00Z",
+            "warning",
+            "hardn-monitor",
+            "hardn.service is stopped",
+            "svc-down:hardn.service",
+        );
+        let v: serde_json::Value = serde_json::from_str(&s).expect("must parse");
+        assert_eq!(v["ts"], "2026-05-24T00:00:00Z");
+        assert_eq!(v["severity"], "warning");
+        assert_eq!(v["source"], "hardn-monitor");
+        assert_eq!(v["message"], "hardn.service is stopped");
+        assert_eq!(v["key"], "svc-down:hardn.service");
+    }
+
+    #[test]
+    fn alert_payload_escapes_quotes_and_newlines() {
+        let s = build_alert_payload("t", "info", "src", "line with \"quote\" and\nnewline", "k");
+        let v: serde_json::Value = serde_json::from_str(&s).expect("must parse");
+        assert_eq!(v["message"], "line with \"quote\" and\nnewline");
+    }
+}
+
 fn check_service_status(service: &str) -> Result<String, std::io::Error> {
     let output = Command::new("systemctl")
         .args(["is-active", "--quiet", service])
@@ -45,6 +106,12 @@ fn restart_service(service: &str) -> Result<(), std::io::Error> {
         "WARN",
         &format!("{} is stopped - attempting restart", service),
     );
+    emit_alert(
+        "warning",
+        "hardn-monitor",
+        &format!("{} is stopped — attempting automatic restart", service),
+        &format!("svc-down:{}", service),
+    );
 
     let output = Command::new("systemctl")
         .args(["restart", service])
@@ -52,8 +119,20 @@ fn restart_service(service: &str) -> Result<(), std::io::Error> {
 
     if output.status.success() {
         log_message("INFO", &format!("Successfully restarted {}", service));
+        emit_alert(
+            "info",
+            "hardn-monitor",
+            &format!("{} restarted successfully", service),
+            &format!("svc-restored:{}", service),
+        );
     } else {
         log_message("ERROR", &format!("Failed to restart {}", service));
+        emit_alert(
+            "error",
+            "hardn-monitor",
+            &format!("Failed to restart {} (manual intervention required)", service),
+            &format!("svc-restart-failed:{}", service),
+        );
     }
 
     Ok(())
