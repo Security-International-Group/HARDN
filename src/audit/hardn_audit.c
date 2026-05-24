@@ -923,6 +923,64 @@ DEF_FILE_MODE(file_permissions_cron_hourly,    "/etc/cron.hourly",   0700)
 DEF_FILE_MODE(file_permissions_cron_monthly,   "/etc/cron.monthly",  0700)
 DEF_FILE_MODE(file_permissions_cron_weekly,    "/etc/cron.weekly",   0700)
 
+/* ---------- sysctl helpers ---------- */
+
+static rule_result_t check_sysctl_equals(const char *key_slash, long expected) {
+    char path[256];
+    snprintf(path, sizeof(path), "/proc/sys/%s", key_slash);
+    FILE *fp = fopen(path, "r");
+    if (!fp) {
+        if (errno == ENOENT) {
+            return na_evidence("%s not present", path);
+        }
+        return check_error("unable to read sysctl");
+    }
+    long val = 0;
+    int parsed = fscanf(fp, "%ld", &val);
+    fclose(fp);
+    if (parsed != 1) {
+        return check_error("unable to parse sysctl value");
+    }
+    if (val == expected) {
+        return pass_evidence("%s=%ld", key_slash, val);
+    }
+    return fail_evidence("%s=%ld (expected %ld)", key_slash, val, expected);
+}
+
+#define DEF_SYSCTL(name, key_slash, expected) \
+static rule_result_t check_##name(const rule_definition_t *rule) { \
+    (void)rule; return check_sysctl_equals(key_slash, (long)(expected)); \
+}
+
+DEF_SYSCTL(sysctl_net_ipv6_conf_all_accept_ra,            "net/ipv6/conf/all/accept_ra",            0)
+DEF_SYSCTL(sysctl_net_ipv6_conf_all_accept_redirects,     "net/ipv6/conf/all/accept_redirects",     0)
+DEF_SYSCTL(sysctl_net_ipv6_conf_all_accept_source_route,  "net/ipv6/conf/all/accept_source_route",  0)
+DEF_SYSCTL(sysctl_net_ipv6_conf_all_forwarding,           "net/ipv6/conf/all/forwarding",           0)
+DEF_SYSCTL(sysctl_net_ipv6_conf_default_accept_ra,        "net/ipv6/conf/default/accept_ra",        0)
+DEF_SYSCTL(sysctl_net_ipv6_conf_default_accept_redirects, "net/ipv6/conf/default/accept_redirects", 0)
+DEF_SYSCTL(sysctl_net_ipv6_conf_default_accept_source_route,
+           "net/ipv6/conf/default/accept_source_route", 0)
+DEF_SYSCTL(sysctl_net_ipv4_conf_all_accept_redirects,     "net/ipv4/conf/all/accept_redirects",     0)
+DEF_SYSCTL(sysctl_net_ipv4_conf_all_accept_source_route,  "net/ipv4/conf/all/accept_source_route",  0)
+DEF_SYSCTL(sysctl_net_ipv4_conf_all_log_martians,         "net/ipv4/conf/all/log_martians",         1)
+DEF_SYSCTL(sysctl_net_ipv4_conf_all_rp_filter,            "net/ipv4/conf/all/rp_filter",            1)
+DEF_SYSCTL(sysctl_net_ipv4_conf_all_secure_redirects,     "net/ipv4/conf/all/secure_redirects",     0)
+DEF_SYSCTL(sysctl_net_ipv4_conf_all_send_redirects,       "net/ipv4/conf/all/send_redirects",       0)
+DEF_SYSCTL(sysctl_net_ipv4_conf_default_accept_redirects, "net/ipv4/conf/default/accept_redirects", 0)
+DEF_SYSCTL(sysctl_net_ipv4_conf_default_accept_source_route,
+           "net/ipv4/conf/default/accept_source_route", 0)
+DEF_SYSCTL(sysctl_net_ipv4_conf_default_log_martians,     "net/ipv4/conf/default/log_martians",     1)
+DEF_SYSCTL(sysctl_net_ipv4_conf_default_rp_filter,        "net/ipv4/conf/default/rp_filter",        1)
+DEF_SYSCTL(sysctl_net_ipv4_conf_default_secure_redirects, "net/ipv4/conf/default/secure_redirects", 0)
+DEF_SYSCTL(sysctl_net_ipv4_conf_default_send_redirects,   "net/ipv4/conf/default/send_redirects",   0)
+DEF_SYSCTL(sysctl_net_ipv4_icmp_echo_ignore_broadcasts,   "net/ipv4/icmp_echo_ignore_broadcasts",   1)
+DEF_SYSCTL(sysctl_net_ipv4_icmp_ignore_bogus_error_responses,
+           "net/ipv4/icmp_ignore_bogus_error_responses", 1)
+DEF_SYSCTL(sysctl_net_ipv4_tcp_syncookies,                "net/ipv4/tcp_syncookies",                1)
+DEF_SYSCTL(sysctl_net_ipv4_ip_forward,                    "net/ipv4/ip_forward",                    0)
+DEF_SYSCTL(sysctl_fs_suid_dumpable,                       "fs/suid_dumpable",                       0)
+DEF_SYSCTL(sysctl_kernel_randomize_va_space,              "kernel/randomize_va_space",              2)
+
 ////////////// Rule table
 
 #define RULE_DEF(ID, TITLE, CATEGORY, SEVERITY, CHECK) \
@@ -1005,6 +1063,33 @@ static void initialize_rule_overrides(void) {
     patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_cron_hourly", check_file_permissions_cron_hourly);
     patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_cron_monthly", check_file_permissions_cron_monthly);
     patch_rule_check("xccdf_org.ssgproject.content_rule_file_permissions_cron_weekly", check_file_permissions_cron_weekly);
+
+    /* sysctl: IPv4/IPv6 network hardening + kernel ASLR + suid dumpable */
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv6_conf_all_accept_ra", check_sysctl_net_ipv6_conf_all_accept_ra);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv6_conf_all_accept_redirects", check_sysctl_net_ipv6_conf_all_accept_redirects);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv6_conf_all_accept_source_route", check_sysctl_net_ipv6_conf_all_accept_source_route);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv6_conf_all_forwarding", check_sysctl_net_ipv6_conf_all_forwarding);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv6_conf_default_accept_ra", check_sysctl_net_ipv6_conf_default_accept_ra);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv6_conf_default_accept_redirects", check_sysctl_net_ipv6_conf_default_accept_redirects);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv6_conf_default_accept_source_route", check_sysctl_net_ipv6_conf_default_accept_source_route);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_accept_redirects", check_sysctl_net_ipv4_conf_all_accept_redirects);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_accept_source_route", check_sysctl_net_ipv4_conf_all_accept_source_route);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_log_martians", check_sysctl_net_ipv4_conf_all_log_martians);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_rp_filter", check_sysctl_net_ipv4_conf_all_rp_filter);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_secure_redirects", check_sysctl_net_ipv4_conf_all_secure_redirects);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_send_redirects", check_sysctl_net_ipv4_conf_all_send_redirects);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_accept_redirects", check_sysctl_net_ipv4_conf_default_accept_redirects);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_accept_source_route", check_sysctl_net_ipv4_conf_default_accept_source_route);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_log_martians", check_sysctl_net_ipv4_conf_default_log_martians);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_rp_filter", check_sysctl_net_ipv4_conf_default_rp_filter);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_secure_redirects", check_sysctl_net_ipv4_conf_default_secure_redirects);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_send_redirects", check_sysctl_net_ipv4_conf_default_send_redirects);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_icmp_echo_ignore_broadcasts", check_sysctl_net_ipv4_icmp_echo_ignore_broadcasts);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_icmp_ignore_bogus_error_responses", check_sysctl_net_ipv4_icmp_ignore_bogus_error_responses);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_tcp_syncookies", check_sysctl_net_ipv4_tcp_syncookies);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_ip_forward", check_sysctl_net_ipv4_ip_forward);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_fs_suid_dumpable", check_sysctl_fs_suid_dumpable);
+    patch_rule_check("xccdf_org.ssgproject.content_rule_sysctl_kernel_randomize_va_space", check_sysctl_kernel_randomize_va_space);
 }
 
 int main(void) {
