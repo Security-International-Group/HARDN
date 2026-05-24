@@ -284,6 +284,10 @@ install-core:
 	@if [ -f "usr/share/hardn/scripts/hardn-service-manager.sh" ]; then \
 		install -m 755 usr/share/hardn/scripts/hardn-service-manager.sh "$(DESTDIR)$(LIBDIR)/hardn-service-manager"; \
 	fi
+	@install -d "$(DESTDIR)/usr/share/hardn/scripts"
+	@if [ -f "usr/share/hardn/scripts/hardn-uninstall.sh" ]; then \
+		install -m 755 usr/share/hardn/scripts/hardn-uninstall.sh "$(DESTDIR)/usr/share/hardn/scripts/hardn-uninstall.sh"; \
+	fi
 
 	@ln -sf "$(LIBDIR)/hardn"           "$(DESTDIR)$(BINDIR)/hardn"
 	@ln -sf "$(LIBDIR)/hardn-monitor"   "$(DESTDIR)$(BINDIR)/hardn-monitor"

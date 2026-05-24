@@ -1764,6 +1764,43 @@ fn enable_selinux() -> i32 {
     }
 }
 
+/// Run the HARDN uninstall script. Any args after `--uninstall` are passed
+/// through to the script (e.g. `hardn --uninstall --yes --restore-ssh`).
+/// The script itself prompts for confirmation when run interactively
+/// without `--yes`, so we don't add a second prompt here.
+fn uninstall_hardn(args: &[String]) -> i32 {
+    let candidates = [
+        "/usr/share/hardn/scripts/hardn-uninstall.sh",
+        "/usr/local/share/hardn/scripts/hardn-uninstall.sh",
+    ];
+    let script = match candidates.iter().find(|p| Path::new(p).exists()) {
+        Some(p) => *p,
+        None => {
+            log_message(
+                LogLevel::Error,
+                "hardn-uninstall.sh not found in /usr/share/hardn/scripts",
+            );
+            return EXIT_FAILURE;
+        }
+    };
+
+    let pass_through: Vec<&str> = args.iter().skip(2).map(|s| s.as_str()).collect();
+    log_message(
+        LogLevel::Warning,
+        &format!("Invoking {} {}", script, pass_through.join(" ")),
+    );
+
+    let mut cmd = Command::new("bash");
+    cmd.arg(script).args(&pass_through);
+    match cmd.status() {
+        Ok(status) => status.code().unwrap_or(EXIT_FAILURE),
+        Err(e) => {
+            log_message(LogLevel::Error, &format!("Failed to run uninstall: {}", e));
+            EXIT_FAILURE
+        }
+    }
+}
+
 /// Disable sandbox mode - restore network configuration
 /// IMPORTANT: This function is ONLY called directly via --sandbox-off flag
 /// It is NEVER included in batch operations (--run-all-modules, --run-all-tools, --run-everything)
@@ -3033,6 +3070,7 @@ AVAILABLE COMMANDS:
   run-tool <name>          Run specific security tool
   legion <options>         LEGION security monitoring
   --security-report        Generate comprehensive security assessment
+  --uninstall [flags]      Uninstall HARDN (see --uninstall --help for flags)
 
 ═══════════════════════════════════════════════════════════════════════════════
 "#,
@@ -3175,6 +3213,8 @@ fn main() {
 
     let exit_code = if args.len() >= 2 && (args[1] == "legion" || args[1] == "--legion") {
         run_legion(&args)
+    } else if args.len() >= 2 && (args[1] == "--uninstall" || args[1] == "uninstall") {
+        uninstall_hardn(&args)
     } else {
         match args.len() {
             1 => {
