@@ -50,9 +50,38 @@ The monitoring system aggregates log data from multiple sources:
 ### IOC and Error Monitoring
 
 - **Indicators of Compromise (IOC)**: Automated detection and processing of known threat indicators
-- **Error Monitoring**: Comprehensive error tracking across all HARDN components
+- **Error Monitoring**: Per-component error tracking across all HARDN services
 - **Update Monitoring**: Tracking of security updates and system changes
 - **Collective Feed Source**: Unified log aggregation for centralized monitoring
+
+## Alert Channel and Fanout
+
+Every alert producer (`hardn-monitor`, the LEGION daemon, `hardn --sentry-check`)
+writes one JSON-lines record into `/var/log/hardn/alerts.jsonl`:
+
+```json
+{"ts":"2026-05-25T18:30:42Z","severity":"critical","source":"sentry/sudoers","message":"sudoers added watched file: /etc/sudoers.d/badop","key":"sentry:sudoers:added:/etc/sudoers.d/badop"}
+```
+
+Fields are fixed: `ts`, `severity`, `source`, `message`, `key`. Severities
+used today: `info`, `warning`, `error`, `critical`.
+
+`alerts.jsonl` is the canonical record. After writing, each alert is
+forwarded to two optional sinks gated by a shared TTL dedupe so a noisy
+condition cannot pager-spam:
+
+| Sink | Mechanism | Enable by |
+|---|---|---|
+| journald | `systemd-cat -t HARDN-ALERT -p <prio>` (fallback `logger(1)`) | Always on |
+| Webhook | `curl -fsS -m 10 -X POST` with the JSON payload as body | Set `HARDN_ALERT_WEBHOOK_URL=https://...` |
+
+Dedupe state lives at `/var/lib/hardn/alerts/seen.json`, keyed by the
+`key` field. Default TTL is 21600 s (6 hours); override via
+`HARDN_ALERT_DEDUPE_TTL_SEC`. The journald tag and dedupe path can be
+overridden with `HARDN_ALERT_JOURNALD_TAG` and `HARDN_ALERT_DEDUPE_PATH`.
+
+The GUI tails `alerts.jsonl` and collapses repeats of the same `key` into
+a single updating row.
 
 ## Usage
 
@@ -122,7 +151,7 @@ sudo hardn legion
 - **Threat Detection**: Automated threat intelligence processing
 - **Anomaly Detection**: Network and system behavior analysis
 - **Incident Response**: Automated response capabilities
-- **Audit Logging**: Comprehensive security event logging
+- **Audit Logging**: Auditd rules cover MITRE ATT&CK T1003/T1041/T1053/T1059/T1105/T1547/T1562, paired across `arch=b64` and `arch=b32` so 32-bit compat syscalls cannot evade. Audit buffer size and disk-full action scale to free space on `/var/log`.
 
 ## Troubleshooting
 

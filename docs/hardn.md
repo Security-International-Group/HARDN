@@ -1,199 +1,255 @@
 ![HARDN Logo](assets/IMG_1233.jpeg)
-# HARDN - Linux Security Hardening & Extended Detection Response Package
+# HARDN, Linux Security Hardening and Extended Detection Response
 
 ## Overview
 
-HARDN is an open-source security hardening and threat detection toolkit for Debian-based Linux. It automates the security configuration process, runs continuous background monitoring via the LEGION daemon, and gives operators a single place to manage it all.
+HARDN is an open-source security hardening and threat-detection toolkit for
+Debian-based Linux. It automates the security-configuration process, runs
+continuous background monitoring through the LEGION daemon, and gives
+operators a single place to manage it all.
 
 ## What HARDN Is
 
-HARDN is a complete security framework that includes:
+### Core security components
 
-### Core Security Components
-- **Automated Hardening**: STIG-compliant security configuration and hardening scripts
-- **Threat Detection**: Anomaly detection and threat intelligence integration
-- **Service Management**: Systemd service orchestration and monitoring
-- **API Integration**: RESTful API for remote monitoring and management
-- **Interactive Interface**: Service manager with real-time monitoring
+- **Automated hardening**: STIG- and CIS-leaning hardening scripts that lock
+  down SSH, auditd, sysctl, kernel modules, AppArmor, fail2ban, and friends.
+- **Environment-aware**: auto-detects bare-metal, cloud (AWS, GCP, Azure,
+  DigitalOcean, Oracle, Alibaba), VMs, and containers, then adjusts which
+  steps it applies. Containers skip module ops; cloud VMs keep IPv6 SLAAC
+  intact; container hosts keep `unprivileged_userns_clone` at the kernel
+  default so rootless workloads keep working.
+- **SENTRY drift detection**: a sha256 baseline diff of high-value files
+  (`/etc/passwd`, `/etc/shadow`, `/etc/sudoers`, `authorized_keys`,
+  `/etc/cron.*`, `/etc/systemd/system/*`). Drift fires one alert per
+  added, removed, or changed entry.
+- **Alert fanout**: alerts land in `/var/log/hardn/alerts.jsonl` and also
+  fan out to journald (always) and an optional webhook (set
+  `HARDN_ALERT_WEBHOOK_URL`). Shared TTL dedupe stops repeat alerts from
+  paging the on-call.
+- **Cron safety**: every scheduled job runs under `flock` so a manual run
+  and the daemon cannot collide. Suricata rule updates stage, validate,
+  then atomically swap into place.
+- **Service management**: systemd service orchestration and monitoring.
+- **REST API**: optional HTTP endpoint for remote monitoring and management.
+- **Interactive interface**: service manager with live status display.
 
-### Security Monitoring Features
-- **LEGION Daemon**: Continuous security monitoring with syslog, journal, and network analysis
-- **IOC Processing**: Indicators of Compromise detection and automated response
-- **Service Health Monitoring**: Real-time status monitoring of all security services
-- **Log Aggregation**: Centralized logging and alerting across all components
+### Monitoring features
 
-### Management Tools
-- **Interactive Service Manager**: Menu-driven interface for complete system control
-- **Command-Line Interface**: Full CLI for automation and scripting
-- **REST API**: Programmatic access for integration with other security tools
-- **Package Management**: Automated installation and configuration
+- **LEGION daemon**: continuous monitoring across syslog, the systemd
+  journal, network metrics, and process telemetry.
+- **IOC processing**: indicator-of-compromise detection and automated
+  response.
+- **Service health monitoring**: live status of every HARDN service.
+- **Log aggregation**: alerts.jsonl plus journald is the single channel.
+
+### Management tools
+
+- **Interactive service manager**: menu-driven control of services,
+  modules, tools, and reports.
+- **Command-line interface**: full CLI for automation and scripting.
+- **REST API**: programmatic access for integration with other security
+  tools.
+- **GTK4 GUI**: first-run welcome wizard, tab tooltips, tool inventory,
+  read-only log and alert view.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    HARDN Security Framework                 │
-├─────────────────────────────────────────────────────────────┤
-│   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│   │ Service     │  │ LEGION      │  │ REST API    │         │
-│   │ Manager     │  │ Daemon      │  │ Service     │         │
-│   │ (Interactive│  │ (Monitoring)│  │ (Remote     │         │
-│   │ Interface)  │  │             │  │ Access)     │         │
-│   └─────────────┘  └─────────────┘  └─────────────┘         │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │ Hardening   │  │ Threat      │  │ System      │          │
-│  │ Scripts     │  │ Intelligence│  │ Monitoring  │          │
-│  │             │  │             │  │             │          │
-│  └─────────────┘  └─────────────┘  └─────────────┘          │
-├─────────────────────────────────────────────────────────────┤
-│                 Debian Linux System                         │
-└─────────────────────────────────────────────────────────────┘
++-----------------------------------------------------------+
+|                    HARDN Security Framework               |
++-----------------------------------------------------------+
+|   +-------------+  +-------------+  +-------------+       |
+|   | Service     |  | LEGION      |  | REST API    |       |
+|   | Manager     |  | Daemon      |  | Service     |       |
+|   | (Interactive|  | (Monitoring)|  | (Remote     |       |
+|   | Interface)  |  |             |  | Access)     |       |
+|   +-------------+  +-------------+  +-------------+       |
++-----------------------------------------------------------+
+|  +-------------+  +-------------+  +-------------+        |
+|  | Hardening   |  | Threat      |  | System      |        |
+|  | Scripts     |  | Intelligence|  | Monitoring  |        |
+|  +-------------+  +-------------+  +-------------+        |
++-----------------------------------------------------------+
+|                 Debian Linux System                       |
++-----------------------------------------------------------+
 ```
 
 ## Key Features
 
-### Security Hardening
-- **STIG Compliance**: Automated implementation of Security Technical Implementation Guides
-- **CIS Benchmarks**: Center for Internet Security benchmark compliance
-- **Package Hardening**: Secure configuration of installed packages
-- **Network Security**: Firewall configuration and network hardening
+### Hardening
 
-### Threat Detection & Response
-- **Real-time Monitoring**: Continuous system and network monitoring
-- **Anomaly Detection**: Behavioral analysis against a stored baseline
-- **IOC Integration**: Automated processing of threat intelligence feeds
-- **Incident Response**: Automated response to detected threats
+- STIG-leaning baseline (PAM, login.defs, sudoers, journald, rsyslog,
+  modprobe, sysctl).
+- Network hardening: UFW + iptables `HARDN-LOCKDOWN` chain. Cloud
+  metadata IPs are allowlisted on cloud hosts.
+- Filesystem and mount hygiene: `fs.protected_*`, world-writable audit,
+  file-permission table for `/etc/{passwd,shadow,sudoers,*}`.
 
-### Service Management
-- **Systemd Integration**: Complete service lifecycle management
-- **Dependency Management**: Automatic handling of service dependencies
-- **Health Monitoring**: Continuous service health checks
-- **Failover Support**: Automatic service restart and recovery
+### Detection and response
 
-### User Interface
-- **Interactive Console**: Menu-driven interface for system administration
-- **Web Dashboard**: Browser-based monitoring and management (planned)
-- **API Access**: RESTful API for programmatic control
-- **CLI Tools**: Command-line utilities for automation
+- Live monitoring of system and network state.
+- Behavioural analysis against a stored baseline (SQLite-backed under
+  `/var/lib/hardn/legion/`).
+- Indicator-of-compromise processing from threat-intelligence feeds.
+- Automated response gated behind `response_enabled`.
+- SENTRY daily file-drift diff, fed into the unified alert channel.
+
+### Service management
+
+- Full lifecycle through `systemctl` and `hardn-service-manager`.
+- Service dependencies handled by `systemd`.
+- Service health monitoring through `hardn-monitor.service`.
+- Service restart and recovery via `Restart=on-failure` in unit files.
+
+### Interfaces
+
+- Interactive console (`hardn-service-manager`).
+- GTK4 desktop GUI (`hardn-gui`).
+- REST API on port 8000 (key-based bearer auth).
+- CLI subcommands (`hardn --help`).
 
 ## Quick Start
 
-### Installation & Setup
+### Install and launch
 
 ```bash
-# Clone the repository
 git clone https://github.com/Security-International-Group/HARDN.git
 cd HARDN
-
-# Build and install
 sudo make build
 sudo make hardn
-
-# Launch the interactive service manager
-sudo make hardn
 ```
 
-### Basic Usage
+`make build` produces the Debian package; `make hardn` installs it and
+opens the service manager and the GUI.
+
+### Basic usage
 
 ```bash
-# Check system status
-sudo hardn --status
-
-# Run security assessment
-sudo hardn --security-report
-
-# View help
-hardn --help
+sudo hardn --help              # full command list
+sudo hardn --status            # current service state
+sudo hardn --security-report   # one-shot security assessment
+sudo hardn --sentry-check      # SENTRY file-drift diff
+sudo hardn run-module hardening
+sudo hardn run-tool   fail2ban
+sudo hardn legion --create-baseline
 ```
+
+`run-module` and `run-tool` return exit 127 when the script does not exist
+(POSIX "command not found"), so cron and CI can tell a typo from a real
+failure.
 
 ## Components
 
-### HARDN Service Manager
-The primary interface for managing all HARDN components. Provides:
-- Interactive menus for service control
-- Real-time monitoring dashboards
+### HARDN service manager
+
+Primary interactive interface. Provides:
+
+- Menu-driven service control
+- Live status dashboards
 - Log viewing and analysis
 - Configuration management
 
-### LEGION Security Daemon
-Continuous monitoring daemon that provides:
+### LEGION security daemon
+
+Continuous monitoring with:
+
 - System log analysis
 - Network traffic monitoring
-- Threat intelligence processing
+- Threat-intelligence processing
 - Automated incident response
+- SENTRY file-baseline drift detection
 
-### HARDN API Service
-RESTful API for remote management and monitoring:
+### HARDN API service
+
+REST API for remote management and monitoring:
+
 - System health metrics
-- Service status monitoring
-- Remote command execution
+- Service status
+- Remote command execution (limited command set)
 - Integration with external tools
 
-### Hardening Modules
-Automated security configuration modules:
-- System hardening scripts
-- Package security configuration
-- Network security setup
-- Compliance automation
+### Hardening modules
+
+Automated security-configuration modules under
+`/usr/share/hardn/modules/`. The orchestrator delegates auditd-specific
+rule loading to `/usr/share/hardn/tools/auditd.sh` so there is one writer
+per rule file.
 
 ## Security Benefits
 
-### Proactive Protection
-- **Continuous Monitoring**: 24/7 system surveillance
-- **Threat Intelligence**: Integration with threat feeds
-- **Automated Response**: Automated action on detected threats
-- **Compliance Automation**: Maintain security standards automatically
+### Proactive protection
 
-### Operational Security
-- **Access Control**: SSH key-based authentication
-- **Audit Logging**: Security event logging
-- **Integrity Monitoring**: File and system integrity checks
-- **Network Security**: Firewall and intrusion detection
+- 24/7 system surveillance through `hardn.service`.
+- Threat-intelligence feed integration.
+- Automated response to detected threats.
+- SENTRY baseline-diff catches persistence-vector tampering between
+  scheduled scans.
 
-### Incident Response
-- **Real-time Alerts**: Immediate notification of security events
-- **Automated Mitigation**: Self-healing security responses
-- **Forensic Analysis**: Detailed incident investigation tools
-- **Recovery Automation**: Streamlined system recovery procedures
+### Operational security
 
-## Community & Support
+- SSH key-based authentication (with lockout-safety fallback on cloud).
+- Audit logging tuned for the available `/var/log` space.
+- File and system integrity checks (AIDE).
+- UFW + iptables firewall posture with cloud-metadata carve-outs.
 
-### Who We Are
-HARDN is developed by the **Security International Group (SIG)**, a community-driven organization focused on advancing cybersecurity through open-source solutions.
+### Incident response
 
-### Getting Help
-- **Documentation**: Guides and API references
-- **Issue Tracking**: GitHub issues for bug reports and feature requests
-- **Contributing**: Open contribution guidelines for community involvement
+- Alerts in `/var/log/hardn/alerts.jsonl` plus journald plus optional
+  webhook.
+- Per-key TTL dedupe so a noisy condition does not spam.
+- Self-healing service restart through systemd.
+- Forensic data preserved in `/var/lib/hardn/`.
+
+## Community and Support
+
+### Who we are
+
+HARDN is developed by **Security International Group (SIG)**, a
+community-driven organisation focused on advancing cybersecurity through
+open-source solutions.
+
+### Getting help
+
+- Documentation: guides and API references under `docs/`.
+- Issue tracking: GitHub issues for bug reports and feature requests.
+- Contributing: open contribution guidelines under `CONTRIBUTING.md`.
 
 ### Resources
-- [HARDN Service Manager Documentation](hardn-service-manager.md)
-- [LEGION Daemon Documentation](legion-daemon.md)
-- [HARDN API Documentation](hardn-api.md)
-- [HARDN Monitor Documentation](hardn-monitor.md)
 
-## License & Contributing
+- [Service manager guide](hardn-service-manager.md)
+- [LEGION daemon](legion-daemon.md)
+- [HARDN API](hardn-api.md)
+- [Monitor and alert fanout](hardn-monitor.md)
+- [Audit engine internals](hardn-audit.md)
+- [Security posture summary](security-posture.md)
 
-HARDN is released under the MIT License, encouraging community contributions and commercial use. We welcome contributions from security researchers, developers, and system administrators to help improve and expand the platform.
+## License and Contributing
+
+HARDN is released under the MIT License, encouraging community
+contributions and commercial use. Contributions from security researchers,
+developers, and system administrators are welcome.
 
 ## Roadmap
 
-### Current Version
+### Current
+
 - Interactive service manager
 - LEGION security daemon
 - REST API service
 - Automated hardening scripts
-- Real-time monitoring
+- SENTRY file-baseline drift detection
+- Alert fanout to journald + webhook
+- Environment-aware hardening for cloud, VM, and container surfaces
 
-### Upcoming Features
+### Upcoming
+
 - Web-based dashboard
 - Expanded threat intelligence
 - Multi-system management
-- Remote alerting
+- Additional SENTRY watch sources (AIDE results, package lists)
 
 ---
 
 **Website**: [Security International Group](https://securityinternationalgroup.org)
 **Repository**: [GitHub](https://github.com/Security-International-Group/HARDN)
-**Documentation**: [Full Documentation](https://docs.hardn.security)

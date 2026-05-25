@@ -3,11 +3,20 @@
 
 ## Purpose
 
-The HARDN API provides comprehensive overwatch and health monitoring for endpoints in distributed environments. It integrates with HARDN security services and the Legion monitoring daemon to enable real-time system monitoring, diagnostics, and management.
+The HARDN API provides overwatch and health monitoring for endpoints in
+distributed environments. It integrates with HARDN security services and
+the Legion monitoring daemon for live system monitoring, diagnostics, and
+management.
 
-> **SSH port 22 is closed on HARDN-hardened systems.** Remote access is restricted to two channels only:
-> - **Grafana dashboard** — port **9002** (visual monitoring)
-> - **HARDN API** — port **8000** (programmatic access, documented here)
+> HARDN's hardening run keeps `ssh.service` running by default and applies
+> a key-only sshd config. To fully close SSH, set `HARDN_DISABLE_SSH=1`
+> before running the hardening module; HARDN will stop, disable, and mask
+> the service. Two optional remote channels are commonly exposed alongside
+> or in place of SSH:
+>
+> - **HARDN API** on port **8000** (programmatic access, documented here)
+> - **Grafana** dashboard on port **3000** (visual monitoring;
+>   override with `HARDN_GRAFANA_PORT`)
 
 This server does not replace the **Grafana** endpoint system, but provides an open-source option for those interested in holistic monitoring within their own toolsets.
 
@@ -25,9 +34,13 @@ cat ~/.ssh/id_ed25519.pub | sudo tee -a /etc/hardn/authorized_keys
 sudo systemctl restart hardn-api.service
 ```
 
-Each line in `/etc/hardn/authorized_keys` holds one SSH public key (same format as `~/.ssh/authorized_keys`). Only keys listed here will be accepted — format-valid but unlisted keys are rejected with HTTP 401.
+Each line in `/etc/hardn/authorized_keys` holds one SSH public key (same
+format as `~/.ssh/authorized_keys`). Only keys listed here will be
+accepted; format-valid but unlisted keys are rejected with HTTP 401.
 
-All API requests (except `GET /health`) require an SSH public key as a Bearer token. The key must be pre-registered in `/etc/hardn/authorized_keys` on the server — see **Setup** above.
+All API requests (except `GET /health`) require an SSH public key as a
+Bearer token. The key must be pre-registered in
+`/etc/hardn/authorized_keys` on the server (see **Setup** above).
 
 ### Generate a Key Pair (client side)
 
@@ -50,33 +63,35 @@ sudo systemctl restart hardn-api.service
 
 ### Transferring a Key from a Remote Machine
 
-Because SSH (port 22) is closed, you cannot use `ssh-copy-id`. You have two practical options depending on whether you still have **temporary SSH access** during initial setup or not:
+If you have set `HARDN_DISABLE_SSH=1` you cannot use `ssh-copy-id`. You
+have two practical options depending on whether you still have
+**temporary SSH access** during initial setup or not:
 
-**Option A — During initial setup (SSH still open)**
+**Option A: during initial setup (SSH still open)**
 
 Use this window before SSH is locked out to push the public key:
 
 ```bash
-# On the CLIENT — copy the public key to the server's tmp directory
+# On the CLIENT, copy the public key to the server's tmp directory
 scp ~/.ssh/hardn_api_key.pub admin@your-server:/tmp/new_key.pub
 
-# On the SERVER — append and secure
+# On the SERVER, append and secure
 sudo tee -a /etc/hardn/authorized_keys < /tmp/new_key.pub
 sudo rm /tmp/new_key.pub
 sudo systemctl restart hardn-api.service
 ```
 
-**Option B — Out-of-band (no SSH, air-gapped or already locked down)**
+**Option B: out-of-band (no SSH, air-gapped or already locked down)**
 
 Physically or via an admin console, paste the public key directly:
 
 ```bash
-# On the client — print the public key to copy it:
+# On the client, print the public key to copy it:
 cat ~/.ssh/hardn_api_key.pub
 # Output looks like:
 # ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... hardn-api
 
-# On the SERVER — paste it in as root:
+# On the SERVER, paste it in as root:
 sudo bash -c 'echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... hardn-api" >> /etc/hardn/authorized_keys'
 sudo systemctl restart hardn-api.service
 ```
@@ -88,7 +103,7 @@ sudo systemctl restart hardn-api.service
 | Only the **public key** (`.pub`) is ever transferred | The private key never leaves the client machine |
 | Use `>>` (append), not `>` (overwrite) | Prevents wiping existing authorized keys |
 | `chmod 600 /etc/hardn/authorized_keys` | Prevents other users from reading or modifying the keystore |
-| Revoke access by removing that key's line from the file | Instant revocation — the private key becomes useless |
+| Revoke access by removing that key's line from the file | Instant revocation. The private key becomes useless |
 
 **Revoking a client key:**
 
@@ -114,7 +129,9 @@ curl -H "Authorization: Bearer $SSH_KEY" http://your-server:8000/overwatch/syste
 curl -H "Authorization: Bearer $SSH_KEY" http://your-server:8000/overwatch/services
 ```
 
-> Use `your-server:8000` — **not** `localhost:8000` unless you are on the machine itself. SSH (port 22) is closed; this API is your remote access path.
+> Use `your-server:8000`, **not** `localhost:8000`, unless you are on the
+> machine itself. This API is your remote-access path whenever SSH is
+> disabled or restricted.
 
 ## API Endpoints
 
@@ -138,7 +155,9 @@ curl -H "Authorization: Bearer $SSH_KEY" http://your-server:8000/overwatch/servi
 
 ## Usage for Remote Servers
 
-> Reminder: SSH (port 22) is closed. Use port **8000** for API access and port **9002** for Grafana.
+> Reminder: when SSH is disabled (`HARDN_DISABLE_SSH=1`), use port
+> **8000** for API access and port **3000** for Grafana
+> (override with `HARDN_GRAFANA_PORT`).
 
 ### Monitoring from a Remote Machine
 

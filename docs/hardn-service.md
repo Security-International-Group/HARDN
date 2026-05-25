@@ -5,8 +5,8 @@
 graph TD
 
 %% ===================== ENTRYPOINTS =====================
-U["User / Admin (Remote)"] -->|"HARDN API — port 8000 (SSH key auth)"| API[HARDN API Service]
-U -->|"Grafana Dashboard — port 9002"| GRF[Grafana]
+U["User / Admin (Remote)"] -->|"HARDN API: port 8000, SSH key auth"| API[HARDN API Service]
+U -->|"Grafana Dashboard: port 3000"| GRF[Grafana]
 CLI[hardn CLI] -->|manual execution| CORE[HARDN Core Service]
 API -->|remote trigger| CORE
 GRF -->|datasource queries| API
@@ -103,7 +103,7 @@ class SYSMD,JRN,CRN,NETM os
 | Component | Role |
 |------------|------|
 | **HARDN Core Service** | Executes system-wide security hardening modules and configuration routines. |
-| **HARDN API Service** | REST API on port **8000** — the only programmatic remote access channel. SSH key auth required. Port 22 (SSH) is closed. |
+| **HARDN API Service** | REST API on port **8000**. SSH key auth required. The default sshd is hardened (key-only) but left running; set `HARDN_DISABLE_SSH=1` to fully close it, in which case the API is the primary remote channel. |
 | **Hardening Modules** | Individual system-hardening scripts enforcing STIG/CIS standards. |
 | **Security Tools Layer** | Integrates AppArmor, Fail2Ban, UFW, Auditd, ClamAV, rkhunter, and AIDE under one orchestration layer. |
 | **Audit & Compliance Engine** | Ensures continuous monitoring and reporting against NIST/STIG benchmarks. |

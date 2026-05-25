@@ -129,9 +129,35 @@ class SYSMD,JRN,NETM,CRON os
 | **Analysis Layer** | Pure-Rust heuristic, signature, and ML-based anomaly detection engines operate on immutable telemetry batches. |
 | **Response Layer** | Applies deterministic policy rules (alert, isolate, block) with cooldown and audit guarantees. |
 | **Baseline Manager** | Handles baseline comparison and update cycles; persists all states in **SQLite** under `/var/lib/hardn/legion/legion.db`. |
-| **SQLite Baseline DB** | The heuristics backbone — stores normalized telemetry, learned baselines, historical risk scores, and ML training data. |
+| **SQLite Baseline DB** | The heuristics backbone. Stores normalized telemetry, learned baselines, historical risk scores, and ML training data. |
 | **Machine Learning Engine** | Uses SQLite data to train, cluster, and evaluate anomaly patterns in real-time. |
 | **Logging & Alerts** | Unified journal logging and structured alert output via `systemd-journal`. |
 | **Integration Services** | systemd, journald, cron, and NetworkManager used for lifecycle, logging, and telemetry scheduling. |
+
+### SENTRY: file-baseline drift detector
+
+`legion::modules::sentry` is a separate, lightweight detector that runs
+once-per-day from the cron orchestrator (`hardn-sentry` at 02:15) and
+also on demand via `sudo hardn --sentry-check`. It is intentionally
+decoupled from the main LEGION pipeline so it cannot crash the daemon and
+can be executed by an operator at any time (for example, after a
+legitimate sysadmin change to capture a fresh baseline).
+
+Watch list (sha256 each present file, diff vs
+`/var/lib/hardn/sentry/baseline.json`):
+
+| Category | Severity on drift | Paths |
+|---|---|---|
+| `authorized_keys` | `critical` | `/root/.ssh/authorized_keys{,2}`, `/home/*/.ssh/authorized_keys{,2}` |
+| `sudoers` | `critical` | `/etc/sudoers`, `/etc/sudoers.d/*` |
+| `passwd_shadow` | `warning` | `/etc/passwd`, `/etc/shadow`, `/etc/gshadow`, `/etc/group` |
+| `cron` | `warning` | `/etc/crontab`, `/etc/cron.{d,daily,hourly,weekly,monthly}/*`, `/var/spool/cron/{,crontabs/}*` |
+| `systemd` | `warning` | `/etc/systemd/system/*.{service,timer,socket,path}`, `/etc/systemd/system/*.d/*.conf` |
+
+First run silently writes the baseline; later runs alert per added,
+removed, or changed entry and refresh the baseline atomically via
+`rename(2)`. Alerts land in `/var/log/hardn/alerts.jsonl` and fan out
+through the shared journald + webhook sinks (see
+[hardn-monitor.md](hardn-monitor.md)).
 
 ---
