@@ -8,6 +8,16 @@ source "$(cd "$(dirname "$0")" && pwd)/functions.sh"
 check_root
 log_tool_execution "auditd.sh"
 
+hardn_detect_env
+
+# Auditd inside an unprivileged container can't write rules — the audit
+# subsystem is hosted by the host kernel. Skip cleanly rather than spam the
+# log with "Operation not permitted" failures.
+if hardn_in_container; then
+    HARDN_STATUS "info" "Container detected ($HARDN_ENV_VIRT); skipping auditd rule load (audit subsystem owned by host)"
+    exit 0
+fi
+
 HARDN_STATUS "info" "Configuring enhanced audit rules"
 
 # Make sure auditd is present before trying to install rules.
@@ -15,17 +25,71 @@ if ! command -v auditctl >/dev/null 2>&1; then
     install_package auditd || true
 fi
 
-if command -v auditctl >/dev/null 2>&1; then
-    cat > /etc/audit/rules.d/99-hardn-hardening.rules <<'EOF'
+if ! command -v auditctl >/dev/null 2>&1; then
+    HARDN_STATUS "error" "auditctl not available; cannot apply audit rules"
+    exit 1
+fi
+
+# ----------------------------------------------------------------------------
+# Disk-full safety policy
+#
+# Auditd will halt the kernel by default when its log volume fills, which on
+# small cloud root disks (≤20 GB) and aggressive rules turns "low free space"
+# into a hard panic. Pick a buffer size and disk policy that match the
+# available space on /var/log so we degrade to syslog rather than crash.
+# ----------------------------------------------------------------------------
+AUDITD_CONF_DROPIN="/etc/audit/auditd.conf.d/99-hardn.conf"
+mkdir -p "$(dirname "$AUDITD_CONF_DROPIN")" 2>/dev/null || true
+
+# Free MB on /var/log (the auditd log volume); default to a conservative
+# value if df isn't reading what we expect.
+free_mb=$(df -Pm /var/log 2>/dev/null | awk 'NR==2 {print $4+0}')
+free_mb=${free_mb:-0}
+
+if [ "$free_mb" -lt 4096 ]; then
+    # Small disk (<4 GB free): conservative buffer, SYSLOG on full so we keep
+    # the box reachable rather than halt.
+    buffer=4096
+    disk_full_action="SYSLOG"
+    space_left_mb=256
+    admin_space_left_mb=64
+elif [ "$free_mb" -lt 16384 ]; then
+    buffer=8192
+    disk_full_action="SYSLOG"
+    space_left_mb=512
+    admin_space_left_mb=128
+else
+    buffer=16384
+    disk_full_action="SYSLOG"
+    space_left_mb=1024
+    admin_space_left_mb=256
+fi
+
+cat > "$AUDITD_CONF_DROPIN" <<EOF
+# HARDN auditd disk-safety policy
+# Generated based on free space on /var/log (${free_mb} MB)
+max_log_file = 50
+num_logs = 5
+max_log_file_action = ROTATE
+space_left = ${space_left_mb}
+space_left_action = SYSLOG
+admin_space_left = ${admin_space_left_mb}
+admin_space_left_action = SUSPEND
+disk_full_action = ${disk_full_action}
+disk_error_action = SYSLOG
+EOF
+HARDN_STATUS "info" "Auditd disk policy written to $AUDITD_CONF_DROPIN (buffer=${buffer}, disk_full=${disk_full_action})"
+
+cat > /etc/audit/rules.d/99-hardn-hardening.rules <<EOF
 # HARDN Audit Rules (MITRE ATT&CK framework thanks to @4nt11 )
 
 # Flush existing rules first
 -D
 
-# Buffer Size
--b 8192
+# Buffer Size — sized for available log volume
+-b ${buffer}
 
-# Failure Mode
+# Failure Mode (1 = printk warning, not panic)
 -f 1
 
 # T1059 – Command execution (focus on interactive users)
@@ -91,21 +155,18 @@ if command -v auditctl >/dev/null 2>&1; then
 # Make configuration immutable
 -e 2
 EOF
-    
-    # Reload audit rules
-    if augenrules --load >/dev/null 2>&1; then
-        HARDN_STATUS "pass" "Audit rules loaded via augenrules"
-    else
-        HARDN_STATUS "info" "augenrules reported an issue, but rules may still be applied"
-    fi
 
-    if systemctl restart auditd >/dev/null 2>&1; then
-        HARDN_STATUS "pass" "auditd restarted with new rules"
-    else
-        HARDN_STATUS "warning" "Could not restart auditd service"
-    fi
+# Reload audit rules
+if augenrules --load >/dev/null 2>&1; then
+    HARDN_STATUS "pass" "Audit rules loaded via augenrules"
 else
-    HARDN_STATUS "error" "auditctl not available; cannot apply audit rules"
+    HARDN_STATUS "info" "augenrules reported an issue, but rules may still be applied"
+fi
+
+if systemctl restart auditd >/dev/null 2>&1; then
+    HARDN_STATUS "pass" "auditd restarted with new rules"
+else
+    HARDN_STATUS "warning" "Could not restart auditd service"
 fi
 
 HARDN_STATUS "info" "Auditd rules applied. Review /etc/audit/rules.d/99-hardn-hardening.rules for details."

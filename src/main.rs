@@ -3070,6 +3070,7 @@ AVAILABLE COMMANDS:
   run-tool <name>          Run specific security tool
   legion <options>         LEGION security monitoring
   --security-report        Generate comprehensive security assessment
+  --enable-selinux         ⚠️  Enable SELinux (DISABLES AppArmor, REQUIRES REBOOT)
   --uninstall [flags]      Uninstall HARDN (see --uninstall --help for flags)
 
 ═══════════════════════════════════════════════════════════════════════════════

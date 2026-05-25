@@ -17,6 +17,31 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+# Environment detection — populates HARDN_ENV_* and provides
+# hardn_in_{container,vm,cloud,baremetal}. Sourced early so every step below
+# can branch on the surface it's running on.
+ENV_DETECT_SCRIPT="/usr/share/hardn/tools/env-detect.sh"
+if [ ! -r "$ENV_DETECT_SCRIPT" ] && [ -r "$(dirname "${BASH_SOURCE[0]}")/../tools/env-detect.sh" ]; then
+    ENV_DETECT_SCRIPT="$(dirname "${BASH_SOURCE[0]}")/../tools/env-detect.sh"
+fi
+if [ -r "$ENV_DETECT_SCRIPT" ]; then
+    # shellcheck disable=SC1090
+    . "$ENV_DETECT_SCRIPT"
+    hardn_detect_env
+else
+    # Fall back to "baremetal" assumptions; everything stays as before.
+    HARDN_ENV_VIRT="unknown"
+    HARDN_ENV_CLOUD="none"
+    HARDN_ENV_IS_CONTAINER=0
+    HARDN_ENV_IS_VM=0
+    HARDN_ENV_IS_BAREMETAL=1
+    HARDN_ENV_IS_CLOUD=0
+    hardn_in_container() { return 1; }
+    hardn_in_vm()        { return 1; }
+    hardn_in_cloud()     { return 1; }
+    hardn_cloud_metadata_cidrs() { :; }
+fi
+
 echo "HARDN Enhanced Security Hardening Module"
 echo "========================================="
 echo ""
@@ -101,6 +126,35 @@ apt_install() {
     fi
 }
 
+# Returns 0 (true) if at least one local user that can SSH has a non-empty
+# authorized_keys file containing what looks like an OpenSSH public key.
+# Used to gate `PasswordAuthentication no` so we never lock cloud users out
+# before their keys are in place.
+hardn_has_login_keys() {
+    local ak
+
+    # Root first.
+    for ak in /root/.ssh/authorized_keys; do
+        if [ -s "$ak" ] && grep -qE '^(ssh-|ecdsa-|sk-)' "$ak" 2>/dev/null; then
+            return 0
+        fi
+    done
+
+    # Then each non-system user with an interactive shell.
+    while IFS=: read -r user _ uid _ _ home shell; do
+        if [ "${uid:-0}" -ge 1000 ] && [ "${uid:-0}" -lt 65534 ] \
+           && [ -n "$home" ] && [ -d "$home" ] \
+           && [ "$shell" != "/usr/sbin/nologin" ] && [ "$shell" != "/bin/false" ]; then
+            if [ -s "$home/.ssh/authorized_keys" ] \
+               && grep -qE '^(ssh-|ecdsa-|sk-)' "$home/.ssh/authorized_keys" 2>/dev/null; then
+                return 0
+            fi
+        fi
+    done < /etc/passwd
+
+    return 1
+}
+
 hardn_services_lockdown() {
     local api_port="${HARDN_API_PORT:-8000}"
     local grafana_port="${HARDN_GRAFANA_PORT:-3000}"
@@ -172,6 +226,21 @@ hardn_services_lockdown() {
         ufw allow out 443/tcp comment 'HTTPS' >>"$ufw_log" 2>&1
         ufw allow out 123/udp comment 'NTP'  >>"$ufw_log" 2>&1
 
+        # Cloud instance metadata service — link-local 169.254.169.254 is the
+        # source of IAM creds, instance identity, and cloud-init on every
+        # major cloud. Block it and the box loses its identity. Always allow
+        # it when we detect a cloud environment; on bare-metal/local-VM the
+        # address is unrouted so the rule is harmless.
+        if hardn_in_cloud; then
+            local mcidr
+            while IFS= read -r mcidr; do
+                [ -n "$mcidr" ] || continue
+                ufw allow out to "$mcidr" comment 'Cloud metadata service' >>"$ufw_log" 2>&1 || true
+                ufw allow in from "$mcidr" comment 'Cloud metadata response' >>"$ufw_log" 2>&1 || true
+            done < <(hardn_cloud_metadata_cidrs)
+            HARDN_STATUS INFO "UFW: cloud metadata allowlist applied for $HARDN_ENV_CLOUD"
+        fi
+
         if [ -n "${HARDN_PERMITTED_OUTBOUND_CIDRS:-}" ]; then
             for cidr in ${HARDN_PERMITTED_OUTBOUND_CIDRS:-}; do
                 ufw allow out to "$cidr" comment 'Approved outbound range' >>"$ufw_log" 2>&1
@@ -235,6 +304,21 @@ hardn_services_lockdown() {
             $ipt_cmd -A HARDN-LOCKDOWN -p tcp --dport "$grafana_port" -j ACCEPT
         fi
 
+        # Cloud metadata service early-accept — must come BEFORE the chain
+        # falls through to DROP. Even though conntrack ESTABLISHED,RELATED
+        # already covers the response path, an explicit ACCEPT here
+        # guarantees the address can never be cut off by a future addition.
+        if hardn_in_cloud; then
+            local mcidr_v4
+            while IFS= read -r mcidr_v4; do
+                [ -n "$mcidr_v4" ] || continue
+                case "$mcidr_v4" in
+                    *:*) continue ;;  # skip IPv6 entries
+                esac
+                $ipt_cmd -A HARDN-LOCKDOWN -s "$mcidr_v4" -j ACCEPT
+            done < <(hardn_cloud_metadata_cidrs)
+        fi
+
         $ipt_cmd -A HARDN-LOCKDOWN -p icmp --icmp-type echo-request -j DROP
         $ipt_cmd -A HARDN-LOCKDOWN -j DROP
 
@@ -289,6 +373,11 @@ hardn_services_lockdown() {
 if [[ $EUID -ne 0 ]]; then
     log_error "This script must be run as root"
    exit 1
+fi
+
+# Surface the detected environment so the operator can see what we'll skip.
+if command -v hardn_env_summary >/dev/null 2>&1; then
+    HARDN_STATUS INFO "Detected environment: $(hardn_env_summary)"
 fi
 
 # Enforce network perimeter before additional hardening
@@ -479,16 +568,38 @@ HARDN_STATUS "Applying comprehensive SSH hardening..."
 if [ -f /etc/ssh/sshd_config ]; then
     # Backup original config
     cp /etc/ssh/sshd_config "/etc/ssh/sshd_config.bak.$(date +%Y%m%d)"
-    
+
+    # ---- SSH lockout safety ----
+    # Disabling password auth before keys are in place will permanently
+    # lock out cloud users. Decide based on:
+    #   HARDN_FORCE_DISABLE_PASSWORD_AUTH=1 → force "no" no matter what
+    #   HARDN_KEEP_PASSWORD_AUTH=1          → force "yes" no matter what
+    #   otherwise: "no" iff keys exist OR running on bare-metal where
+    #              there's no remote-lockout risk
+    SSH_PASSWORD_AUTH="no"
+    if [ "${HARDN_KEEP_PASSWORD_AUTH:-0}" = "1" ]; then
+        SSH_PASSWORD_AUTH="yes"
+        log_warning "HARDN_KEEP_PASSWORD_AUTH=1; keeping PasswordAuthentication=yes"
+    elif [ "${HARDN_FORCE_DISABLE_PASSWORD_AUTH:-0}" = "1" ]; then
+        SSH_PASSWORD_AUTH="no"
+    elif ! hardn_has_login_keys; then
+        if [ "$HARDN_ENV_IS_CLOUD" = "1" ] || [ "$HARDN_ENV_IS_VM" = "1" ]; then
+            SSH_PASSWORD_AUTH="yes"
+            log_warning "No SSH public keys found on $HARDN_ENV_CLOUD/${HARDN_ENV_VIRT}; keeping PasswordAuthentication=yes to avoid lockout."
+            log_warning "Add a key to ~/.ssh/authorized_keys and re-run with HARDN_FORCE_DISABLE_PASSWORD_AUTH=1 to disable password auth."
+        else
+            log_warning "No SSH public keys found; disabling password auth (bare-metal). Add a key now if you log in remotely."
+        fi
+    fi
+
     # Apply hardened SSH configuration
-    cat > /etc/ssh/sshd_config.d/99-hardn-hardened.conf <<'EOF'
+    cat > /etc/ssh/sshd_config.d/99-hardn-hardened.conf <<EOF
 # HARDN Enhanced SSH Configuration
-# Generated: $(date)
 
 # Authentication
 PermitRootLogin no
 PubkeyAuthentication yes
-PasswordAuthentication no
+PasswordAuthentication ${SSH_PASSWORD_AUTH}
 PermitEmptyPasswords no
 ChallengeResponseAuthentication no
 MaxAuthTries 3
@@ -691,18 +802,30 @@ write_sysctl_setting() {
                     log_warning "Sysctl $key=$value unsupported; applied fallback $fallback_value"
                     apply_value="$fallback_value"
                 else
-                    log_warning "Unable to apply sysctl $key with fallback ${fallback_value}; skipping persistent entry"
+                    if hardn_in_container; then
+                        HARDN_STATUS INFO "Sysctl $key unwritable in container ($HARDN_ENV_VIRT); host owns this parameter"
+                    else
+                        log_warning "Unable to apply sysctl $key with fallback ${fallback_value}; skipping persistent entry"
+                    fi
                     return
                 fi
             else
-                log_warning "Unable to apply sysctl $key=$value; skipping persistent entry"
+                if hardn_in_container; then
+                    HARDN_STATUS INFO "Sysctl $key unwritable in container ($HARDN_ENV_VIRT); host owns this parameter"
+                else
+                    log_warning "Unable to apply sysctl $key=$value; skipping persistent entry"
+                fi
                 return
             fi
         fi
 
         printf '%s = %s\n' "$key" "$apply_value" >> "$target"
     else
-        log_warning "Skipping unsupported sysctl: $key"
+        if hardn_in_container; then
+            HARDN_STATUS INFO "Sysctl $key not exposed in this container; skipping"
+        else
+            log_warning "Skipping unsupported sysctl: $key"
+        fi
     fi
 }
 
@@ -1418,17 +1541,24 @@ fi
 # =========================================
 # FIREWIRE
 # ==========================================
-HARDN_STATUS "Disabling FireWire (IEEE 1394) support..."
-if [ -f /etc/modprobe.d/blacklist-firewire.conf ]; then
-    echo "blacklist firewire-core" >> /etc/modprobe.d/blacklist-firewire.conf
+# Skip in containers — kernel module state is shared with the host, so a
+# guest blacklisting firewire-core can't actually affect anything and the
+# `modprobe -r` + initramfs rebuild will just spam errors.
+if hardn_in_container; then
+    HARDN_STATUS "Skipping FireWire blacklist (container: $HARDN_ENV_VIRT)"
 else
-    echo "blacklist firewire-core" > /etc/modprobe.d/blacklist-firewire.conf
-fi  
-modprobe -r firewire-core 2>/dev/null || true
+    HARDN_STATUS "Disabling FireWire (IEEE 1394) support..."
+    if [ -f /etc/modprobe.d/blacklist-firewire.conf ]; then
+        echo "blacklist firewire-core" >> /etc/modprobe.d/blacklist-firewire.conf
+    else
+        echo "blacklist firewire-core" > /etc/modprobe.d/blacklist-firewire.conf
+    fi
+    modprobe -r firewire-core 2>/dev/null || true
 
-HARDN_STATUS "Firewire support disabled"
-if command -v update-initramfs >/dev/null 2>&1; then
-    update-initramfs -u 2>/dev/null || log_warning "update-initramfs failed after FireWire blacklist"
+    HARDN_STATUS "Firewire support disabled"
+    if command -v update-initramfs >/dev/null 2>&1; then
+        update-initramfs -u 2>/dev/null || log_warning "update-initramfs failed after FireWire blacklist"
+    fi
 fi
 
 # ==========================================

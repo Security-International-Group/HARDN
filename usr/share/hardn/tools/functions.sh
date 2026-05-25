@@ -20,6 +20,29 @@ HARDN_LOG_FILE="/var/log/hardn/hardn-tools.log"
 HARDN_JOURNAL_UNIT="hardn.service"
 HARDN_JOURNAL_TAG="HARDN"
 
+# Drop color codes when not writing to an interactive TTY. Without this, the
+# escape sequences end up in /var/log/hardn/*.log and the GUI's tail view
+# renders them as garbage.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    HARDN_USE_COLOR=1
+else
+    HARDN_USE_COLOR=0
+    RED=''
+    GREEN=''
+    YELLOW=''
+    BLUE=''
+    CYAN=''
+    WHITE=''
+    NC=''
+fi
+
+# Source env-detect helpers when available so any tool sourcing functions.sh
+# gets HARDN_ENV_* and the hardn_in_{container,vm,cloud} predicates.
+if [ -r "$(dirname "${BASH_SOURCE[0]}")/env-detect.sh" ]; then
+    # shellcheck disable=SC1091
+    . "$(dirname "${BASH_SOURCE[0]}")/env-detect.sh"
+fi
+
 # Map HARDN levels to syslog priorities
 hardn_journal_priority() {
     local level="$1"
