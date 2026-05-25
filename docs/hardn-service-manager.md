@@ -49,7 +49,7 @@ The service manager addresses the complexity of managing multiple security compo
 
 ### System Operations
 - Security report generation
-- Comprehensive status display
+- Full status display
 - Sandbox mode (network isolation)
 - Run everything (modules + tools combined)
 
@@ -125,7 +125,7 @@ Main Menu
 - Sandbox mode warns about network disconnection
 
 ### Error Handling
-- Comprehensive error checking
+- Per-action error checking
 - Graceful failure handling
 - User-friendly error messages
 

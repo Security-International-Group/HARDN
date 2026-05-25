@@ -12,39 +12,112 @@
 	<a href="https://hits.sh/github.com/Security-International-Group/HARDN/"><img src="https://hits.sh/github.com/Security-International-Group/HARDN.svg?style=flat&label=views" alt="views" /></a>
 </p>
 
-HARDN is a security hardening toolkit for Debian-based Linux systems. It automates the lockdown of a fresh install and keeps watching for threats through an integrated set of services.
+HARDN is a security hardening toolkit for Debian-based Linux. It automates the
+lockdown of a fresh install, watches for drift on the files attackers care
+about, and keeps the operator in the loop through a GUI, an API, and a service
+manager.
 
-**Demo Version** - This is a demonstration version showcasing core security features of HARDN-XDR, the full enterprise solution. For production use and advanced features, please contact Security International Group.
-## Key Features
+**Demo Version.** This release demonstrates the core features of HARDN-XDR. For
+production use and advanced features, contact Security International Group.
 
-- **Automated System Hardening** - One-command security configuration
-- **Continuous Security Monitoring** - Real-time threat detection via LEGION daemon
-- **Security Scanner Integration** - Built-in AIDE and custom security tools
-- **Network Protection** - Fail2ban integration with advanced network monitoring
-- **Interactive GUI** - Real-time monitoring dashboard
-- **Service Management** - Easy-to-use command-line service manager
-- **Zero SSH Exposure** - Port 22 is closed by default; remote access is exclusively through Grafana (port 9002) and the HARDN API (port 8000)
+## Features
 
-## Remote Access
+- **Automated hardening.** One-command lockdown of SSH, auditd, sysctl,
+  AppArmor, fail2ban, AIDE and friends.
+- **Environment-aware.** Auto-detects bare-metal, cloud (AWS, GCP, Azure, DO,
+  Oracle, Alibaba), VMs, and containers, then adjusts what it applies so it
+  does not lock you out of a cloud instance or break rootless Podman / Firejail
+  / Chrome sandbox / bpftrace on a container host.
+- **SSH lockout safety.** Will not disable `PasswordAuthentication` on a cloud
+  VM that has no public key registered. Operator overrides via
+  `HARDN_FORCE_DISABLE_PASSWORD_AUTH=1` and `HARDN_KEEP_PASSWORD_AUTH=1`.
+- **SENTRY drift detection.** Daily sha256 baseline diff of high-value files
+  (`/etc/passwd`, `/etc/shadow`, `/etc/sudoers`, `authorized_keys`,
+  `/etc/cron.*`, `/etc/systemd/system/*`). Drift fires an alert with severity
+  scaled to the category.
+- **Alert fanout.** Alerts land in `/var/log/hardn/alerts.jsonl` and fan out to
+  **journald** (always) and an optional **webhook**
+  (`HARDN_ALERT_WEBHOOK_URL`). A TTL-based dedupe cache stops a noisy condition
+  from paging the on-call repeatedly.
+- **Cron safety.** Every scheduled job runs under `flock` so a manual run and
+  the daemon cannot collide. Suricata rule updates land in a staging dir,
+  pass `suricata -T -S` validation, and atomically swap into place via
+  `rename(2)`.
+- **GUI.** GTK4 monitoring dashboard with a first-run welcome wizard, tab
+  tooltips, and an auto-generated inventory of every tool under
+  `usr/share/hardn/tools`. Read-only; never runs privileged commands without
+  a sudo prompt.
+- **API.** Optional REST endpoint on port 8000 with SSH-key bearer auth.
+- **Clean uninstall.** `hardn-uninstall.sh` reverses what the install put
+  in place, including per-user desktop launchers and the
+  `/etc/profile.d/hardn-paths.sh` env-var loader. `apt purge hardn` performs
+  the same cleanup via `debian/postrm`.
 
-> **SSH port 22 is blocked by the HARDN firewall policy. There is no standard SSH remote access.**
+## Quick Start
 
-All remote access to a HARDN-hardened system is restricted to two channels:
+### From source
 
-| Channel | Port | Auth | Purpose |
-|---------|------|------|---------|
-| **Grafana Dashboard** | 9002 | Grafana credentials | Visual monitoring, dashboards, alerting |
-| **HARDN API** | 8000 | SSH public key (Bearer token) | Programmatic control, health queries, diagnostics |
+```bash
+git clone https://github.com/Security-International-Group/HARDN
+cd HARDN
+sudo make build
+sudo make hardn
+```
 
-Before running `ufw.sh`, register your SSH public key so the HARDN API can authenticate you:
+`make build` produces the Debian package. `make hardn` installs it and starts
+the GUI service manager, which is where you trigger the actual hardening run.
+
+### First run
+
+On first launch the GUI shows a four-step Debian-style welcome wizard
+(overview, GUI tour, common actions, where to get help) with **Skip** and
+**Don't show again** options. The marker file is
+`$XDG_CONFIG_HOME/hardn/welcome-seen`; set `HARDN_NO_WELCOME=1` to suppress
+it under kiosk / CI / autostart.
+
+### Common commands
+
+```bash
+sudo hardn --help              # full command list
+sudo hardn --status            # current service state
+sudo hardn --sentry-check      # diff high-value files vs baseline
+sudo hardn run-module hardening
+sudo hardn run-tool   fail2ban
+sudo hardn legion --create-baseline
+sudo hardn-service-manager     # interactive menu (also launched by the GUI)
+```
+
+`run-tool` and `run-module` now return exit 127 (POSIX "command not found")
+when the requested script does not exist, so cron and CI can tell a typo apart
+from a real failure.
+
+## Remote access
+
+HARDN does not block SSH by default. The hardening run tightens sshd
+(public-key auth, no root login, modern ciphers, banner, rate limiting) and
+leaves the service running. UFW allows the configured SSH port; restrict it
+to specific source ranges with `HARDN_SSH_ALLOWED_CIDRS=10.0.0.0/8,...`.
+
+To fully disable SSH, set `HARDN_DISABLE_SSH=1` before the hardening run.
+HARDN will stop, disable, and mask `ssh.service` and `ssh.socket`, and skip
+adding the UFW allow rule.
+
+Two optional remote channels can be exposed in addition to (or instead of)
+SSH:
+
+| Channel | Default port | Auth | Override |
+|---|---|---|---|
+| HARDN API | 8000 | SSH public key (Bearer) | `HARDN_API_PORT`, `HARDN_API_ALLOWED_CIDRS` |
+| Grafana | 3000 | Grafana credentials | `HARDN_GRAFANA_PORT`, `HARDN_GRAFANA_ALLOWED_CIDRS` |
+
+Register a public key with the API:
 
 ```bash
 sudo install -d -m 750 /etc/hardn
 sudo install -m 640 /dev/null /etc/hardn/authorized_keys
 cat ~/.ssh/id_ed25519.pub | sudo tee -a /etc/hardn/authorized_keys
+sudo systemctl restart hardn-api.service
 ```
-
-Then access the API from any remote machine:
 
 ```bash
 SSH_KEY=$(cat ~/.ssh/id_ed25519.pub)
@@ -52,101 +125,87 @@ curl -H "Authorization: Bearer $SSH_KEY" http://your-server:8000/health
 curl -H "Authorization: Bearer $SSH_KEY" http://your-server:8000/overwatch/system
 ```
 
-## Quick Start
-
-### From Source
-```bash
-git clone https://github.com/Security-International-Group/HARDN
-cd HARDN
-sudo make build
-sudo make hardn
-```
-- This launches the service manager automatically and builds the Debian package. 
-- To move forward, use the service manager choices to launch the hardening script or other options as needed. 
-
-### HARDN Usage
-
-- Upon using the standard `sudo make hardn` the Security Information and Event Management (SIEM) graphic interface will launch automatically alongside the service manager. 
-- This application provides real-time monitoring of a system's security status and places a local GTK4 Native app within the user's 
-desktop environment.
-
-**SIEM**
-- When you have deployed `hardn` as the native app, and close it, when you click to reopen it all services will be "down" until you choose option (11) start hardn SIEM - and that will restart all services and logging. 
-
-**Service Manager**
-
-- This service manager allows users to manage HARDN services interactively, through both a command line interface (CLI) and the SIEM.
-```bash
-sudo hardn-service-manager
-```
-
-- Users can choose to launch HARDN module scripts or run security tools individually.
-- A security report can be launched based on a built-in HARDN compliance meter aligned to CIS standards (Center for Internet Security).
-- The Service Manager is there to monitor, launch and get the needed system data an administrator needs in times of monitoring and response. 
-
-## What HARDN Does
->[![ci](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml/badge.svg)](https://github.com/Security-International-Group/HARDN/actions/workflows/ci.yml)
->[![SAST](https://github.com/Security-International-Group/HARDN/actions/workflows/codeql.yml/badge.svg)](https://github.com/Security-International-Group/HARDN/actions/workflows/codeql.yml)
-
-### Security Hardening
-Applies security configurations to a system with a single command.
-
-### Real-Time Monitoring
-Continuous security monitoring through the LEGION daemon, tracking system changes and potential threats.
-
-### Integrated GUI
-Real-time monitoring dashboard showing system status, security events, and service health.
+See [docs/hardn-api.md](docs/hardn-api.md) for the full endpoint list and key
+rotation guidance.
 
 ## Services
 
-HARDN installs two main services:
+After install, `debian/postinst` enables four systemd units:
 
-### **hardn.service**
-Security hardening service that applies security configurations when triggered.
+| Unit | Purpose |
+|---|---|
+| `hardn.service` | Core hardening + LEGION monitoring loop |
+| `hardn-api.service` | REST API on port 8000 |
+| `hardn-monitor.service` | Service health + alert producer |
+| `hardn-monitor.service` companions | Cron orchestrator runs inside |
 
-### **legion-daemon.service**
-![LEGION](docs/assets/legion.jpeg)
-Continuous security monitoring daemon that watches for threats and system changes.
+`legion-daemon.service` is intentionally not enabled on new installs.
+`hardn.service` runs the same LEGION daemon code; running both at once
+contends on the baseline SQLite database. Operators who want the
+response-disabled variant can swap in `legion-daemon.service` manually.
 
-![Enemy Detection](docs/assets/enemy.jpeg)
+## Environment overrides
 
-## Basic Troubleshooting
+The hardening modules and tools read these in addition to the defaults:
 
-### Check Service Status
+| Variable | Default | Effect |
+|---|---|---|
+| `HARDN_DISABLE_SSH` | `0` | `1` stops + disables + masks `ssh.service` |
+| `HARDN_SSH_PORT` | `22` | Port honoured by fail2ban jail and UFW allow rules |
+| `HARDN_SSH_ALLOWED_CIDRS` | (none) | Space-separated allowlist for SSH |
+| `HARDN_FORCE_DISABLE_PASSWORD_AUTH` | `0` | `1` forces `PasswordAuthentication no` even if no keys exist |
+| `HARDN_KEEP_PASSWORD_AUTH` | `0` | `1` forces `PasswordAuthentication yes` |
+| `HARDN_API_PORT` | `8000` | API listen port |
+| `HARDN_API_ALLOWED_CIDRS` | (none) | Allowlist for the API port |
+| `HARDN_GRAFANA_PORT` | `3000` | Grafana listen port |
+| `HARDN_GRAFANA_ALLOWED_CIDRS` | (none) | Allowlist for the Grafana port |
+| `HARDN_PERMITTED_OUTBOUND_CIDRS` | (none) | Extra outbound destinations to allow in UFW |
+| `HARDN_CLOUD_LB_CIDRS` | provider-specific | Overrides fail2ban `ignoreip` health-check ranges |
+| `HARDN_CONTAINER_HOST` | auto-detected | `1` forces the "container workload host" sysctl profile |
+| `HARDN_STRICT_USERNS` | `0` | `1` applies `kernel.unprivileged_userns_clone=0` even on container hosts |
+| `HARDN_STRICT_BPF` | `0` | `1` applies the eBPF lockdown even on container hosts |
+| `HARDN_KERNEL_PANIC_SECONDS` | `60` | `kernel.panic` value (`0` to stay in panic for diagnosis) |
+| `HARDN_ALERT_WEBHOOK_URL` | (none) | When set, alerts POST to this URL via `curl` |
+| `HARDN_ALERT_JOURNALD_TAG` | `HARDN-ALERT` | syslog tag for journald-bound alerts |
+| `HARDN_ALERT_DEDUPE_TTL_SEC` | `21600` | Dedupe window for journald + webhook fanout |
+| `HARDN_NO_WELCOME` | `0` | `1` suppresses the GUI welcome wizard |
+
+## Basic troubleshooting
+
 ```bash
-sudo systemctl status hardn.service
-sudo systemctl status legion-daemon.service
+sudo systemctl status hardn.service hardn-api.service hardn-monitor.service
+sudo journalctl -u hardn.service -u hardn-monitor.service -f
+tail -F /var/log/hardn/*.log
+tail -F /var/log/hardn/alerts.jsonl
+journalctl -t HARDN-ALERT --since today    # post-PR-C: alert fanout
 ```
 
-### View Logs
-```bash
-sudo journalctl -u hardn.service
-sudo journalctl -u legion-daemon.service
-```
+If a hardening module fails inside an unprivileged container, that is
+expected. The audit subsystem and several sysctls belong to the host kernel;
+HARDN logs those as INFO and continues.
 
 ## Documentation
 
-For detailed technical information, see:
-- [HARDN Service Documentation](docs/hardn.md)
-- [LEGION Daemon Documentation](docs/legion-daemon.md)
-- [HARDN API Documentation](docs/hardn-api.md)
-- [Service Manager Guide](docs/hardn-service-manager.md)
+- [HARDN service](docs/hardn.md)
+- [LEGION daemon](docs/legion-daemon.md)
+- [HARDN API](docs/hardn-api.md)
+- [Service manager guide](docs/hardn-service-manager.md)
+- [Monitor + alert fanout](docs/hardn-monitor.md)
+- [Audit engine internals](docs/hardn-audit.md)
+- [Security posture summary](docs/security-posture.md)
+- [Architecture diagrams](docs/diagram.md)
 
 ## Support
 
-Some modules may fail in restricted environments (containers, read-only filesystems). This is expected behavior - the service will continue running while logging any issues.
-
-## Note
-
-This is a demonstration version with core security features. For enterprise security requirements, please contact Security International Group for the full HARDN solution.
+Some modules will partially apply on read-only filesystems, in containers,
+and on hosts with non-standard package layouts. HARDN logs what it skipped
+and keeps going. Open an issue with the `--security-report --json` output
+attached if behaviour looks wrong.
 
 ## License
 
-MIT License - See LICENSE file for details
-
+MIT. See `LICENSE`.
 
 # Metrics
 
 ![GitHub Metrics](.github/metrics.svg)
-
-

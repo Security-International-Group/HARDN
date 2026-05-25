@@ -84,7 +84,10 @@ When adding a new rule:
 
 `rules_source.txt` doubles as the canonical rule list and as documentation for compliance status. Each block provides a human-friendly title, the SCAP/XCCDF rule ID, and the latest evaluation result.
 
-The generator pipeline reads this file and emits `rules_autogen.inc`, preserving ordering and categories. The `Result` column is informational—it does *not* change runtime behaviour—but it is useful when triaging which rules still lack implementations.
+The generator pipeline reads this file and emits `rules_autogen.inc`,
+preserving ordering and categories. The `Result` column is
+informational (it does *not* change runtime behaviour), but it is useful
+when triaging which rules still lack implementations.
 
 ## Rule Lifecycle
 
