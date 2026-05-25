@@ -3070,6 +3070,7 @@ AVAILABLE COMMANDS:
   run-tool <name>          Run specific security tool
   legion <options>         LEGION security monitoring
   --security-report        Generate comprehensive security assessment
+  --sentry-check           Diff high-value files against baseline (cron-friendly)
   --enable-selinux         ⚠️  Enable SELinux (DISABLES AppArmor, REQUIRES REBOOT)
   --uninstall [flags]      Uninstall HARDN (see --uninstall --help for flags)
 
@@ -3153,6 +3154,37 @@ fn handle_run_tool(tool_dirs: &[PathBuf], tool_name: &str, module_dirs: &[PathBu
             EXIT_NOT_FOUND
         }
     }
+}
+
+/// Run the sentry baseline-diff check. Prints a short report and exits 0
+/// on success — alerts are emitted via the shared alert channel.
+fn run_sentry_check() -> i32 {
+    let report = crate::legion::modules::sentry::run_check();
+    if report.first_run {
+        println!(
+            "[sentry] baseline created ({} files watched). No alerts on first run.",
+            report.watched_files
+        );
+    } else {
+        println!(
+            "[sentry] watched={} added={} removed={} changed={} (total={})",
+            report.watched_files,
+            report.added.len(),
+            report.removed.len(),
+            report.changed.len(),
+            report.total_changes()
+        );
+        for p in &report.added {
+            println!("  + {}", p);
+        }
+        for p in &report.removed {
+            println!("  - {}", p);
+        }
+        for p in &report.changed {
+            println!("  ~ {}", p);
+        }
+    }
+    EXIT_SUCCESS
 }
 
 /// Run the LEGION monitoring tool
@@ -3268,6 +3300,7 @@ fn main() {
                     EXIT_SUCCESS
                 }
                 "--enable-selinux" | "enable-selinux" => enable_selinux(),
+                "--sentry-check" | "sentry-check" => run_sentry_check(),
                 _ => {
                     log_message(LogLevel::Error, &format!("Unknown option: {}", args[1]));
                     print_help();

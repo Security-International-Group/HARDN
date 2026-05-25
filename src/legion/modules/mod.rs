@@ -14,6 +14,7 @@ pub mod permissions;
 pub mod processes;
 pub mod response;
 pub mod risk_scoring;
+pub mod sentry;
 pub mod services;
 pub mod threat_intel;
 pub mod usb;
