@@ -580,6 +580,19 @@ impl CronOrchestrator {
                 "/usr/bin/hardn",
                 &["legion", "--create-baseline", "--json"],
             ))),
+            // Sentry: daily diff of high-value files (cron / systemd /
+            // authorized_keys / sudoers / passwd-shadow). Runs at 02:15 daily
+            // so it sits in the quiet window after the legion baseline and
+            // before the Sunday weekly batch.
+            Arc::new(ScheduledJob::new(CronJob::daily_job(
+                "hardn-sentry",
+                "Diff high-value files against persisted baseline",
+                &log_root,
+                "hardn-sentry.log",
+                DailyTime { hour: 2, minute: 15 },
+                "/usr/bin/hardn",
+                &["--sentry-check"],
+            ))),
         ];
 
         {

@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### LEGION tattletale (phase 1)
+
+- New **sentry** module (`legion::modules::sentry`) — runs once-per-day from
+  the cron orchestrator, sha256-hashes a curated set of high-value files,
+  diffs them against `/var/lib/hardn/sentry/baseline.json`, and emits one
+  alert per added / removed / changed entry. Watched paths:
+  `/etc/passwd`, `/etc/shadow`, `/etc/gshadow`, `/etc/group`,
+  `/etc/sudoers`, `/etc/sudoers.d/*`, `/{root,/home/*}/.ssh/authorized_keys{,2}`,
+  `/etc/crontab`, `/etc/cron.{d,daily,hourly,weekly,monthly}/*`,
+  `/var/spool/cron/{,crontabs/}*`,
+  `/etc/systemd/system/*.{service,timer,socket,path}`,
+  `/etc/systemd/system/*.d/*.conf`
+- New CLI: `hardn --sentry-check` — runs sentry once, prints a short report,
+  emits alerts. First run silently writes the baseline; subsequent runs alert
+  on drift. Authorized-keys / sudoers drift → `critical`; cron / systemd /
+  passwd-shadow drift → `warning`.
+- New cron job `hardn-sentry` runs daily at 02:15.
+- Alerts now also fan out to **journald** (always) and **webhook**
+  (when `$HARDN_ALERT_WEBHOOK_URL` is set). Both sinks share a TTL-based
+  dedupe cache at `/var/lib/hardn/alerts/seen.json` so a noisy condition
+  can't pager-spam an on-call.
+  - Journald uses `systemd-cat -t HARDN-ALERT -p <prio>` (fallback `logger`
+    on non-systemd hosts). Tag overridable via `$HARDN_ALERT_JOURNALD_TAG`.
+  - Webhook POSTs the same JSON payload as `alerts.jsonl` (`ts`, `severity`,
+    `source`, `message`, `key`) via `curl -fsS -m 10`. http:// and https://
+    only. No new compile-time dep added.
+  - Dedupe TTL defaults to 6 hours; override via `$HARDN_ALERT_DEDUPE_TTL_SEC`.
+
 ### Tools hygiene
 
 - Cron orchestrator now wraps every job in `/usr/bin/flock -n -E 99` keyed
