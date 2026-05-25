@@ -862,25 +862,63 @@ network_sysctls=(
     "net.ipv4.conf.all.rp_filter=1"
     "net.ipv4.conf.default.rp_filter=1"
     "net.ipv4.tcp_syncookies=1"
-    "net.ipv6.conf.all.accept_ra=0"
-    "net.ipv6.conf.default.accept_ra=0"
 )
+
+# IPv6 router-advertisement acceptance — disabling this strands cloud / VM
+# hosts that rely on SLAAC for their default IPv6 route (AWS, GCP, Azure,
+# DigitalOcean, most home networks). Only disable on bare-metal where the
+# operator usually has explicit static routing.
+if hardn_in_cloud || hardn_in_vm; then
+    HARDN_STATUS INFO "Cloud/VM detected; leaving IPv6 accept_ra enabled (SLAAC needs it)"
+else
+    network_sysctls+=(
+        "net.ipv6.conf.all.accept_ra=0"
+        "net.ipv6.conf.default.accept_ra=0"
+    )
+fi
+
+# kernel.exec-shield was a Red Hat / RHEL-only patch, removed upstream
+# before kernel 3.x. It does not exist on Debian/Ubuntu; the value used
+# to generate a 'Skipping unsupported sysctl' warning on every run.
+#
+# kernel.panic value: 0 = stay in panic for diagnosis, low values = fast
+# reboot for orchestrator restart. 60s is an odd middle ground; we keep
+# it for backward compatibility but it's the value most worth overriding
+# (set HARDN_KERNEL_PANIC_SECONDS to a different number).
+HARDN_KERNEL_PANIC_SECONDS="${HARDN_KERNEL_PANIC_SECONDS:-60}"
 
 kernel_sysctls=(
     "kernel.randomize_va_space=2"
     "fs.suid_dumpable=0"
-    "kernel.exec-shield=1"
-    "kernel.panic=60"
+    "kernel.panic=${HARDN_KERNEL_PANIC_SECONDS}"
     "kernel.panic_on_oops=1"
     "kernel.sysrq=0"
     "kernel.core_uses_pid=1"
     "kernel.kptr_restrict=2"
     "kernel.yama.ptrace_scope=1"
     "kernel.dmesg_restrict=1"
-    "kernel.unprivileged_userns_clone=0"
-    "kernel.unprivileged_bpf_disabled=1"
-    "net.core.bpf_jit_harden=2"
 )
+
+# User namespaces + eBPF restrictions — locking these down breaks any
+# workload that uses unprivileged user namespaces (rootless Podman/Docker,
+# LXD unprivileged containers, Firejail, Chrome/Chromium sandbox, Steam,
+# AppImage) or non-root eBPF tools (bpftrace, Cilium probes). Skip when
+# the host clearly runs container workloads — see env-detect for the
+# heuristics. Operators on a strict workstation can opt back in with
+# HARDN_STRICT_USERNS=1 / HARDN_STRICT_BPF=1.
+if hardn_is_container_workload_host && [ "${HARDN_STRICT_USERNS:-0}" != "1" ]; then
+    HARDN_STATUS INFO "Container workload detected; leaving kernel.unprivileged_userns_clone at the kernel default"
+else
+    kernel_sysctls+=("kernel.unprivileged_userns_clone=0")
+fi
+if hardn_is_container_workload_host && [ "${HARDN_STRICT_BPF:-0}" != "1" ]; then
+    HARDN_STATUS INFO "Container workload detected; leaving eBPF defaults in place"
+else
+    kernel_sysctls+=(
+        "kernel.unprivileged_bpf_disabled=1"
+        "net.core.bpf_jit_harden=2"
+    )
+fi
 
 filesystem_sysctls=(
     "fs.protected_hardlinks=1"
@@ -889,9 +927,13 @@ filesystem_sysctls=(
     "fs.protected_regular=2"
 )
 
+# kernel.modules_disabled — kernel default is 0 (loading allowed). Writing
+# 0 again was a no-op; writing 1 is a one-shot kill switch (can't be
+# undone until reboot) and would prevent every later module-loading step
+# (firewire blacklist, audit module load, etc.). Leave it out of the
+# managed list.
 process_sysctls=(
     "kernel.pid_max=65536"
-    "kernel.modules_disabled=0"
     "kernel.perf_event_paranoid=3"
 )
 
@@ -1169,114 +1211,22 @@ else
     log_warning "auditd installation failed, continuing..."
 fi
 
-HARDN_STATUS "Configuring auditd disk space safeguards..."
-AUDIT_CONF="/etc/audit/auditd.conf"
-if [ -f "$AUDIT_CONF" ]; then
-    cp "$AUDIT_CONF" "$AUDIT_CONF.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
-    declare -A auditd_settings=(
-        ["space_left"]="2048"
-        ["space_left_action"]="email"
-        ["admin_space_left"]="1024"
-        ["admin_space_left_action"]="halt"
-        ["action_mail_acct"]="root"
-        ["max_log_file_action"]="rotate"
-    )
-    for key in "${!auditd_settings[@]}"; do
-        value="${auditd_settings[$key]}"
-        if grep -Eq "^[[:space:]]*${key}[[:space:]]*=" "$AUDIT_CONF"; then
-            sed -ri "s|^[[:space:]]*${key}[[:space:]]*=.*$|${key} = ${value}|I" "$AUDIT_CONF"
-        else
-            printf '%s = %s\n' "$key" "$value" >> "$AUDIT_CONF"
-        fi
-    done
-    systemctl reload auditd 2>/dev/null || systemctl restart auditd 2>/dev/null || true
-else
-    log_warning "auditd.conf not found; space thresholds not set"
-fi
-
-HARDN_STATUS "Configuring MITRE ATT&CK audit rules..."
-
-if command -v auditctl >/dev/null 2>&1; then
-    cat > /etc/audit/rules.d/99-hardn-hardening.rules <<'EOF'
-# HARDN Audit Rules (MITRE ATT&CK framework thanks to @4nt11 )
-
-# T1059 – Command execution (focus on interactive users)
--a always,exit -F arch=b64 -S execve -F exe=/usr/bin/bash  -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
--a always,exit -F arch=b64 -S execve -F exe=/bin/sh        -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
--a always,exit -F arch=b64 -S execve -F exe=/bin/dash      -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
--a always,exit -F arch=b64 -S execve -F exe=/usr/bin/python3 -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
--a always,exit -F arch=b64 -S execve -F exe=/usr/bin/perl  -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
--a always,exit -F arch=b64 -S execve -F exe=/usr/bin/php   -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
-
-# T1105 – Ingress tool transfer (watch for encoded/packaged drops)
--w /var/tmp/ -p wa -k mitre_ingress
--w /tmp/    -p wa -k mitre_ingress
-
-# T1053 – Scheduled task/cron modifications
--w /etc/cron.d/      -p war -k mitre_scheduled
--w /etc/cron.daily/  -p war -k mitre_scheduled
--w /etc/cron.weekly/ -p war -k mitre_scheduled
--w /etc/cron.monthly/-p war -k mitre_scheduled
--w /var/spool/cron/  -p war -k mitre_scheduled
-
-# T1547 – Boot or logon autostart persistence
--w /etc/systemd/system/ -p wa -k mitre_autostart
--w /lib/systemd/system/ -p wa -k mitre_autostart
--a always,exit -F arch=b64 -S init_module,finit_module,delete_module -k mitre_rootkit
-
-# T1003 – Credential dumping files
--w /etc/shadow -p war -k mitre_creds
-
-# T1562 – Defense evasion (AV/audit tampering)
--w /etc/audit/        -p wa -k mitre_defense_evasion
--w /var/lib/audit/    -p wa -k mitre_defense_evasion
--w /usr/bin/freshclam -p x  -k mitre_defense_evasion
--w /usr/sbin/auditd   -p x  -k mitre_defense_evasion
-
-# T1041 – Exfiltration over C2 channels
--a always,exit -F arch=b64 -S connect -F a0=2 -F auid>=1000 -F auid!=4294967295 -k mitre_exfil  # IPv4 sockets
--a always,exit -F arch=b64 -S sendto,sendmsg -F auid>=1000 -F auid!=4294967295 -k mitre_exfil
-
--D
-
-# Buffer Size
--b 8192
-
-# Failure Mode
--f 1
-
-# Monitor authentication events
--w /var/log/faillog -p wa -k auth_failures
--w /var/log/lastlog -p wa -k logins
--w /var/log/tallylog -p wa -k logins
-
-# Monitor user/group changes
--w /etc/group -p wa -k identity
--w /etc/passwd -p wa -k identity
--w /etc/gshadow -p wa -k identity
--w /etc/shadow -p wa -k identity
--w /etc/security/opasswd -p wa -k identity
-
-# Monitor sudoers
--w /etc/sudoers -p wa -k sudoers
--w /etc/sudoers.d/ -p wa -k sudoers
-
-# Monitor SSH configuration
--w /etc/ssh/sshd_config -p wa -k sshd_config
-
-# Monitor privileged commands
--a always,exit -F path=/usr/bin/passwd -F perm=x -F auid>=1000 -F auid!=4294967295 -k privileged
--a always,exit -F path=/usr/bin/sudo -F perm=x -F auid>=1000 -F auid!=4294967295 -k privileged
-
-# Make configuration immutable
--e 2
-EOF
-    
-    # Reload audit rules
-    augenrules --load 2>/dev/null || true
-    systemctl restart auditd 2>/dev/null || true
-    HARDN_STATUS "Audit rules configured"
-fi
+# Delegate auditd configuration + rule loading to the canonical tool.
+# Previously this module wrote /etc/audit/rules.d/99-hardn-hardening.rules
+# itself with a slightly different (and partly broken — malformed
+# cron.monthly watch, -D after the rules) ruleset, then `tools/auditd.sh`
+# would clobber it on the next run. One writer, one rules file.
+HARDN_STATUS "Delegating auditd rule loading to tools/auditd.sh"
+for _hardn_auditd in \
+    "/usr/share/hardn/tools/auditd.sh" \
+    "/usr/local/share/hardn/tools/auditd.sh" \
+    "$(dirname "${BASH_SOURCE[0]}")/../tools/auditd.sh"; do
+    if [ -x "$_hardn_auditd" ]; then
+        bash "$_hardn_auditd" || log_warning "tools/auditd.sh exited non-zero; see /var/log/hardn"
+        break
+    fi
+done
+unset _hardn_auditd
 
 # ==========================================
 # FAIL2BAN HARDENING

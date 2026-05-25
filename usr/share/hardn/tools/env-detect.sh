@@ -122,6 +122,32 @@ hardn_in_vm()        { hardn_detect_env; [ "$HARDN_ENV_IS_VM" = "1" ]; }
 hardn_on_baremetal() { hardn_detect_env; [ "$HARDN_ENV_IS_BAREMETAL" = "1" ]; }
 hardn_in_cloud()     { hardn_detect_env; [ "$HARDN_ENV_IS_CLOUD" = "1" ]; }
 
+# True when this host *runs* containers / sandboxes that depend on
+# unprivileged user namespaces or eBPF. Used by the kernel-hardening
+# block to avoid locking out workloads HARDN itself installs (Firejail)
+# or that the operator clearly relies on (Docker, Podman, k8s, LXD).
+#
+# Match conditions (any one is enough):
+#   * Docker, Podman, containerd, CRI-O, LXC/LXD state dirs exist
+#   * kubelet / crictl binaries are on PATH (k8s node)
+#   * Firejail is installed (HARDN's own tools/firejail.sh installs it)
+#   * Operator explicit override: HARDN_CONTAINER_HOST=1
+hardn_is_container_workload_host() {
+    if [ "${HARDN_CONTAINER_HOST:-0}" = "1" ]; then
+        return 0
+    fi
+    local p
+    for p in /var/lib/docker /var/lib/containers /var/lib/lxd /var/lib/lxc \
+             /var/run/docker.sock /run/containerd/containerd.sock \
+             /var/run/crio/crio.sock /run/podman/podman.sock; do
+        [ -e "$p" ] && return 0
+    done
+    for p in kubelet crictl podman docker firejail; do
+        command -v "$p" >/dev/null 2>&1 && return 0
+    done
+    return 1
+}
+
 # Human-readable one-liner for logs.
 hardn_env_summary() {
     hardn_detect_env
@@ -179,3 +205,4 @@ export -f hardn_in_cloud
 export -f hardn_env_summary
 export -f hardn_cloud_metadata_cidrs
 export -f hardn_cloud_health_check_cidrs
+export -f hardn_is_container_workload_host
