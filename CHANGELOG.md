@@ -5,6 +5,43 @@ All notable changes to **HARDN** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Hardware & cloud compatibility
+
+- New environment-detection helper `tools/env-detect.sh` populating
+  `HARDN_ENV_VIRT`, `HARDN_ENV_CLOUD`, and `hardn_in_{container,vm,cloud,baremetal}`
+  predicates, sourced from `functions.sh` and `hardening.sh`
+- A one-line "Detected environment" banner is now printed at the start of
+  every hardening run so operators see what HARDN will skip
+- SSH hardening no longer disables `PasswordAuthentication` when the host
+  has no public keys and is running in a cloud VM — prevents permanent
+  remote lockout. Override with `HARDN_FORCE_DISABLE_PASSWORD_AUTH=1`;
+  force-keep with `HARDN_KEEP_PASSWORD_AUTH=1`
+- Cloud instance metadata endpoint (169.254.169.254, plus 168.63.129.16
+  on Azure) is now explicitly allowlisted in UFW and the iptables
+  HARDN-LOCKDOWN chain when a cloud environment is detected
+- Fail2Ban jail now honours `HARDN_SSH_PORT` (previously hardcoded to 22)
+  and pre-populates `ignoreip` with cloud load-balancer health-check
+  ranges (GCP today; operators can add their own via `HARDN_CLOUD_LB_CIDRS`)
+- Auditd now ships a disk-safety policy (`disk_full_action=SYSLOG`,
+  `space_left_action=SYSLOG`, `admin_space_left_action=SUSPEND`) and
+  sizes its audit buffer based on free space on `/var/log` — small cloud
+  root volumes can no longer be filled into a kernel panic
+- Auditd setup exits cleanly inside containers instead of spamming
+  "Operation not permitted" against the host audit subsystem
+- FireWire blacklist + `modprobe -r firewire-core` + initramfs rebuild
+  skipped in containers
+- Sysctl writes that fail inside an unprivileged container are now
+  logged as INFO ("host owns this parameter") rather than WARNING
+
+### Logs & UX
+
+- HARDN_STATUS no longer writes ANSI colour escapes to log files when
+  stdout is not a TTY — the GUI's log tail now reads clean text
+- `hardn --help` lists the `--enable-selinux` flag, which was previously
+  only documented in the setup binary
+
 ## [1.1.0-1] - 2026-05-24
 
 ### Audit framework — 100% coverage (194/194 rules)
