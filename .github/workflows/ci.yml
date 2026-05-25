@@ -374,29 +374,40 @@ jobs:
 
           SIZE=$(du -h "$DEB_FILE" | cut -f1)
           SHA256=$(sha256sum "$DEB_FILE" | awk '{print $1}')
-          BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC)')
+          BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
           COMMIT_SHA="${{ github.sha }}"
-          DOCS_URL="https://github.com/${{ github.repository }}/tree/main/docs"
 
-          cat > RELEASE_NOTES.md <<EOF
-          ![HARDN](docs/assets/IMG_1233.jpeg)
+          # Extract the latest section from CHANGELOG.md (everything from
+          # the first "## [" header to the next one, exclusive). Falls back
+          # to a short notice if CHANGELOG.md is missing or unparseable.
+          if [ -f CHANGELOG.md ]; then
+            CHANGELOG_SECTION=$(awk '/^## \[/{if (n++) exit} n' CHANGELOG.md)
+          fi
+          if [ -z "${CHANGELOG_SECTION:-}" ]; then
+            CHANGELOG_SECTION="_See \`CHANGELOG.md\` in the repository for release notes._"
+          fi
 
-          # HARDN $TAG
-
-          > Automated release generated on $BUILD_DATE from commit $COMMIT_SHA.
-
-          ## Package Details
-                - **Debian package**: \`$DEB_NAME\`
-                - **Project version**: \`$VERSION\`
-                - **Architecture**: \`$ARCH\`
-                - **Size**: \`$SIZE\`
-                - **SHA256**: \`$SHA256\`
-
-
-          ---
-
-          Built with dpkg-buildpackage • Validated by integration tests
-          EOF
+          {
+            echo "![HARDN](docs/assets/IMG_1233.jpeg)"
+            echo
+            echo "# HARDN $TAG"
+            echo
+            echo "> Automated release generated on $BUILD_DATE from commit $COMMIT_SHA."
+            echo
+            echo "$CHANGELOG_SECTION"
+            echo
+            echo "## Package Details"
+            echo
+            echo "- **Debian package**: \`$DEB_NAME\`"
+            echo "- **Project version**: \`$VERSION\`"
+            echo "- **Architecture**: \`$ARCH\`"
+            echo "- **Size**: \`$SIZE\`"
+            echo "- **SHA256**: \`$SHA256\`"
+            echo
+            echo "---"
+            echo
+            echo "Built with dpkg-buildpackage • Validated by integration tests"
+          } > RELEASE_NOTES.md
         shell: bash
 
       - name: Create GitHub Release
