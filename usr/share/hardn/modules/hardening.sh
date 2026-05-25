@@ -877,10 +877,20 @@ else
     )
 fi
 
+# kernel.exec-shield was a Red Hat / RHEL-only patch, removed upstream
+# before kernel 3.x. It does not exist on Debian/Ubuntu; the value used
+# to generate a 'Skipping unsupported sysctl' warning on every run.
+#
+# kernel.panic value: 0 = stay in panic for diagnosis, low values = fast
+# reboot for orchestrator restart. 60s is an odd middle ground; we keep
+# it for backward compatibility but it's the value most worth overriding
+# (set HARDN_KERNEL_PANIC_SECONDS to a different number).
+HARDN_KERNEL_PANIC_SECONDS="${HARDN_KERNEL_PANIC_SECONDS:-60}"
+
 kernel_sysctls=(
     "kernel.randomize_va_space=2"
     "fs.suid_dumpable=0"
-    "kernel.panic=60"
+    "kernel.panic=${HARDN_KERNEL_PANIC_SECONDS}"
     "kernel.panic_on_oops=1"
     "kernel.sysrq=0"
     "kernel.core_uses_pid=1"
@@ -917,9 +927,13 @@ filesystem_sysctls=(
     "fs.protected_regular=2"
 )
 
+# kernel.modules_disabled — kernel default is 0 (loading allowed). Writing
+# 0 again was a no-op; writing 1 is a one-shot kill switch (can't be
+# undone until reboot) and would prevent every later module-loading step
+# (firewire blacklist, audit module load, etc.). Leave it out of the
+# managed list.
 process_sysctls=(
     "kernel.pid_max=65536"
-    "kernel.modules_disabled=0"
     "kernel.perf_event_paranoid=3"
 )
 

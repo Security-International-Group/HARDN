@@ -82,6 +82,10 @@ HARDN_STATUS "info" "Auditd disk policy written to $AUDITD_CONF_DROPIN (buffer=$
 
 cat > /etc/audit/rules.d/99-hardn-hardening.rules <<EOF
 # HARDN Audit Rules (MITRE ATT&CK framework thanks to @4nt11 )
+#
+# All execve / module syscall rules are paired across arch=b64 and arch=b32 so
+# a 32-bit compat syscall (int 0x80 on amd64) can't be used to bypass the
+# 64-bit rule. -k keys remain identical across pairs.
 
 # Flush existing rules first
 -D
@@ -94,30 +98,41 @@ cat > /etc/audit/rules.d/99-hardn-hardening.rules <<EOF
 
 # T1059 – Command execution (focus on interactive users)
 -a always,exit -F arch=b64 -S execve -F exe=/usr/bin/bash  -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
+-a always,exit -F arch=b32 -S execve -F exe=/usr/bin/bash  -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
 -a always,exit -F arch=b64 -S execve -F exe=/bin/sh        -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
+-a always,exit -F arch=b32 -S execve -F exe=/bin/sh        -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
 -a always,exit -F arch=b64 -S execve -F exe=/bin/dash      -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
+-a always,exit -F arch=b32 -S execve -F exe=/bin/dash      -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
 -a always,exit -F arch=b64 -S execve -F exe=/usr/bin/python3 -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
+-a always,exit -F arch=b32 -S execve -F exe=/usr/bin/python3 -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
 -a always,exit -F arch=b64 -S execve -F exe=/usr/bin/perl  -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
+-a always,exit -F arch=b32 -S execve -F exe=/usr/bin/perl  -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
 -a always,exit -F arch=b64 -S execve -F exe=/usr/bin/php   -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
+-a always,exit -F arch=b32 -S execve -F exe=/usr/bin/php   -F auid>=1000 -F auid!=4294967295 -k mitre_cmd_exec
 
-# T1105 – Ingress tool transfer (watch for encoded/packaged drops)
--w /var/tmp/ -p wa -k mitre_ingress
--w /tmp/    -p wa -k mitre_ingress
+# T1105 – Ingress tool transfer
+# NOTE: watching /tmp and /var/tmp with -p wa generates one record per file
+# write — on a build server or CI host this fills /var/log/audit in minutes
+# and drowns signal in noise. The CIS Benchmark intentionally does not
+# include them. SENTRY's authorized_keys/sudoers/cron drift detection
+# (legion::modules::sentry) already covers the persistence vectors that
+# /tmp watching was nominally protecting against.
 
 # T1053 – Scheduled task/cron modifications
--w /etc/cron.d/      -p war -k mitre_scheduled
--w /etc/cron.daily/  -p war -k mitre_scheduled
--w /etc/cron.weekly/ -p war -k mitre_scheduled
--w /etc/cron.monthly/ -p war -k mitre_scheduled
--w /var/spool/cron/  -p war -k mitre_scheduled
+-w /etc/cron.d/       -p wa -k mitre_scheduled
+-w /etc/cron.daily/   -p wa -k mitre_scheduled
+-w /etc/cron.weekly/  -p wa -k mitre_scheduled
+-w /etc/cron.monthly/ -p wa -k mitre_scheduled
+-w /var/spool/cron/   -p wa -k mitre_scheduled
 
 # T1547 – Boot or logon autostart persistence
 -w /etc/systemd/system/ -p wa -k mitre_autostart
 -w /lib/systemd/system/ -p wa -k mitre_autostart
 -a always,exit -F arch=b64 -S init_module,finit_module,delete_module -k mitre_rootkit
+-a always,exit -F arch=b32 -S init_module,finit_module,delete_module -k mitre_rootkit
 
 # T1003 – Credential dumping files
--w /etc/shadow -p war -k mitre_creds
+-w /etc/shadow -p wa -k mitre_creds
 
 # T1562 – Defense evasion (AV/audit tampering)
 -w /etc/audit/        -p wa -k mitre_defense_evasion
@@ -126,8 +141,14 @@ cat > /etc/audit/rules.d/99-hardn-hardening.rules <<EOF
 -w /usr/sbin/auditd   -p x  -k mitre_defense_evasion
 
 # T1041 – Exfiltration over C2 channels
--a always,exit -F arch=b64 -S connect -F a0=2 -F auid>=1000 -F auid!=4294967295 -k mitre_exfil  # IPv4 sockets
--a always,exit -F arch=b64 -S sendto,sendmsg -F auid>=1000 -F auid!=4294967295 -k mitre_exfil
+# NOTE: the previous attempt used '-F a0=2' on connect/sendto to filter
+# by address family AF_INET. That filter doesn't work — for connect(2),
+# a0 is the file descriptor, not the family (the family lives inside
+# *addr which a register filter can't read). The rule either matched
+# nothing (when fd != 2) or every connect on the box (when fd == 2),
+# both worthless for MITRE T1041 coverage. Audit-based exfil detection
+# is the wrong tool; that signal belongs in a userspace consumer
+# (auditbeat, falco) or NIDS (Suricata, which HARDN ships).
 
 # Monitor authentication events
 -w /var/log/faillog -p wa -k auth_failures
@@ -138,7 +159,6 @@ cat > /etc/audit/rules.d/99-hardn-hardening.rules <<EOF
 -w /etc/group -p wa -k identity
 -w /etc/passwd -p wa -k identity
 -w /etc/gshadow -p wa -k identity
--w /etc/shadow -p wa -k identity
 -w /etc/security/opasswd -p wa -k identity
 
 # Monitor sudoers
@@ -150,7 +170,7 @@ cat > /etc/audit/rules.d/99-hardn-hardening.rules <<EOF
 
 # Monitor privileged commands
 -a always,exit -F path=/usr/bin/passwd -F perm=x -F auid>=1000 -F auid!=4294967295 -k privileged
--a always,exit -F path=/usr/bin/sudo -F perm=x -F auid>=1000 -F auid!=4294967295 -k privileged
+-a always,exit -F path=/usr/bin/sudo   -F perm=x -F auid>=1000 -F auid!=4294967295 -k privileged
 
 # Make configuration immutable
 -e 2

@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Kernel rules consolidation
+
+- **Single audit-rules writer.** `modules/hardening.sh` no longer writes
+  `/etc/audit/rules.d/99-hardn-hardening.rules` itself; it delegates to
+  `tools/auditd.sh`. The hardening.sh copy had a malformed
+  `/etc/cron.monthly/-p war` watch (missing space), placed `-D` after the
+  rule list (which wiped its own rules), duplicated the auditd.conf
+  drop-in from `tools/auditd.sh`, and ignored the container-skip gate.
+  One writer, one rules file.
+- **`unprivileged_userns_clone=0`, `unprivileged_bpf_disabled=1`,
+  `net.core.bpf_jit_harden=2` are now gated** on a new
+  `hardn_is_container_workload_host` heuristic (Docker/Podman/LXD/k8s
+  state dirs or binaries present, or HARDN_CONTAINER_HOST=1). Operators
+  can force the strict values back on with `HARDN_STRICT_USERNS=1` /
+  `HARDN_STRICT_BPF=1`. Stops HARDN from breaking rootless Podman,
+  Firejail (which HARDN itself installs), Chrome sandbox, bpftrace, etc.
+- **IPv6 `accept_ra=0` skipped on cloud/VM** — SLAAC needs RA enabled
+  to learn a default route on AWS / GCP / Azure / DO. Bare-metal
+  behaviour unchanged.
+- **`kernel.exec-shield=1` removed** — Red Hat-only patch, dropped
+  upstream before kernel 3.x; produced "unsupported sysctl" noise every
+  run on Debian/Ubuntu.
+- **`kernel.modules_disabled=0` removed** — was a no-op (default value)
+  and risky to flip to 1 (one-shot kill switch).
+- **`kernel.panic` is now overridable** via `HARDN_KERNEL_PANIC_SECONDS`
+  (default 60 retained for compat; cloud hosts typically want 10).
+
+### Audit rules accuracy
+
+- **All execve / module-load rules now have paired `arch=b32` entries.**
+  Previously a 32-bit compat syscall (int 0x80 on amd64) bypassed every
+  `arch=b64` rule unobserved.
+- **`/tmp` + `/var/tmp` `-p wa` watches removed.** Generated one record
+  per shell/compiler/test tempfile and filled `/var/log/audit` on build
+  servers within minutes. SENTRY's persistence-vector diff (PR-C) covers
+  what the `/tmp` watch was nominally protecting against.
+- **Broken T1041 exfil rules dropped.** `-S connect -F a0=2` filtered on
+  the file descriptor instead of the address family (which lives in
+  `*addr` and isn't reachable from a register filter). The rules either
+  matched nothing or every connect on the host — both worthless. Exfil
+  detection belongs in a userspace consumer or NIDS; HARDN already
+  ships Suricata for that.
+
 ### GUI guidance & in-GUI uninstall
 
 - New **welcome wizard** dialog: a 4-step Debian-style modal that pops up
