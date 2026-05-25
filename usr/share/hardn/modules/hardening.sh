@@ -862,14 +862,24 @@ network_sysctls=(
     "net.ipv4.conf.all.rp_filter=1"
     "net.ipv4.conf.default.rp_filter=1"
     "net.ipv4.tcp_syncookies=1"
-    "net.ipv6.conf.all.accept_ra=0"
-    "net.ipv6.conf.default.accept_ra=0"
 )
+
+# IPv6 router-advertisement acceptance — disabling this strands cloud / VM
+# hosts that rely on SLAAC for their default IPv6 route (AWS, GCP, Azure,
+# DigitalOcean, most home networks). Only disable on bare-metal where the
+# operator usually has explicit static routing.
+if hardn_in_cloud || hardn_in_vm; then
+    HARDN_STATUS INFO "Cloud/VM detected; leaving IPv6 accept_ra enabled (SLAAC needs it)"
+else
+    network_sysctls+=(
+        "net.ipv6.conf.all.accept_ra=0"
+        "net.ipv6.conf.default.accept_ra=0"
+    )
+fi
 
 kernel_sysctls=(
     "kernel.randomize_va_space=2"
     "fs.suid_dumpable=0"
-    "kernel.exec-shield=1"
     "kernel.panic=60"
     "kernel.panic_on_oops=1"
     "kernel.sysrq=0"
@@ -877,10 +887,28 @@ kernel_sysctls=(
     "kernel.kptr_restrict=2"
     "kernel.yama.ptrace_scope=1"
     "kernel.dmesg_restrict=1"
-    "kernel.unprivileged_userns_clone=0"
-    "kernel.unprivileged_bpf_disabled=1"
-    "net.core.bpf_jit_harden=2"
 )
+
+# User namespaces + eBPF restrictions — locking these down breaks any
+# workload that uses unprivileged user namespaces (rootless Podman/Docker,
+# LXD unprivileged containers, Firejail, Chrome/Chromium sandbox, Steam,
+# AppImage) or non-root eBPF tools (bpftrace, Cilium probes). Skip when
+# the host clearly runs container workloads — see env-detect for the
+# heuristics. Operators on a strict workstation can opt back in with
+# HARDN_STRICT_USERNS=1 / HARDN_STRICT_BPF=1.
+if hardn_is_container_workload_host && [ "${HARDN_STRICT_USERNS:-0}" != "1" ]; then
+    HARDN_STATUS INFO "Container workload detected; leaving kernel.unprivileged_userns_clone at the kernel default"
+else
+    kernel_sysctls+=("kernel.unprivileged_userns_clone=0")
+fi
+if hardn_is_container_workload_host && [ "${HARDN_STRICT_BPF:-0}" != "1" ]; then
+    HARDN_STATUS INFO "Container workload detected; leaving eBPF defaults in place"
+else
+    kernel_sysctls+=(
+        "kernel.unprivileged_bpf_disabled=1"
+        "net.core.bpf_jit_harden=2"
+    )
+fi
 
 filesystem_sysctls=(
     "fs.protected_hardlinks=1"
