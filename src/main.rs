@@ -3119,7 +3119,7 @@ fn handle_run_module(module_dirs: &[PathBuf], module_name: &str) -> i32 {
                     join_paths(module_dirs)
                 ),
             );
-            EXIT_FAILURE
+            EXIT_NOT_FOUND
         }
     }
 }
@@ -3150,7 +3150,7 @@ fn handle_run_tool(tool_dirs: &[PathBuf], tool_name: &str, module_dirs: &[PathBu
                     join_paths(tool_dirs)
                 ),
             );
-            EXIT_FAILURE
+            EXIT_NOT_FOUND
         }
     }
 }

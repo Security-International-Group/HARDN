@@ -6,7 +6,7 @@
 //! traditional system cron is unavailable.
 
 use chrono::{DateTime, Datelike, Duration as ChronoDuration, Local, TimeZone, Timelike, Weekday};
-use log::{error, info};
+use log::{error, info, warn};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt;
@@ -18,6 +18,13 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+
+/// Exit code emitted by `flock -E 99` when the lock was already held — used to
+/// distinguish "another HARDN cron job was already running" from a true failure.
+const FLOCK_BUSY_EXIT: i32 = 99;
+/// Directory holding one lock file per cron job. Lives on tmpfs so it
+/// disappears on reboot, which is what we want.
+const CRON_LOCK_DIR: &str = "/run/hardn/cron-locks";
 
 /// Supported cron-like schedules. Additional variants can be added without
 /// changing orchestrator logic.
@@ -194,6 +201,54 @@ impl CronJob {
         }
     }
 
+    /// Per-job lock file. Filename is derived from the job name to keep the
+    /// path predictable for debugging (`ls /run/hardn/cron-locks/`).
+    fn lock_file(&self) -> PathBuf {
+        let safe: String = self
+            .name
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .collect();
+        PathBuf::from(CRON_LOCK_DIR).join(format!("{}.lock", safe))
+    }
+
+    /// Build the Command, wrapping with /usr/bin/flock when present so that
+    /// two HARDN processes scheduling the same job (or a manual run colliding
+    /// with the daemon) can't double-fire and corrupt state.
+    ///
+    /// `flock -n` is non-blocking — if the lock is held we exit immediately
+    /// with `FLOCK_BUSY_EXIT` (99) which execute() recognizes as a skip
+    /// rather than a failure.
+    fn build_command(&self) -> Command {
+        let flock_path = Path::new("/usr/bin/flock");
+        let lock_path = self.lock_file();
+        let use_flock = flock_path.exists();
+
+        if use_flock {
+            // Ensure the lock directory exists. Failure here is non-fatal — we
+            // fall through to running unlocked rather than skipping the job.
+            if let Err(err) = fs::create_dir_all(CRON_LOCK_DIR) {
+                warn!("Cannot create {}: {} — running '{}' without flock", CRON_LOCK_DIR, err, self.name);
+                let mut cmd = Command::new(&self.command);
+                cmd.args(&self.args);
+                return cmd;
+            }
+
+            let mut cmd = Command::new(flock_path);
+            cmd.arg("-n")
+                .arg("-E").arg(FLOCK_BUSY_EXIT.to_string())
+                .arg(&lock_path)
+                .arg("--")
+                .arg(&self.command)
+                .args(&self.args);
+            cmd
+        } else {
+            let mut cmd = Command::new(&self.command);
+            cmd.args(&self.args);
+            cmd
+        }
+    }
+
     fn execute(&self) -> CronRunOutcome {
         self.ensure_log_directory();
         let start = Instant::now();
@@ -225,8 +280,7 @@ impl CronJob {
             );
         }
 
-        let mut command = Command::new(&self.command);
-        command.args(&self.args);
+        let mut command = self.build_command();
 
         if let Some(dir) = &self.working_dir {
             command.current_dir(dir);
@@ -250,9 +304,30 @@ impl CronJob {
                     }
                 }
 
+                let exit_code = result.status.code();
+                // FLOCK_BUSY_EXIT means another instance was already running —
+                // not a failure, just a skipped slot. Report success so the
+                // dashboard doesn't light up red, but make it visible in logs.
+                let busy = exit_code == Some(FLOCK_BUSY_EXIT);
+                if busy {
+                    if let Some(log) = log_handle.as_mut() {
+                        let _ = writeln!(
+                            log,
+                            "[{}] flock busy — another instance held {}, skipping this slot",
+                            Local::now().to_rfc3339(),
+                            self.lock_file().display()
+                        );
+                    }
+                    info!(
+                        "Cron job '{}' skipped: lock {} held by another process",
+                        self.name,
+                        self.lock_file().display()
+                    );
+                }
+
                 CronRunOutcome {
-                    success: result.status.success(),
-                    exit_code: result.status.code(),
+                    success: result.status.success() || busy,
+                    exit_code,
                     duration: start.elapsed(),
                 }
             }
