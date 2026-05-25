@@ -1,0 +1,58 @@
+#!/bin/sh
+# postrm for the hardn package.
+#
+# debhelper auto-generates the systemd-unit teardown block at the bottom of
+# this file; we only handle the things debhelper doesn't know about:
+#
+#   * remove /etc/profile.d/hardn-paths.sh (created by postinst)
+#   * remove the system-wide desktop launcher (shipped by the package)
+#   * on `purge`, also drop the data dirs HARDN populated at runtime
+#     (/var/log/hardn, /var/lib/hardn, /etc/hardn, /run/hardn)
+#
+# We do NOT call the full hardn-uninstall.sh here — that script also reverts
+# /etc/sysctl.d/*-hardn-*.conf, sshd_config.d hardening, etc. which the dpkg
+# file list already covers because they're installed under /etc/. apt-purge
+# of hardn removes those automatically.
+
+set -e
+
+PROFILE_D_FILE="/etc/profile.d/hardn-paths.sh"
+
+case "$1" in
+    remove|deconfigure)
+        # Always drop the env-var loader so a future shell doesn't try to
+        # source non-existent paths.
+        [ -f "$PROFILE_D_FILE" ] && rm -f "$PROFILE_D_FILE" || true
+        ;;
+
+    purge)
+        [ -f "$PROFILE_D_FILE" ] && rm -f "$PROFILE_D_FILE" || true
+
+        # System-wide desktop file. Per-user copies live in $HOME/.local and
+        # are left for the uninstall script (or the user) to clean up — dpkg
+        # has no business in another user's home.
+        [ -f /usr/share/applications/hardn-gui.desktop ] && \
+            rm -f /usr/share/applications/hardn-gui.desktop || true
+        if command -v update-desktop-database >/dev/null 2>&1; then
+            update-desktop-database -q /usr/share/applications 2>/dev/null || true
+        fi
+
+        # Runtime data dirs. Match what `apt purge` users expect.
+        rm -rf /var/log/hardn 2>/dev/null || true
+        rm -rf /var/lib/hardn 2>/dev/null || true
+        rm -rf /etc/hardn 2>/dev/null || true
+        rm -rf /run/hardn 2>/dev/null || true
+        ;;
+
+    upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+
+    *)
+        echo "postrm called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

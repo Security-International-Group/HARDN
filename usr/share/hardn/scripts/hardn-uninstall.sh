@@ -139,6 +139,7 @@ done
 HARDN_STATUS info "Removing HARDN drop-in config files"
 HARDN_OWNED_FILES=(
     /etc/audit/rules.d/99-hardn-hardening.rules
+    /etc/audit/auditd.conf.d/99-hardn.conf
     /etc/sysctl.d/99-hardn-hardening.conf
     /etc/sysctl.d/99-hardn-network-tuning.conf
     /etc/systemd/timesyncd.conf.d/99-hardn.conf
@@ -148,9 +149,13 @@ HARDN_OWNED_FILES=(
     /etc/sudoers.d/99-hardn-logging
     /etc/ssh/sshd_config.d/99-hardn-hardened.conf
     /etc/fail2ban/jail.d/99-hardn.conf
+    /etc/fail2ban/jail.local
     /etc/aide/aide.conf.d/99-hardn-fast.conf
     /etc/logrotate.d/hardn
     /etc/systemd/system/grafana-server.service.d/override.conf
+    # HARDN-managed shell environment + system-wide desktop entry
+    /etc/profile.d/hardn-paths.sh
+    /usr/share/applications/hardn-gui.desktop
 )
 for f in "${HARDN_OWNED_FILES[@]}"; do
     if [ -f "$f" ]; then
@@ -160,9 +165,25 @@ done
 
 # Try to remove now-empty drop-in dirs we may have created
 for d in /etc/systemd/system/grafana-server.service.d \
-         /etc/aide/aide.conf.d; do
+         /etc/aide/aide.conf.d \
+         /etc/audit/auditd.conf.d; do
     run_cmd "rmdir '$d' 2>/dev/null || true"
 done
+
+# Per-user desktop launchers + icons installed by debian/postinst into
+# $HOME/.local/share. We sweep every passwd entry with a valid home dir
+# rather than relying on $SUDO_USER which is unset under apt+policykit.
+HARDN_STATUS info "Removing per-user desktop launchers"
+while IFS=: read -r _user _ uid _ _ home _; do
+    [ "${uid:-0}" -ge 1000 ] || continue
+    [ "${uid:-0}" -lt 65534 ] || continue
+    [ -d "$home" ] || continue
+    for f in \
+        "$home/.local/share/applications/hardn-gui.desktop" \
+        "$home/.local/share/icons/hardn-gui.jpeg"; do
+        [ -e "$f" ] && run_cmd "rm -f '$f'"
+    done
+done < /etc/passwd
 
 # ---------- Step 3: remove HARDN-added APT repos & keys ----------
 HARDN_STATUS info "Removing HARDN-added APT repositories and keys"
@@ -245,13 +266,25 @@ if [ "$KEEP_DATA" -ne 1 ]; then
     # /dev/null so the recovery-summary HARDN_STATUS calls below don't undo
     # the cleanup we're about to do.
     export HARDN_LOG_FILE=/dev/null
+    # /var/lib/hardn covers everything below it: baselines, sentry/baseline.json,
+    # alerts/seen.json, suricata-rules-staging, backups, etc.
     run_cmd "rm -rf /var/log/hardn /var/lib/hardn"
+    # /run is tmpfs so the cron-locks dir disappears at reboot, but clean it
+    # now so a running upgrade doesn't trip over stale entries.
+    run_cmd "rm -rf /run/hardn 2>/dev/null || true"
 else
     HARDN_STATUS info "Preserving /var/log/hardn and /var/lib/hardn (--keep-data)"
 fi
 
 # Remove the installed payload tree if dpkg -P left anything behind
 run_cmd "rm -rf /usr/share/hardn /usr/lib/hardn 2>/dev/null || true"
+
+# Refresh the desktop database so the system menu loses the HARDN entry
+# without a logout. update-desktop-database isn't always present (it's in
+# desktop-file-utils which isn't a HARDN dep) so we make it best-effort.
+if command -v update-desktop-database >/dev/null 2>&1; then
+    run_cmd "update-desktop-database -q /usr/share/applications 2>/dev/null || true"
+fi
 
 # ---------- Step 10: drop hardn user and group ----------
 if getent passwd hardn >/dev/null 2>&1; then

@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### GUI guidance & in-GUI uninstall
+
+- New **welcome wizard** dialog: a 4-step Debian-style modal that pops up
+  on first launch with an overview, GUI tour, common actions, and where to
+  get help. Back / Next / Skip / Done navigation; "Don't show this on next
+  launch" checkbox writes `$XDG_CONFIG_HOME/hardn/welcome-seen` to suppress
+  future launches. Also suppressible via `HARDN_NO_WELCOME=1` for
+  kiosk/CI/autostart use.
+- New **Tools** tab in the main notebook — auto-generated inventory of every
+  script under `/usr/share/hardn/tools/*.sh` with its one-line description,
+  plus a hint for running them from the shell.
+- **Tooltips** on every tab label (Logs / Terminal / Logs+Terminal / Alerts
+  / Tools) explaining what each view shows.
+
+### Uninstall / dpkg parity
+
+- `hardn-uninstall.sh` now cleans up everything the install put in place but
+  the previous version forgot:
+  - `/etc/profile.d/hardn-paths.sh`
+  - `/etc/audit/auditd.conf.d/99-hardn.conf` (PR-A drop-in)
+  - `/etc/fail2ban/jail.local`
+  - System-wide `/usr/share/applications/hardn-gui.desktop`
+  - Per-user `~/.local/share/applications/hardn-gui.desktop` and
+    `~/.local/share/icons/hardn-gui.jpeg` for every passwd entry with
+    `uid >= 1000` and a valid home
+  - `/run/hardn/` (cron-locks tmpfs dir from PR-D)
+  - `/var/lib/hardn/{sentry,alerts,suricata-rules-staging}` (covered by the
+    existing `/var/lib/hardn` rm, but now explicitly noted)
+  - Runs `update-desktop-database` so the system menu drops the HARDN entry
+    without requiring a logout
+- New `debian/postrm`: on `apt remove` removes `/etc/profile.d/hardn-paths.sh`;
+  on `apt purge` also nukes `/usr/share/applications/hardn-gui.desktop`,
+  `/var/log/hardn`, `/var/lib/hardn`, `/etc/hardn`, `/run/hardn` and refreshes
+  the desktop database. Debhelper's auto-generated systemd-unit teardown is
+  preserved via `#DEBHELPER#`.
+
 ### LEGION tattletale (phase 1)
 
 - New **sentry** module (`legion::modules::sentry`) — runs once-per-day from

@@ -407,6 +407,324 @@ mod tests {
     }
 }
 
+/// Build a plain-text inventory of the security tools shipped under
+/// `/usr/share/hardn/tools/*.sh`. The first non-shebang, non-blank comment
+/// line of each script is used as the description. Cheap directory walk;
+/// runs once at GUI startup and the text is static thereafter.
+fn build_tools_inventory() -> String {
+    let candidates = [
+        "/usr/share/hardn/tools",
+        "/usr/local/share/hardn/tools",
+        "./usr/share/hardn/tools",
+    ];
+    let mut dir = None;
+    for c in &candidates {
+        if std::path::Path::new(c).is_dir() {
+            dir = Some(*c);
+            break;
+        }
+    }
+    let dir = match dir {
+        Some(d) => d,
+        None => {
+            return "Tools directory not found.\n\n\
+                    Searched:\n  /usr/share/hardn/tools\n  /usr/local/share/hardn/tools\n"
+                .to_string();
+        }
+    };
+
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(err) => return format!("Unable to read {}: {}\n", dir, err),
+    };
+
+    let mut tools: Vec<(String, String)> = Vec::new();
+    for ent in entries.flatten() {
+        let path = ent.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("sh") {
+            continue;
+        }
+        let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?").to_string();
+        let desc = first_comment_summary(&path).unwrap_or_else(|| "(no description)".into());
+        tools.push((name, desc));
+    }
+    tools.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "HARDN Tools Inventory\n\
+         =====================\n\
+         Source: {}\n\
+         {} tools shipped.\n\n",
+        dir,
+        tools.len()
+    ));
+    for (name, desc) in &tools {
+        out.push_str(&format!("  • {:<22} {}\n", name, desc));
+    }
+    out.push_str(
+        "\nRun a tool from the command line with:\n  sudo hardn run-tool <name>\n\
+         Or from the Terminal tab via hardn-service-manager.\n",
+    );
+    out
+}
+
+/// First non-empty, non-shebang comment line. Used to show a one-line
+/// summary alongside each tool name in the inventory tab.
+fn first_comment_summary(path: &std::path::Path) -> Option<String> {
+    let s = std::fs::read_to_string(path).ok()?;
+    for (i, line) in s.lines().enumerate() {
+        let line = line.trim();
+        if i == 0 && line.starts_with("#!") {
+            continue;
+        }
+        if line.is_empty() || line == "#" {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("# ") {
+            return Some(rest.trim().to_string());
+        }
+        if let Some(rest) = line.strip_prefix('#') {
+            let t = rest.trim();
+            if !t.is_empty() {
+                return Some(t.to_string());
+            }
+        }
+        // First code line — give up
+        break;
+    }
+    None
+}
+
+/// Path to the marker file. When it exists, the welcome wizard does not
+/// pop up on startup. The user can re-trigger by passing `--welcome` or
+/// deleting the file. Lives in $XDG_CONFIG_HOME (default ~/.config).
+fn welcome_marker_path() -> std::path::PathBuf {
+    let base = std::env::var("XDG_CONFIG_HOME")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+            std::path::PathBuf::from(home).join(".config")
+        });
+    base.join("hardn").join("welcome-seen")
+}
+
+/// Show a Debian-style stepped welcome dialog. Modal, transient on the
+/// main window, drives a `Stack` between four pages with Back / Next /
+/// Skip / Done buttons. A "Don't show again" checkbox on the final page
+/// writes the marker file so the wizard never re-opens on this user's
+/// account.
+fn show_welcome_wizard(parent: &ApplicationWindow) {
+    let dialog = gtk4::Window::builder()
+        .transient_for(parent)
+        .modal(true)
+        .title("Welcome to HARDN")
+        .default_width(640)
+        .default_height(440)
+        .build();
+    dialog.set_resizable(true);
+
+    let outer = GtkBox::new(Orientation::Vertical, 0);
+
+    let header = gtk4::HeaderBar::new();
+    header.set_show_title_buttons(true);
+    let header_title = gtk4::Label::new(Some("HARDN — first run"));
+    header.set_title_widget(Some(&header_title));
+    outer.append(&header);
+
+    let stack = gtk4::Stack::new();
+    stack.set_transition_type(gtk4::StackTransitionType::SlideLeftRight);
+    stack.set_hexpand(true);
+    stack.set_vexpand(true);
+    stack.set_margin_top(18);
+    stack.set_margin_bottom(8);
+    stack.set_margin_start(20);
+    stack.set_margin_end(20);
+
+    let pages: [(&str, &str, &str); 4] = [
+        (
+            "p1",
+            "What is HARDN?",
+            "HARDN is a Debian/Ubuntu security hardening toolkit. It bundles \
+             dozens of small modules (SSH hardening, auditd rules, sysctl tuning, \
+             AppArmor, fail2ban, AIDE, …) behind one orchestrator, and runs \
+             continuous detection through a built-in monitor called LEGION.\n\n\
+             This window is a <b>read-only monitor</b>. It never runs privileged \
+             commands on your behalf without you typing a password at a sudo prompt.",
+        ),
+        (
+            "p2",
+            "Reading the GUI",
+            "<b>Logs</b> — live tail of <tt>/var/log/hardn/*.log</tt> with ANSI \
+             control codes stripped so the text stays legible at any window size.\n\n\
+             <b>Terminal</b> — an embedded VTE terminal. Selecting this tab \
+             auto-launches <tt>sudo hardn-service-manager</tt>; you'll be asked for \
+             your password.\n\n\
+             <b>Logs + Terminal</b> — the previous two in a single vertical split.\n\n\
+             <b>Alerts</b> — deduplicated entries from \
+             <tt>/var/log/hardn/alerts.jsonl</tt>: SENTRY file-drift alerts, service \
+             health, LEGION findings.\n\n\
+             <b>Tools</b> — inventory of every script under \
+             <tt>/usr/share/hardn/tools/</tt> with a one-line description.",
+        ),
+        (
+            "p3",
+            "Common actions",
+            "From a regular shell — none of these need this GUI to be open:\n\n\
+             <tt>  sudo hardn --help</tt>             list every command\n\
+             <tt>  sudo hardn --sentry-check</tt>     diff high-value files vs baseline\n\
+             <tt>  sudo hardn run-module <i>name</i></tt>     run one hardening module\n\
+             <tt>  sudo hardn run-tool   <i>name</i></tt>     run one security tool\n\
+             <tt>  sudo hardn legion --create-baseline</tt>   capture a fresh baseline\n\n\
+             To remove HARDN cleanly:\n\
+             <tt>  sudo /usr/share/hardn/scripts/hardn-uninstall.sh --help</tt>",
+        ),
+        (
+            "p4",
+            "Where to get help",
+            "Issues, feature requests, and security reports:\n\n\
+             <tt>  https://github.com/Security-International-Group/HARDN</tt>\n\n\
+             Logs to attach when reporting:\n\
+             <tt>  /var/log/hardn/*.log</tt>\n\
+             <tt>  /var/log/hardn/alerts.jsonl</tt>\n\
+             <tt>  journalctl -u hardn -u hardn-monitor -u hardn-api</tt>",
+        ),
+    ];
+
+    for (id, title, body) in &pages {
+        let page_box = GtkBox::new(Orientation::Vertical, 14);
+        let h = gtk4::Label::new(None);
+        h.set_xalign(0.0);
+        h.set_markup(&format!("<span size='x-large' weight='bold'>{}</span>", title));
+        let b = gtk4::Label::new(None);
+        b.set_use_markup(true);
+        b.set_wrap(true);
+        b.set_xalign(0.0);
+        b.set_markup(body);
+        page_box.append(&h);
+        page_box.append(&b);
+        stack.add_named(&page_box, Some(*id));
+    }
+
+    outer.append(&stack);
+
+    // Page indicator: "Step 1 of 4" etc.
+    let indicator = gtk4::Label::new(Some("Step 1 of 4"));
+    indicator.add_css_class("clock"); // reuse muted style
+    indicator.set_margin_start(20);
+    indicator.set_margin_end(20);
+    indicator.set_xalign(0.0);
+    outer.append(&indicator);
+
+    // "Don't show again" — only meaningful on the last page, but expose it
+    // throughout so users can tick it whenever they're sure.
+    let dont_show = gtk4::CheckButton::with_label("Don't show this on next launch");
+    dont_show.set_margin_start(20);
+    dont_show.set_margin_end(20);
+    dont_show.set_margin_top(6);
+    dont_show.set_margin_bottom(6);
+    outer.append(&dont_show);
+
+    let btn_box = GtkBox::new(Orientation::Horizontal, 8);
+    btn_box.set_margin_start(20);
+    btn_box.set_margin_end(20);
+    btn_box.set_margin_bottom(14);
+    btn_box.set_halign(gtk4::Align::End);
+
+    let btn_skip = gtk4::Button::with_label("Skip");
+    btn_skip.set_tooltip_text(Some("Close this wizard without finishing the tour"));
+    let btn_back = gtk4::Button::with_label("Back");
+    btn_back.set_sensitive(false);
+    let btn_next = gtk4::Button::with_label("Next");
+    btn_next.add_css_class("suggested-action");
+    btn_box.append(&btn_skip);
+    btn_box.append(&btn_back);
+    btn_box.append(&btn_next);
+    outer.append(&btn_box);
+
+    dialog.set_child(Some(&outer));
+
+    // Page-walk state.
+    let current = Rc::new(RefCell::new(0usize));
+    let total = pages.len();
+
+    // Closure to refresh the visible page + button labels + indicator.
+    let refresh = {
+        let stack = stack.clone();
+        let indicator = indicator.clone();
+        let btn_back = btn_back.clone();
+        let btn_next = btn_next.clone();
+        let current = current.clone();
+        let page_ids: Vec<&'static str> = pages.iter().map(|(id, _, _)| *id).collect();
+        move || {
+            let idx = *current.borrow();
+            stack.set_visible_child_name(page_ids[idx]);
+            indicator.set_text(&format!("Step {} of {}", idx + 1, total));
+            btn_back.set_sensitive(idx > 0);
+            if idx + 1 == total {
+                btn_next.set_label("Done");
+            } else {
+                btn_next.set_label("Next");
+            }
+        }
+    };
+    refresh();
+
+    {
+        let current = current.clone();
+        let refresh = refresh.clone();
+        btn_back.connect_clicked(move |_| {
+            let mut idx = current.borrow_mut();
+            if *idx > 0 {
+                *idx -= 1;
+                drop(idx);
+                refresh();
+            }
+        });
+    }
+
+    let close_action = {
+        let dialog = dialog.clone();
+        let dont_show = dont_show.clone();
+        move || {
+            if dont_show.is_active() {
+                let path = welcome_marker_path();
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(&path, "1\n");
+            }
+            dialog.close();
+        }
+    };
+
+    {
+        let current = current.clone();
+        let refresh = refresh.clone();
+        let close_action = close_action.clone();
+        btn_next.connect_clicked(move |_| {
+            let mut idx = current.borrow_mut();
+            if *idx + 1 >= total {
+                drop(idx);
+                close_action();
+            } else {
+                *idx += 1;
+                drop(idx);
+                refresh();
+            }
+        });
+    }
+
+    {
+        let close_action = close_action.clone();
+        btn_skip.connect_clicked(move |_| close_action());
+    }
+
+    dialog.present();
+}
+
 fn main() {
     // Keep GUI separate and read-only
     // Use no application_id to avoid session D-Bus registration requirement
@@ -556,8 +874,17 @@ fn main() {
         notebook.set_hexpand(true);
         notebook.set_vexpand(true);
         let tab_logs_label = gtk4::Label::new(Some("Logs"));
+        tab_logs_label.set_tooltip_text(Some(
+            "Live tail of /var/log/hardn/*.log with ANSI escape codes stripped",
+        ));
         let tab_term_label = gtk4::Label::new(Some("Terminal"));
+        tab_term_label.set_tooltip_text(Some(
+            "Embedded VTE terminal. Auto-launches sudo hardn-service-manager when selected.",
+        ));
         let tab_split_label = gtk4::Label::new(Some("Logs + Terminal"));
+        tab_split_label.set_tooltip_text(Some(
+            "Logs above, Terminal below — drag the divider to resize",
+        ));
 
         // The Notebook requires owned children; wrap scrolled children in boxes to avoid shared child reuse.
         let logs_box = GtkBox::new(Orientation::Vertical, 0);
@@ -580,6 +907,35 @@ fn main() {
     // Default to half the right column height (approx). Users can drag the sash.
     split_paned.set_position(400);
 
+    // -----------------------------------------------------------------
+    // Tools tab — inventory of what's installed under tools/. Generated
+    // at GUI startup; cheap because it's just a directory walk.
+    // -----------------------------------------------------------------
+    let tools_text = build_tools_inventory();
+    let tools_buffer: TextBuffer = TextBuffer::new(None);
+    tools_buffer.set_text(&tools_text);
+    let tools_view = TextView::new();
+    tools_view.set_editable(false);
+    tools_view.set_cursor_visible(false);
+    tools_view.set_monospace(true);
+    tools_view.set_wrap_mode(gtk4::WrapMode::WordChar);
+    tools_view.add_css_class("view");
+    tools_view.set_buffer(Some(&tools_buffer));
+    let tools_scroll = ScrolledWindow::new();
+    tools_scroll.set_policy(gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic);
+    tools_scroll.set_child(Some(&tools_view));
+    tools_scroll.set_overlay_scrolling(false);
+    tools_scroll.set_hexpand(true);
+    tools_scroll.set_vexpand(true);
+    let tools_box = GtkBox::new(Orientation::Vertical, 0);
+    tools_box.set_hexpand(true);
+    tools_box.set_vexpand(true);
+    tools_box.append(&tools_scroll);
+    let tab_tools_label = gtk4::Label::new(Some("Tools"));
+    tab_tools_label.set_tooltip_text(Some(
+        "Inventory of HARDN security tools under /usr/share/hardn/tools",
+    ));
+
     // Alerts tab: deduplicated, severity-tagged view of /var/log/hardn/alerts.jsonl
     let alerts_buffer: TextBuffer = TextBuffer::new(None);
     let alerts_text_view = TextView::new();
@@ -600,11 +956,15 @@ fn main() {
     alerts_box.set_vexpand(true);
     alerts_box.append(&alerts_scroll);
     let tab_alerts_label = gtk4::Label::new(Some("Alerts"));
+    tab_alerts_label.set_tooltip_text(Some(
+        "Deduplicated alerts from /var/log/hardn/alerts.jsonl — sentry drift, service health, LEGION findings",
+    ));
 
     notebook.append_page(&logs_box, Some(&tab_logs_label));
     notebook.append_page(&term_box, Some(&tab_term_label));
     notebook.append_page(&split_paned, Some(&tab_split_label));
     notebook.append_page(&alerts_box, Some(&tab_alerts_label));
+    notebook.append_page(&tools_box, Some(&tab_tools_label));
         notebook.set_tab_pos(gtk4::PositionType::Top);
 
         // Prepare on-demand terminal launch per tab selection (one-time per view)
@@ -1024,6 +1384,17 @@ fn main() {
         }
 
         window.present();
+
+        // Show the welcome wizard on first launch. Skipped when the marker
+        // file exists or HARDN_NO_WELCOME=1 is set in the environment (handy
+        // for kiosk / CI / autostart scenarios).
+        let suppress_env = std::env::var("HARDN_NO_WELCOME")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let marker = welcome_marker_path();
+        if !suppress_env && !marker.exists() {
+            show_welcome_wizard(&window);
+        }
     });
 
     app.run();
