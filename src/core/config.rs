@@ -14,6 +14,10 @@ pub const DEFAULT_LIB_DIR: &str = "/var/lib/hardn";
 pub const EXIT_SUCCESS: i32 = 0;
 pub const EXIT_FAILURE: i32 = 1;
 pub const EXIT_USAGE: i32 = 2;
+/// POSIX convention: "command not found". Returned when a requested
+/// tool/module script doesn't exist on disk, distinct from EXIT_FAILURE
+/// which means "the tool ran and failed". Lets cron and CI tell the two apart.
+pub const EXIT_NOT_FOUND: i32 = 127;
 
 /// Default directories to search for module scripts
 /// These are searched in order, with the first match being used

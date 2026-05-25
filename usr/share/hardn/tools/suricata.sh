@@ -13,8 +13,8 @@ log_tool_execution "suricata.sh"
 create_fallback_suricata_rules() {
     HARDN_STATUS "info" "Creating fallback suricata.rules configuration..."
 
-    # Ensure the rules directory exists
-    mkdir -p /etc/suricata/rules
+    # Ensure the rules directory exists with the right owner from the start.
+    install -d -o suricata -g suricata -m 0755 /etc/suricata/rules
 
     # Create a basic suricata.rules file that includes all existing rule files
     cat > /etc/suricata/rules/suricata.rules << 'EOF'
@@ -54,27 +54,69 @@ EOF
 fix_suricata_configuration() {
     HARDN_STATUS "info" "Attempting to fix Suricata configuration issues..."
 
-    # Ensure all required directories exist
-    mkdir -p /var/log/suricata
-    mkdir -p /var/lib/suricata/rules
-    mkdir -p /etc/suricata/rules
-
-    chown -R suricata:suricata /var/log/suricata
-    chown -R suricata:suricata /var/lib/suricata
-    chown -R suricata:suricata /etc/suricata/rules
+    # `install -d` sets owner+group+mode in one syscall — avoids the window
+    # where the directory exists with the wrong ownership before the later
+    # chown lands (which matters when suricata is already running and tries
+    # to read its rule dir mid-bootstrap).
+    install -d -o suricata -g suricata -m 0755 /var/log/suricata
+    install -d -o suricata -g suricata -m 0755 /var/lib/suricata
+    install -d -o suricata -g suricata -m 0755 /var/lib/suricata/rules
+    install -d -o suricata -g suricata -m 0755 /etc/suricata/rules
 
     # Ensure the suricata.rules file exists
     if [ ! -f "/etc/suricata/rules/suricata.rules" ]; then
         create_fallback_suricata_rules
     fi
 
-    # Fix common permission issues
-    chmod 755 /var/log/suricata
-    chmod 755 /var/lib/suricata
-    chmod 755 /etc/suricata/rules
     chmod 644 /etc/suricata/rules/*.rules 2>/dev/null || true
 
     HARDN_STATUS "info" "Configuration fix attempts completed"
+}
+
+# Run suricata-update against a staging directory, then atomically swap the
+# resulting suricata.rules into place via rename(2). Without this, a running
+# suricata that reloads mid-update can see a truncated/inconsistent rules file.
+suricata_update_rules_atomic() {
+    local staging_dir="/var/lib/hardn/suricata-rules-staging"
+    local live_dir="/etc/suricata/rules"
+    local live_file="$live_dir/suricata.rules"
+    local staged_file="$staging_dir/suricata.rules"
+
+    install -d -o suricata -g suricata -m 0755 "$staging_dir"
+    install -d -o suricata -g suricata -m 0755 "$live_dir"
+
+    HARDN_STATUS "info" "Running suricata-update into staging dir $staging_dir"
+    if ! suricata-update --output "$staging_dir" --no-test --force; then
+        HARDN_STATUS "warning" "suricata-update failed; keeping existing rules"
+        return 1
+    fi
+
+    if [ ! -s "$staged_file" ]; then
+        HARDN_STATUS "warning" "suricata-update produced no rules file; keeping existing rules"
+        return 1
+    fi
+
+    # Validate the staged rules against the live config BEFORE swapping in.
+    # If suricata can't parse them we abort and the running daemon is unharmed.
+    if [ -f /etc/suricata/suricata.yaml ]; then
+        if ! suricata -T -c /etc/suricata/suricata.yaml -S "$staged_file" >/dev/null 2>&1; then
+            HARDN_STATUS "warning" "Staged rules failed suricata -T validation; keeping existing rules"
+            return 1
+        fi
+    fi
+
+    chown suricata:suricata "$staged_file" 2>/dev/null || true
+    chmod 644 "$staged_file" 2>/dev/null || true
+
+    # rename(2) is atomic on the same filesystem. /var/lib and /etc/suricata
+    # are both on / on all supported targets.
+    if mv -f "$staged_file" "$live_file"; then
+        HARDN_STATUS "pass" "Suricata rules swapped in atomically"
+        return 0
+    else
+        HARDN_STATUS "warning" "Could not atomically swap rules into $live_file"
+        return 1
+    fi
 }
 
 HARDN_STATUS "info" "Setting up Suricata IDS/IPS..."
@@ -226,13 +268,10 @@ if command_exists suricata; then
         HARDN_STATUS "pass" "Suricata user created"
     fi
 
-    # Create log directory
-    mkdir -p /var/log/suricata
-    chown suricata:suricata /var/log/suricata
-
-    # Create rules directory
-    mkdir -p /var/lib/suricata/rules
-    chown suricata:suricata /var/lib/suricata/rules
+    # Create log + rules dirs with correct owner/perms in one syscall.
+    install -d -o suricata -g suricata -m 0755 /var/log/suricata
+    install -d -o suricata -g suricata -m 0755 /var/lib/suricata
+    install -d -o suricata -g suricata -m 0755 /var/lib/suricata/rules
 
     # Install/update suricata-update for rule management
     if ! command_exists suricata-update; then
@@ -246,23 +285,11 @@ if command_exists suricata; then
 
     # Update rules if suricata-update is available
     if command_exists suricata-update; then
-        HARDN_STATUS "info" "Updating Suricata rules..."
-        # Configure suricata-update to output to /etc/suricata/rules/
-        if suricata-update --output /etc/suricata/rules --force; then
-            HARDN_STATUS "pass" "Suricata rules updated successfully"
-
-            # Verify that suricata.rules file was created
-            if [ -f "/etc/suricata/rules/suricata.rules" ]; then
-                HARDN_STATUS "pass" "suricata.rules file created successfully"
-                # Set proper ownership
-                chown suricata:suricata /etc/suricata/rules/suricata.rules
-            else
-                HARDN_STATUS "warning" "suricata.rules file not found, creating fallback configuration"
-                # Create a basic suricata.rules file that includes existing rule files
-                create_fallback_suricata_rules
-            fi
-        else
-            HARDN_STATUS "warning" "Suricata rules update failed, creating fallback configuration"
+        HARDN_STATUS "info" "Updating Suricata rules (atomic swap)..."
+        if suricata_update_rules_atomic; then
+            :
+        elif [ ! -f /etc/suricata/rules/suricata.rules ]; then
+            HARDN_STATUS "warning" "No existing rules to fall back to; writing fallback configuration"
             create_fallback_suricata_rules
         fi
     else

@@ -117,6 +117,9 @@ const DEFAULT_LIB_DIR: &str = "/var/lib/hardn";
 const EXIT_SUCCESS: i32 = 0;
 const EXIT_FAILURE: i32 = 1;
 const EXIT_USAGE: i32 = 2;
+/// POSIX "command not found" — returned by run-tool / run-module when the
+/// requested script doesn't exist, so callers can distinguish missing from failed.
+const EXIT_NOT_FOUND: i32 = 127;
 
 /// Custom error type for better error handling
 /// 
@@ -1900,7 +1903,7 @@ fn handle_run_module(module_dirs: &[PathBuf], module_name: &str) -> i32 {
                     join_paths(module_dirs)
                 ),
             );
-            EXIT_FAILURE
+            EXIT_NOT_FOUND
         }
     }
 }
@@ -1933,7 +1936,7 @@ fn handle_run_tool(tool_dirs: &[PathBuf], tool_name: &str, module_dirs: &[PathBu
                     join_paths(tool_dirs)
                 ),
             );
-            EXIT_FAILURE
+            EXIT_NOT_FOUND
         }
     }
 }

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Tools hygiene
+
+- Cron orchestrator now wraps every job in `/usr/bin/flock -n -E 99` keyed
+  by `/run/hardn/cron-locks/<job>.lock`. Concurrent HARDN processes (daemon
+  + manual run, or two daemons during upgrades) can no longer double-fire
+  a job mid-flight. A busy lock is logged as INFO ("another instance held
+  the lock") and reported as success so the dashboard doesn't light up red
+- Suricata rule updates now run into a staging dir
+  (`/var/lib/hardn/suricata-rules-staging`), pass `suricata -T -S`
+  validation, and atomically swap into `/etc/suricata/rules/suricata.rules`
+  via `rename(2)` — a running Suricata can never observe a half-written
+  rule file. Update failure leaves the previous rules untouched
+- Suricata setup uses `install -d -o suricata -g suricata -m 0755 ...` so
+  rule/log/cache dirs land with the right ownership in one syscall instead
+  of opening a chmod-race window between `mkdir` and the later `chown`
+- New `EXIT_NOT_FOUND = 127` exit code: `hardn run-tool <missing>` and
+  `hardn run-module <missing>` now return 127 (POSIX "command not found")
+  instead of 1, so cron/CI can distinguish a typo from a real failure
+
 ### Hardware & cloud compatibility
 
 - New environment-detection helper `tools/env-detect.sh` populating
