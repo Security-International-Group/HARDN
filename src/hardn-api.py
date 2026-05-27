@@ -27,7 +27,7 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS — restrict to explicit list; override via HARDN_API_CORS_ORIGINS (comma-separated)
+# CORS: restrict to an explicit list; override via HARDN_API_CORS_ORIGINS (comma-separated)
 _raw_origins = os.environ.get(
     "HARDN_API_CORS_ORIGINS", "http://localhost:9002,http://127.0.0.1:9002"
 )
@@ -76,7 +76,7 @@ def verify_ssh_key(credentials: HTTPAuthorizationCredentials = Depends(security)
     if not os.path.isfile(AUTHORIZED_KEYS_FILE):
         logger.error("Authorized keys file not found: %s", AUTHORIZED_KEYS_FILE)
         raise HTTPException(
-            status_code=503, detail="Authorization unavailable — keys file missing"
+            status_code=503, detail="Authorization unavailable: keys file missing"
         )
 
     # Extract the key material (type + base64 blob, ignore optional comment)
@@ -114,7 +114,7 @@ def _safe_net_connections() -> Optional[int]:
 
 # System monitoring functions
 def get_system_health() -> Dict:
-    """Get comprehensive system health metrics"""
+    """Return CPU, memory, disk, network, load, uptime, and timestamp."""
     try:
         return {
             "cpu_percent": psutil.cpu_percent(interval=1),
@@ -235,9 +235,259 @@ def health_check():
     }
 
 
+# ---------------------------------------------------------------------------
+# Prometheus metrics endpoint
+#
+# Unauthenticated, plain-text exposition format. Same access-control posture
+# as /health: rely on the operator's network-layer policy (UFW +
+# iptables HARDN-LOCKDOWN, scoped via HARDN_API_ALLOWED_CIDRS) rather than
+# adding a bearer-token dance to a metrics scrape. Everything below reads
+# its source file at request time; missing files just produce no rows for
+# that metric family.
+# ---------------------------------------------------------------------------
+from fastapi.responses import PlainTextResponse  # noqa: E402
+
+ALERTS_FILE = os.environ.get("HARDN_ALERTS_FILE", "/var/log/hardn/alerts.jsonl")
+CRON_SUMMARY_FILE = os.environ.get(
+    "HARDN_CRON_SUMMARY_FILE", "/var/lib/hardn/monitor/cron_summary.json"
+)
+SENTRY_BASELINE_FILE = os.environ.get(
+    "HARDN_SENTRY_BASELINE_FILE", "/var/lib/hardn/sentry/baseline.json"
+)
+LEGION_DB_DIR = os.environ.get("HARDN_LEGION_DB_DIR", "/var/lib/hardn/legion")
+
+# Service units we report up/down for. Keep small so the metric stays cheap.
+TRACKED_SERVICES = [
+    "hardn.service",
+    "hardn-api.service",
+    "hardn-monitor.service",
+    "legion-daemon.service",
+]
+
+
+def _prom_escape_label_value(value: str) -> str:
+    """Escape a Prometheus label value per the exposition format spec."""
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def _collect_alert_counts():
+    """Tally alerts.jsonl by severity and by (sentry verb, category).
+
+    Returns (severity_counts, sentry_counts). On read error returns empty
+    dicts so the metric family becomes a no-op rather than 500-ing the
+    scrape.
+    """
+    import json as _json
+
+    severity_counts: Dict[str, int] = {}
+    sentry_counts: Dict[tuple, int] = {}
+    try:
+        with open(ALERTS_FILE, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = _json.loads(line)
+                except Exception:
+                    continue
+                sev = rec.get("severity", "info")
+                severity_counts[sev] = severity_counts.get(sev, 0) + 1
+
+                source = rec.get("source", "")
+                if source.startswith("sentry/"):
+                    category = source.split("/", 1)[1]
+                    key_field = rec.get("key", "")
+                    # key shape: sentry:<category>:<verb>:<path>
+                    parts = key_field.split(":", 3)
+                    verb = parts[2] if len(parts) >= 4 else "unknown"
+                    bucket = (verb, category)
+                    sentry_counts[bucket] = sentry_counts.get(bucket, 0) + 1
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        logger.warning("metrics: error reading %s: %s", ALERTS_FILE, e)
+    return severity_counts, sentry_counts
+
+
+def _collect_cron_metrics():
+    """Read /var/lib/hardn/monitor/cron_summary.json and return per-job rows."""
+    import json as _json
+
+    try:
+        with open(CRON_SUMMARY_FILE, "r", encoding="utf-8") as f:
+            doc = _json.load(f)
+    except FileNotFoundError:
+        return []
+    except Exception as e:
+        logger.warning("metrics: error reading %s: %s", CRON_SUMMARY_FILE, e)
+        return []
+
+    jobs = doc.get("jobs", []) if isinstance(doc, dict) else []
+    out = []
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        name = job.get("name") or "unknown"
+        last_run = job.get("last_run")
+        last_success = job.get("last_success")
+        last_duration = job.get("last_duration_seconds")
+        last_ts = None
+        if last_run:
+            try:
+                # rfc3339 to unix
+                last_ts = datetime.fromisoformat(
+                    last_run.replace("Z", "+00:00")
+                ).timestamp()
+            except Exception:
+                last_ts = None
+        out.append(
+            {
+                "name": name,
+                "last_run_ts": last_ts,
+                "last_success": last_success,
+                "last_duration_seconds": last_duration,
+            }
+        )
+    return out
+
+
+def _service_up(unit: str) -> int:
+    """Return 1 if systemctl reports the unit active, 0 otherwise."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-active", unit],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        return 1 if result.stdout.strip() == "active" else 0
+    except Exception:
+        return 0
+
+
+def _baseline_age_seconds(path: str):
+    """Return mtime age in seconds, or None if the file isn't there."""
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        return None
+    except Exception:
+        return None
+    return max(0.0, time.time() - st.st_mtime)
+
+
+def _legion_db_present() -> int:
+    try:
+        for entry in os.listdir(LEGION_DB_DIR):
+            if entry.endswith(".db"):
+                return 1
+    except FileNotFoundError:
+        return 0
+    except Exception:
+        return 0
+    return 0
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+def prometheus_metrics():
+    """Expose HARDN telemetry in Prometheus text exposition format."""
+    lines = []
+    a = lines.append
+
+    # Build info
+    a("# HELP hardn_info HARDN build info, value is always 1.")
+    a("# TYPE hardn_info gauge")
+    a('hardn_info{version="1.0.0-1"} 1')
+
+    # Service up/down
+    a("# HELP hardn_service_up systemctl is-active==1 for a tracked HARDN unit.")
+    a("# TYPE hardn_service_up gauge")
+    for unit in TRACKED_SERVICES:
+        a(
+            'hardn_service_up{{service="{}"}} {}'.format(
+                _prom_escape_label_value(unit), _service_up(unit)
+            )
+        )
+
+    # Alert totals (cumulative within the current alerts.jsonl file)
+    severity_counts, sentry_counts = _collect_alert_counts()
+    a("# HELP hardn_alerts_total Alerts recorded in /var/log/hardn/alerts.jsonl.")
+    a("# TYPE hardn_alerts_total counter")
+    for sev, count in sorted(severity_counts.items()):
+        a(
+            'hardn_alerts_total{{severity="{}"}} {}'.format(
+                _prom_escape_label_value(sev), count
+            )
+        )
+
+    # Sentry drift
+    a("# HELP hardn_sentry_drift_total SENTRY file drift alerts by verb and category.")
+    a("# TYPE hardn_sentry_drift_total counter")
+    for (verb, category), count in sorted(sentry_counts.items()):
+        a(
+            'hardn_sentry_drift_total{{verb="{}",category="{}"}} {}'.format(
+                _prom_escape_label_value(verb),
+                _prom_escape_label_value(category),
+                count,
+            )
+        )
+
+    # Cron job state
+    cron_rows = _collect_cron_metrics()
+    if cron_rows:
+        a("# HELP hardn_cron_last_run_timestamp_seconds Unix ts of last cron run.")
+        a("# TYPE hardn_cron_last_run_timestamp_seconds gauge")
+        for row in cron_rows:
+            if row["last_run_ts"] is None:
+                continue
+            a(
+                'hardn_cron_last_run_timestamp_seconds{{job="{}"}} {}'.format(
+                    _prom_escape_label_value(row["name"]), row["last_run_ts"]
+                )
+            )
+        a("# HELP hardn_cron_last_success 1 if last cron run succeeded.")
+        a("# TYPE hardn_cron_last_success gauge")
+        for row in cron_rows:
+            if row["last_success"] is None:
+                continue
+            a(
+                'hardn_cron_last_success{{job="{}"}} {}'.format(
+                    _prom_escape_label_value(row["name"]),
+                    1 if row["last_success"] else 0,
+                )
+            )
+        a("# HELP hardn_cron_last_duration_seconds Wall-clock seconds of last cron run.")
+        a("# TYPE hardn_cron_last_duration_seconds gauge")
+        for row in cron_rows:
+            if row["last_duration_seconds"] is None:
+                continue
+            a(
+                'hardn_cron_last_duration_seconds{{job="{}"}} {}'.format(
+                    _prom_escape_label_value(row["name"]),
+                    row["last_duration_seconds"],
+                )
+            )
+
+    # SENTRY baseline freshness
+    sentry_age = _baseline_age_seconds(SENTRY_BASELINE_FILE)
+    if sentry_age is not None:
+        a("# HELP hardn_sentry_baseline_age_seconds Seconds since the SENTRY baseline was last written.")
+        a("# TYPE hardn_sentry_baseline_age_seconds gauge")
+        a("hardn_sentry_baseline_age_seconds {:.0f}".format(sentry_age))
+
+    # LEGION baseline present
+    a("# HELP hardn_legion_baseline_present 1 if a LEGION baseline SQLite DB exists.")
+    a("# TYPE hardn_legion_baseline_present gauge")
+    a("hardn_legion_baseline_present {}".format(_legion_db_present()))
+
+    a("")  # exposition format requires a trailing newline
+    return "\n".join(lines)
+
+
 @app.get("/overwatch/system")
 def get_system_overwatch(api_key: str = Depends(verify_ssh_key)):
-    """Get comprehensive system overwatch data"""
+    """Return endpoint identity, system health, and tracked service states."""
     return {
         "endpoint_id": os.uname().nodename,
         "system_health": get_system_health(),
@@ -416,7 +666,7 @@ def get_legion_logs(lines: int = 50, api_key: str = Depends(verify_ssh_key)):
 
 @app.get("/diagnostics/full")
 def get_full_diagnostics(api_key: str = Depends(verify_ssh_key)):
-    """Get comprehensive system diagnostics"""
+    """Return system health, service status, build info, and timestamp."""
     return {
         "endpoint_id": os.uname().nodename,
         "system_info": {
@@ -463,7 +713,7 @@ if __name__ == "__main__":
     print(
         "Remote access: Grafana (port 9002) and HARDN API (port 8000) only. SSH port 22 is closed."
     )
-    print(f"Auth: SSH public key required — add keys to {AUTHORIZED_KEYS_FILE}")
+    print(f"Auth: SSH public key required. Add keys to {AUTHORIZED_KEYS_FILE}")
     print("API endpoints:")
     print("  GET /health - Health check")
     print("  GET /overwatch/system - System overwatch data")

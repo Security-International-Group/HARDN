@@ -7,9 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-The unreleased work landed as six stacked PRs (A, B, D, C, E, F) on the
-`patch` branch through May 2026. They are grouped here by area rather than
-by PR.
+The unreleased work landed as seven stacked PRs (A, B, D, C, E, F, G) on
+the `patch` branch through May 2026. They are grouped here by area rather
+than by PR.
+
+### Observability: Prometheus + Grafana wired through (PR G)
+
+- New **`GET /metrics`** endpoint on `hardn-api`, Prometheus text-format,
+  unauthenticated (same access-control story as `/health`: rely on the
+  network-layer policy that UFW + the iptables `HARDN-LOCKDOWN` chain
+  already enforce). Exposed series:
+  - `hardn_info{version=...}`
+  - `hardn_service_up{service=...}` for the four HARDN units
+  - `hardn_alerts_total{severity=...}` from `alerts.jsonl`
+  - `hardn_sentry_drift_total{verb=...,category=...}` from SENTRY records
+  - `hardn_cron_last_run_timestamp_seconds{job=...}`,
+    `hardn_cron_last_success{job=...}`,
+    `hardn_cron_last_duration_seconds{job=...}` from `cron_summary.json`
+  - `hardn_sentry_baseline_age_seconds`
+  - `hardn_legion_baseline_present`
+- New `tools/prometheus.sh`. Installs `prometheus` +
+  `prometheus-node-exporter` from Debian main, appends a
+  `scrape_config_files: /etc/prometheus/prometheus.d/*.yml` include to the
+  shipped `/etc/prometheus/prometheus.yml`, drops a HARDN scrape
+  drop-in that pulls from `localhost:8000/metrics` and the node exporter.
+  Skips on unprivileged containers.
+- `tools/grafana.sh` now honours `HARDN_GRAFANA_PORT` (default 3000) end
+  to end. Previously it hard-coded 9002, which mismatched the UFW rule
+  written by `modules/hardening.sh`. The firewall and the daemon now
+  agree.
+- `tools/grafana.sh` provisions a default **HARDN Prometheus** data
+  source at `/etc/grafana/provisioning/datasources/hardn-prometheus.yaml`,
+  pointed at `$HARDN_PROMETHEUS_URL` (default `http://localhost:9090`).
+  Grafana lights up with data as soon as `tools/prometheus.sh` has run.
+- New env knobs:
+  `HARDN_PROMETHEUS_PORT` (9090),
+  `HARDN_NODE_EXPORTER_PORT` (9100),
+  `HARDN_PROMETHEUS_ALLOWED_CIDRS`,
+  `HARDN_PROMETHEUS_URL`.
+- Misleading placeholder removed. The Rust `"System Monitoring"`
+  category in `src/main.rs` and `src/setup/main.rs` listed
+  `prometheus_monitoring`, which was a string with no backing tool. It is
+  now `["audit", "auditd", "prometheus", "grafana"]`, all of which exist
+  on disk under `usr/share/hardn/tools/`.
 
 ### Hardware, cloud, and container compatibility (PR A + B)
 

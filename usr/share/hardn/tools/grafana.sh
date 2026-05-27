@@ -7,14 +7,19 @@ set -euo pipefail
 # What this does:
 #   - Ensures Grafana APT repo and key exist
 #   - Installs Grafana if missing
-#   - Forces Grafana to listen on port 9002
+#   - Forces Grafana to listen on $HARDN_GRAFANA_PORT (default 3000;
+#     same value used by the UFW + iptables HARDN-LOCKDOWN chain in
+#     modules/hardening.sh, so the firewall and the daemon stay in sync)
+#   - Provisions a default Prometheus data source pointed at the local
+#     Prometheus (http://localhost:9090) so Grafana lights up with data
+#     as soon as tools/prometheus.sh has run
 #   - Enables and starts the service
 #   - Verifies health via curl against loopback
 #
 # Designed to be:
 #   - Idempotent (safe to run multiple times)
 #   - Tolerant of transient repo/network failures
-#   - Non-breaking for “Run ALL tools” workflows
+#   - Non-breaking for "Run ALL tools" workflows
 # ------------------------------------------------------------
 
 source "$(cd "$(dirname "$0")" && pwd)/functions.sh"
@@ -65,12 +70,12 @@ ensure_grafana_repo() {
 
 
 # ------------------------------------------------------------
-# Ensure Grafana listens on port 9002
+# Ensure Grafana listens on the configured port
 # modifies grafana.ini and adds a systemd override
 # ------------------------------------------------------------
 ensure_grafana_port() {
 
-    local desired_port="9002"
+    local desired_port="${HARDN_GRAFANA_PORT:-3000}"
     local ini="/etc/grafana/grafana.ini"
     local override_dir="/etc/systemd/system/grafana-server.service.d"
     local override_file="${override_dir}/override.conf"
@@ -124,7 +129,8 @@ EOF
 # ------------------------------------------------------------
 grafana_health_check() {
 
-    local url="http://127.0.0.1:9002/api/health"
+    local port="${HARDN_GRAFANA_PORT:-3000}"
+    local url="http://127.0.0.1:${port}/api/health"
     local attempts=15
     local delay=2
 
@@ -141,7 +147,7 @@ grafana_health_check() {
         code=$(curl -s -o /dev/null -w "%{http_code}" "$url" 2>/dev/null)
 
         if [ "$code" = "200" ]; then
-            HARDN_STATUS "pass" "Grafana is healthy on port 9002"
+            HARDN_STATUS "pass" "Grafana is healthy on port ${port}"
             HARDN_STATUS "info" "Health response: $response"
             return 0
         fi
@@ -149,8 +155,39 @@ grafana_health_check() {
         sleep "$delay"
     done
 
-    HARDN_STATUS "error" "Grafana did not report healthy on port 9002"
+    HARDN_STATUS "error" "Grafana did not report healthy on port ${port}"
     return 1
+}
+
+# ------------------------------------------------------------
+# Drop a default Prometheus data-source provisioning file so
+# Grafana auto-loads it at startup. Idempotent: rewrites the file
+# every run so HARDN_PROMETHEUS_URL changes are picked up.
+# ------------------------------------------------------------
+ensure_prometheus_datasource() {
+    local ds_dir="/etc/grafana/provisioning/datasources"
+    local ds_file="${ds_dir}/hardn-prometheus.yaml"
+    local prom_url="${HARDN_PROMETHEUS_URL:-http://localhost:9090}"
+
+    install -d -m 0755 "$ds_dir" 2>/dev/null || true
+
+    cat > "$ds_file" <<EOF
+# Managed by HARDN tools/grafana.sh. Do not edit by hand.
+apiVersion: 1
+datasources:
+  - name: HARDN Prometheus
+    type: prometheus
+    access: proxy
+    url: ${prom_url}
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: "30s"
+EOF
+    chown root:grafana "$ds_file" 2>/dev/null || true
+    chmod 0640 "$ds_file" 2>/dev/null || true
+
+    HARDN_STATUS "info" "Grafana data source provisioned: ${prom_url}"
 }
 
 HARDN_STATUS "info" "Ensuring Grafana package is installed"
@@ -178,6 +215,8 @@ fi
 # Apply port configuration
 ensure_grafana_port
 
+# Drop Prometheus data source so Grafana boots with data wired in
+ensure_prometheus_datasource
 
 # Enable and start
 HARDN_STATUS "info" "Enabling and starting Grafana service"
@@ -194,16 +233,17 @@ systemctl restart grafana-server 2>/dev/null || true
 grafana_health_check || true
 
 # Open UFW rule for Grafana port if UFW is active
+GRAFANA_PORT="${HARDN_GRAFANA_PORT:-3000}"
 if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "^Status: active"; then
-    if ufw allow in 9002/tcp comment 'Grafana dashboard' 2>/dev/null; then
-        HARDN_STATUS "pass" "UFW rule added: allow inbound port 9002/tcp (Grafana)"
+    if ufw allow in "${GRAFANA_PORT}/tcp" comment 'Grafana dashboard' 2>/dev/null; then
+        HARDN_STATUS "pass" "UFW rule added: allow inbound port ${GRAFANA_PORT}/tcp (Grafana)"
     else
-        HARDN_STATUS "warning" "Failed to add UFW rule for port 9002 — add manually: ufw allow in 9002/tcp"
+        HARDN_STATUS "warning" "Failed to add UFW rule for port ${GRAFANA_PORT}. Add manually: ufw allow in ${GRAFANA_PORT}/tcp"
     fi
 else
-    HARDN_STATUS "info" "UFW not active — if UFW is enabled later, run: ufw allow in 9002/tcp"
+    HARDN_STATUS "info" "UFW not active. If UFW is enabled later, run: ufw allow in ${GRAFANA_PORT}/tcp"
 fi
 
 HARDN_STATUS "info" "Grafana setup complete"
-HARDN_STATUS "info" "Access URL: http://localhost:9002"
+HARDN_STATUS "info" "Access URL: http://localhost:${GRAFANA_PORT}"
 HARDN_STATUS "info" "Default credentials: admin / admin (change immediately)"

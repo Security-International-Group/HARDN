@@ -138,6 +138,16 @@ curl -H "Authorization: Bearer $SSH_KEY" http://your-server:8000/overwatch/servi
 ### Health Check
 - `GET /health` - Basic API health check (no authentication required)
 
+### Prometheus metrics
+- `GET /metrics` - Prometheus text-format exposition of HARDN telemetry.
+  Unauthenticated; same access-control posture as `/health` (rely on the
+  UFW + iptables `HARDN-LOCKDOWN` chain to scope who can reach the API
+  port). Series exposed include `hardn_service_up`, `hardn_alerts_total`,
+  `hardn_sentry_drift_total`, `hardn_cron_last_run_timestamp_seconds`,
+  `hardn_sentry_baseline_age_seconds`, and `hardn_legion_baseline_present`.
+  Scrape from `localhost:8000/metrics`; `tools/prometheus.sh` writes a
+  drop-in that does this automatically.
+
 ### Overwatch Monitoring
 - `GET /overwatch/system` - Complete system health metrics (CPU, memory, disk, network)
 - `GET /overwatch/services` - Status of all monitored services

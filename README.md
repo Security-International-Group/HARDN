@@ -48,6 +48,9 @@ production use and advanced features, contact Security International Group.
   `usr/share/hardn/tools`. Read-only; never runs privileged commands without
   a sudo prompt.
 - **API.** Optional REST endpoint on port 8000 with SSH-key bearer auth.
+  Unauthenticated `/metrics` endpoint exposes Prometheus-format telemetry
+  (service health, alert counts, SENTRY drift, cron job state, baseline
+  age) for the included `tools/prometheus.sh` + `tools/grafana.sh` stack.
 - **Clean uninstall.** `hardn-uninstall.sh` reverses what the install put
   in place, including per-user desktop launchers and the
   `/etc/profile.d/hardn-paths.sh` env-var loader. `apt purge hardn` performs
@@ -169,6 +172,10 @@ The hardening modules and tools read these in addition to the defaults:
 | `HARDN_ALERT_JOURNALD_TAG` | `HARDN-ALERT` | syslog tag for journald-bound alerts |
 | `HARDN_ALERT_DEDUPE_TTL_SEC` | `21600` | Dedupe window for journald + webhook fanout |
 | `HARDN_NO_WELCOME` | `0` | `1` suppresses the GUI welcome wizard |
+| `HARDN_PROMETHEUS_PORT` | `9090` | Prometheus listen port |
+| `HARDN_PROMETHEUS_URL` | `http://localhost:9090` | URL Grafana provisions as the default data source |
+| `HARDN_PROMETHEUS_ALLOWED_CIDRS` | (none) | Allowlist for the Prometheus port |
+| `HARDN_NODE_EXPORTER_PORT` | `9100` | Prometheus node-exporter scrape target |
 
 ## Basic troubleshooting
 
