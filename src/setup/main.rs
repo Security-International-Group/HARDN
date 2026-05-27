@@ -101,7 +101,7 @@ use std::fmt;
 use std::error::Error;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Application version — read from Cargo.toml at compile time so it always
+/// Application version. Read from Cargo.toml at compile time so it always
 /// matches the release tag. To change the displayed version, update `version`
 /// in Cargo.toml only.
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -117,7 +117,7 @@ const DEFAULT_LIB_DIR: &str = "/var/lib/hardn";
 const EXIT_SUCCESS: i32 = 0;
 const EXIT_FAILURE: i32 = 1;
 const EXIT_USAGE: i32 = 2;
-/// POSIX "command not found" — returned by run-tool / run-module when the
+/// POSIX "command not found". Returned by run-tool / run-module when the
 /// requested script doesn't exist, so callers can distinguish missing from failed.
 const EXIT_NOT_FOUND: i32 = 127;
 
@@ -893,7 +893,7 @@ fn get_tool_categories() -> Vec<ToolCategory> {
         ),
         ToolCategory::new(
             "System Monitoring",
-            vec!["audit", "prometheus_monitoring", "centralized_logging", "auditd"],
+            vec!["audit", "auditd", "prometheus", "grafana"],
         ),
         ToolCategory::new(
             "System Management",

@@ -1952,12 +1952,7 @@ fn get_tool_categories() -> Vec<ToolCategory> {
         ),
         ToolCategory::new(
             "System Monitoring",
-            vec![
-                "audit",
-                "prometheus_monitoring",
-                "centralized_logging",
-                "auditd",
-            ],
+            vec!["audit", "auditd", "prometheus", "grafana"],
         ),
         ToolCategory::new(
             "System Management",
@@ -3157,7 +3152,7 @@ fn handle_run_tool(tool_dirs: &[PathBuf], tool_name: &str, module_dirs: &[PathBu
 }
 
 /// Run the sentry baseline-diff check. Prints a short report and exits 0
-/// on success — alerts are emitted via the shared alert channel.
+/// on success. Alerts are emitted via the shared alert channel.
 fn run_sentry_check() -> i32 {
     let report = crate::legion::modules::sentry::run_check();
     if report.first_run {
