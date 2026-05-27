@@ -457,7 +457,9 @@ def prometheus_metrics():
                     1 if row["last_success"] else 0,
                 )
             )
-        a("# HELP hardn_cron_last_duration_seconds Wall-clock seconds of last cron run.")
+        a(
+            "# HELP hardn_cron_last_duration_seconds Wall-clock seconds of last cron run."
+        )
         a("# TYPE hardn_cron_last_duration_seconds gauge")
         for row in cron_rows:
             if row["last_duration_seconds"] is None:
@@ -472,7 +474,9 @@ def prometheus_metrics():
     # SENTRY baseline freshness
     sentry_age = _baseline_age_seconds(SENTRY_BASELINE_FILE)
     if sentry_age is not None:
-        a("# HELP hardn_sentry_baseline_age_seconds Seconds since the SENTRY baseline was last written.")
+        a(
+            "# HELP hardn_sentry_baseline_age_seconds Seconds since the SENTRY baseline was last written."
+        )
         a("# TYPE hardn_sentry_baseline_age_seconds gauge")
         a("hardn_sentry_baseline_age_seconds {:.0f}".format(sentry_age))
 
