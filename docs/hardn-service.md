@@ -9,7 +9,9 @@ U["User / Admin (Remote)"] -->|"HARDN API: port 8000, SSH key auth"| API[HARDN A
 U -->|"Grafana Dashboard: port 3000"| GRF[Grafana]
 CLI[hardn CLI] -->|manual execution| CORE[HARDN Core Service]
 API -->|remote trigger| CORE
-GRF -->|datasource queries| API
+PROM[Prometheus<br/>port 9090] -->|scrapes /metrics| API
+NEXP[node-exporter<br/>port 9100] --> PROM
+GRF -->|queries| PROM
 
 %% ===================== SERVICE COMPONENTS =====================
 subgraph HARDN Core Framework
@@ -94,6 +96,7 @@ class CORE,SRV daemon
 class MOD,TOOLS,CFG,AUD,LOG,RPT,MON,AUTH,DATA layer
 class APP,F2B,UFW,AUDD,CLAM,RKH,LYN,AIDE tools
 class SYSMD,JRN,CRN,NETM os
+class PROM,NEXP,GRF daemon
 ```
 
 ---
@@ -111,5 +114,7 @@ class SYSMD,JRN,CRN,NETM os
 | **System Logger** | Centralized structured journaling for all modules and API events. |
 | **Security Report Generator** | Produces human-readable and machine-readable summaries for audits. |
 | **Linux Services Integration** | Uses systemd for orchestration, journald for logging, cron for scheduling, and NetworkManager for connectivity. |
+| **Prometheus** | Scrapes `hardn-api` `/metrics` (port 8000) and `prometheus-node-exporter` (port 9100). Installed by `tools/prometheus.sh`. Default port 9090, override with `HARDN_PROMETHEUS_PORT`. |
+| **Grafana** | Dashboard on `HARDN_GRAFANA_PORT` (default 3000). `tools/grafana.sh` provisions the HARDN Prometheus data source so it boots wired in. |
 
 ---

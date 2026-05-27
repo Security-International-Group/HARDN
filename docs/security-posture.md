@@ -100,6 +100,22 @@ This document provides a consolidated view of the security controls implemented 
   (default 6 h, override `HARDN_ALERT_DEDUPE_TTL_SEC`) prevents
   pager-spam.
 
+### Observability Stack
+
+- `hardn-api` exposes `GET /metrics` in Prometheus text format. Series
+  cover service up/down, alert counts by severity, SENTRY drift by verb
+  and category, cron last-run timestamps and success flags, SENTRY
+  baseline age, and LEGION baseline presence. Unauthenticated; relies on
+  the UFW + iptables `HARDN-LOCKDOWN` chain scoped via
+  `HARDN_API_ALLOWED_CIDRS` for access control.
+- `tools/prometheus.sh` installs Prometheus + `prometheus-node-exporter`
+  from Debian main and writes a HARDN scrape drop-in pointed at the
+  `/metrics` endpoint plus the node exporter. Skipped in unprivileged
+  containers.
+- `tools/grafana.sh` installs Grafana on `HARDN_GRAFANA_PORT` (default
+  3000) and provisions a default Prometheus data source so the dashboard
+  boots wired in. UFW rule is added when UFW is active.
+
 ## Operational Considerations
 
 - **Policy Files**: `/etc/hardn/compiler-policy.conf` controls compiler stance; ensure infrastructure-as-code or configuration management sets it explicitly.

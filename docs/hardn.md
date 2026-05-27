@@ -168,6 +168,31 @@ REST API for remote management and monitoring:
 - Service status
 - Remote command execution (limited command set)
 - Integration with external tools
+- `GET /metrics` exposes HARDN telemetry in Prometheus text format
+  (service up/down, alert counts, SENTRY drift, cron job state,
+  baseline age). Unauthenticated; scoped by the UFW + iptables
+  `HARDN-LOCKDOWN` chain via `HARDN_API_ALLOWED_CIDRS`.
+
+### Observability stack
+
+`tools/prometheus.sh` installs Prometheus and `prometheus-node-exporter`
+from Debian main, then drops a HARDN scrape config at
+`/etc/prometheus/prometheus.d/hardn-scrape.yml` pointed at
+`localhost:8000/metrics` and the node exporter on `localhost:9100`.
+
+`tools/grafana.sh` installs Grafana on `HARDN_GRAFANA_PORT` (default 3000)
+and provisions a default Prometheus data source at
+`/etc/grafana/provisioning/datasources/hardn-prometheus.yaml`. Grafana
+boots with HARDN telemetry already wired in.
+
+Bring the stack up on a fresh host:
+
+```bash
+sudo hardn run-tool prometheus && sudo hardn run-tool grafana
+```
+
+Then browse to `http://<host>:3000` (admin / admin, change immediately).
+The HARDN Prometheus data source is pre-configured.
 
 ### Hardening modules
 
