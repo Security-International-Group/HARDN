@@ -83,6 +83,33 @@ overridden with `HARDN_ALERT_JOURNALD_TAG` and `HARDN_ALERT_DEDUPE_PATH`.
 The GUI tails `alerts.jsonl` and collapses repeats of the same `key` into
 a single updating row.
 
+## Prometheus Metrics Endpoint
+
+`hardn-api` publishes a `GET /metrics` endpoint in Prometheus text
+exposition format. Unauthenticated; rely on the network-layer policy
+already enforced by UFW and the iptables `HARDN-LOCKDOWN` chain
+(scoped via `HARDN_API_ALLOWED_CIDRS`).
+
+Series exposed:
+
+| Series | Source |
+|---|---|
+| `hardn_info{version}` | build metadata |
+| `hardn_service_up{service}` | `systemctl is-active` for the four HARDN units |
+| `hardn_alerts_total{severity}` | `/var/log/hardn/alerts.jsonl` |
+| `hardn_sentry_drift_total{verb,category}` | SENTRY-source alerts |
+| `hardn_cron_last_run_timestamp_seconds{job}` | `/var/lib/hardn/monitor/cron_summary.json` |
+| `hardn_cron_last_success{job}` | as above |
+| `hardn_cron_last_duration_seconds{job}` | as above |
+| `hardn_sentry_baseline_age_seconds` | mtime of the SENTRY baseline file |
+| `hardn_legion_baseline_present` | 1 if a LEGION baseline SQLite DB exists |
+
+`tools/prometheus.sh` installs Prometheus + node-exporter and writes
+`/etc/prometheus/prometheus.d/hardn-scrape.yml` pointing at
+`localhost:8000/metrics` and `localhost:9100`. `tools/grafana.sh`
+provisions Grafana with the matching Prometheus data source, so the
+stack runs out of the box on a fresh install.
+
 ## Usage
 
 ### Launching the Monitoring Interface

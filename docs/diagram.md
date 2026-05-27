@@ -136,7 +136,7 @@ graph TD
 
 ## HARDN Monitor
 - the mermaid architecture of the HARDN Monitor detailing how it gathers data from in-cluster services and supplies read-only outputs to the GUI.
-- HARDN Monitor aggregates operational data from HARDN Service, LEGION, HARDN API, and Grafana, normalizes it into read-only datasets, and exposes those to the GUI without any Prometheus integration.
+- HARDN Monitor aggregates operational data from HARDN Service, LEGION, HARDN API, Prometheus, and Grafana, normalizes it into read-only datasets, and exposes those to the GUI. The HARDN API publishes a `/metrics` endpoint that Prometheus scrapes; Grafana reads Prometheus and renders dashboards.
 
 ```mermaid
 graph TD
@@ -144,7 +144,9 @@ graph TD
         HS[HARDN Service]
         LG[LEGION]
         API[HARDN API]
+        PROM[Prometheus]
         GF[Grafana]
+        NE[node-exporter]
     end
 
     subgraph HARDN Monitor
@@ -159,7 +161,10 @@ graph TD
 
     HS --> COL
     LG --> COL
-    API --> COL
+    API -->|/metrics| PROM
+    NE --> PROM
+    PROM --> GF
+    PROM --> COL
     GF --> COL
 
     COL --> NORM
@@ -189,7 +194,7 @@ graph TD
     UI --> DASH
 
     subgraph Data Sources
-        TS[(Time-Series Database)]
+        TS[(Prometheus<br/>provisioned by HARDN<br/>tools/grafana.sh)]
         LOG[(Log Store)]
         RO[(HARDN Monitor Read-Only Data)]
     end
