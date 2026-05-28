@@ -12,7 +12,7 @@ use crate::core::config::*;
 use crate::core::types::*;
 use crate::display::banner::print_banner;
 use crate::execution::run_script;
-use crate::utils::{detect_debian_version, log_message, LogLevel};
+use crate::utils::{detect_os, log_message, LogLevel};
 use crate::utils::{env_or_defaults, find_script, join_paths, list_modules};
 use chrono::{DateTime, Utc};
 use comfy_table::{presets::UTF8_FULL, Table};
@@ -2876,9 +2876,9 @@ fn show_status() {
     println!("═════════════════════════════════════════════════════════════════════════════════\n");
 
     // System Information
-    let (version, codename) = detect_debian_version();
+    let os = detect_os();
     println!("SYSTEM INFORMATION:");
-    println!("  OS: Debian {} ({})", version, codename);
+    println!("  OS: {}", os.display());
     println!("  HARDN Version: {}", VERSION);
     // Get current timestamp
     let timestamp = SystemTime::now()

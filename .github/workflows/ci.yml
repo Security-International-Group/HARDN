@@ -15,12 +15,29 @@ env:
 
 jobs:
   build:
-    name: Build and Deploy
+    name: Build and Deploy (${{ matrix.container }})
     runs-on: ubuntu-latest
-    container: ubuntu:24.04
+    container: ${{ matrix.container }}
     timeout-minutes: 45
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Required: 24.04 + 26.04 (current Ubuntu LTSes) + Debian 13 (current stable).
+        # Advisory: 22.04 + Debian 12 (older LTSes) flagged via continue-on-error.
+        include:
+          - container: ubuntu:24.04
+            required: true
+          - container: ubuntu:26.04
+            required: true
+          - container: debian:13
+            required: true
+          - container: ubuntu:22.04
+            required: false
+          - container: debian:12
+            required: false
+    continue-on-error: ${{ matrix.required == false }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -63,6 +80,14 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
+
+      - name: Preflight package availability
+        # Verify every package HARDN tries to install resolves on this
+        # release. A rename or drop (audispd-plugins, iptables-persistent
+        # on newer Debian/Ubuntu) trips the build here instead of silently
+        # degrading at install time. The full TSV report is printed inline
+        # so it's visible in the job log without an artifact upload.
+        run: bash usr/share/hardn/tools/preflight.sh
 
       - name: Install build dependencies from debian/control
         run: |

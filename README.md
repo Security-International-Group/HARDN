@@ -5,10 +5,11 @@
 
 
 <p align="center">
-	<a href="https://www.debian.org/"><img src="https://img.shields.io/badge/debian-13-8B0000?logo=debian&logoColor=white" alt="Debian Base" /></a>
-	<a href="https://www.debian.org/"><img src="https://img.shields.io/badge/debian-12-8B0000?logo=debian&logoColor=white" alt="Debian Base" /></a>
-  <a href="https://ubuntu.com/"><img src="https://img.shields.io/badge/ubuntu-22.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu" /></a>
-  <a href="https://ubuntu.com/"><img src="https://img.shields.io/badge/ubuntu-24.04-red?logo=ubuntu&logoColor=white" alt="Ubuntu" /></a>
+	<a href="https://www.debian.org/"><img src="https://img.shields.io/badge/debian-12-8B0000?logo=debian&logoColor=white" alt="Debian 12" /></a>
+	<a href="https://www.debian.org/"><img src="https://img.shields.io/badge/debian-13-8B0000?logo=debian&logoColor=white" alt="Debian 13" /></a>
+  <a href="https://ubuntu.com/"><img src="https://img.shields.io/badge/ubuntu-22.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu 22.04" /></a>
+  <a href="https://ubuntu.com/"><img src="https://img.shields.io/badge/ubuntu-24.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu 24.04" /></a>
+  <a href="https://ubuntu.com/"><img src="https://img.shields.io/badge/ubuntu-26.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu 26.04" /></a>
 	<a href="https://hits.sh/github.com/Security-International-Group/HARDN/"><img src="https://hits.sh/github.com/Security-International-Group/HARDN.svg?style=flat&label=views" alt="views" /></a>
 </p>
 
@@ -201,6 +202,7 @@ HARDN logs those as INFO and continues.
 - [Audit engine internals](docs/hardn-audit.md)
 - [Security posture summary](docs/security-posture.md)
 - [Architecture diagrams](docs/diagram.md)
+- [Supported platforms](docs/supported-platforms.md)
 
 ## Support
 

@@ -171,7 +171,18 @@ hardn_services_lockdown() {
     fi
 
     if ! command -v iptables >/dev/null 2>&1; then
-        apt_install "iptables" "Installing iptables tools" 120 iptables iptables-persistent netfilter-persistent || true
+        # Pick the persistence package that matches the active backend.
+        # On Debian 11+ / Ubuntu 20.10+ iptables ships as the nftables
+        # shim, and nftables-persistent is the supported way to persist
+        # rules. iptables-persistent still installs but is being phased
+        # out and prints deprecation warnings on newer releases.
+        if hardn_uses_nftables; then
+            apt_install "iptables" "Installing iptables tools (nftables backend)" 120 \
+                iptables nftables nftables-persistent netfilter-persistent || true
+        else
+            apt_install "iptables" "Installing iptables tools (legacy backend)" 120 \
+                iptables iptables-persistent netfilter-persistent || true
+        fi
     fi
 
     # Disable SSH entry points only when explicitly requested

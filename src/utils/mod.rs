@@ -7,4 +7,7 @@ pub mod system;
 pub use alerts::emit_alert;
 pub use logging::{log_message, LogLevel};
 pub use paths::{env_or_defaults, find_script, join_paths, list_modules};
+#[allow(deprecated, unused_imports)]
 pub use system::detect_debian_version;
+#[allow(unused_imports)]
+pub use system::{detect_os, OsInfo};
