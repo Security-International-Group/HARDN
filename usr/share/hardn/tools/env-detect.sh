@@ -122,6 +122,31 @@ hardn_in_vm()        { hardn_detect_env; [ "$HARDN_ENV_IS_VM" = "1" ]; }
 hardn_on_baremetal() { hardn_detect_env; [ "$HARDN_ENV_IS_BAREMETAL" = "1" ]; }
 hardn_in_cloud()     { hardn_detect_env; [ "$HARDN_ENV_IS_CLOUD" = "1" ]; }
 
+# True when the active iptables backend is nf_tables (the default on
+# Debian 11+ and Ubuntu 20.10+). On those hosts the `nftables-persistent`
+# package is the supported way to persist rules across reboots;
+# `iptables-persistent` still installs but increasingly emits deprecation
+# warnings on newer releases. Used by hardening.sh and tools/fail2ban.sh
+# to pick the right persistence package without forcing the operator to
+# care which backend they're on.
+hardn_uses_nftables() {
+    # Explicit override wins.
+    if [ "${HARDN_USES_NFTABLES:-}" = "1" ]; then return 0; fi
+    if [ "${HARDN_USES_NFTABLES:-}" = "0" ]; then return 1; fi
+    # iptables --version on Debian 11+ prints "iptables vX.Y.Z (nf_tables)"
+    # when it's the nft shim, or "(legacy)" when it's the classic backend.
+    if command -v iptables >/dev/null 2>&1; then
+        local ver
+        ver=$(iptables --version 2>/dev/null || true)
+        case "$ver" in
+            *nf_tables*) return 0 ;;
+            *legacy*)    return 1 ;;
+        esac
+    fi
+    # No iptables binary, but nft is present: treat as nftables host.
+    command -v nft >/dev/null 2>&1
+}
+
 # True when this host *runs* containers / sandboxes that depend on
 # unprivileged user namespaces or eBPF. Used by the kernel-hardening
 # block to avoid locking out workloads HARDN itself installs (Firejail)
@@ -206,3 +231,4 @@ export -f hardn_env_summary
 export -f hardn_cloud_metadata_cidrs
 export -f hardn_cloud_health_check_cidrs
 export -f hardn_is_container_workload_host
+export -f hardn_uses_nftables

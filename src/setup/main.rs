@@ -1391,9 +1391,9 @@ fn show_status() {
     println!("═══════════════════════════════════════════════════════════════════════════════\n");
     
     // System Information
-    let (version, codename) = detect_debian_version();
+    let os = detect_os();
     println!("▶ SYSTEM INFORMATION:");
-    println!("  OS: Debian {} ({})", version, codename);
+    println!("  OS: {}", os.display());
     println!("  HARDN Version: {}", VERSION);
     // Get current timestamp
     let timestamp = SystemTime::now()
@@ -1650,24 +1650,53 @@ fn log_message(level: LogLevel, message: &str) {
     println!("{} {}", level, message);
 }
 
-/// Detect the Debian version and codename from /etc/os-release
-/// Returns ("unknown", "unknown") if detection fails
-fn detect_debian_version() -> (String, String) {
-    match fs::read_to_string("/etc/os-release") {
-        Ok(content) => parse_os_release(&content),
-        Err(_) => ("unknown".to_string(), "unknown".to_string()),
+/// Distro identity parsed from /etc/os-release. See utils::system::OsInfo
+/// in the main crate for the shared version; this setup binary has its own
+/// copy so it can be built without a dependency on the main library tree.
+#[derive(Debug, Clone)]
+struct OsInfo {
+    id: String,
+    version: String,
+    codename: String,
+}
+
+impl OsInfo {
+    fn display(&self) -> String {
+        let pretty_id = match self.id.as_str() {
+            "debian" => "Debian".to_string(),
+            "ubuntu" => "Ubuntu".to_string(),
+            other => {
+                let mut chars = other.chars();
+                match chars.next() {
+                    Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+                    None => "unknown".to_string(),
+                }
+            }
+        };
+        format!("{} {} ({})", pretty_id, self.version, self.codename)
     }
 }
 
-/// Parse os-release file content to extract version info
-fn parse_os_release(content: &str) -> (String, String) {
-    let version_id = extract_os_field(content, "VERSION_ID");
-    let codename = extract_os_field(content, "VERSION_CODENAME");
-    (version_id, codename)
+/// Read /etc/os-release. Any field that cannot be read returns "unknown".
+fn detect_os() -> OsInfo {
+    match fs::read_to_string("/etc/os-release") {
+        Ok(content) => parse_os_release(&content),
+        Err(_) => OsInfo {
+            id: "unknown".into(),
+            version: "unknown".into(),
+            codename: "unknown".into(),
+        },
+    }
 }
 
-/// Extract a field value from os-release format
-/// Handles both KEY=value and KEY="value" formats
+fn parse_os_release(content: &str) -> OsInfo {
+    OsInfo {
+        id: extract_os_field(content, "ID"),
+        version: extract_os_field(content, "VERSION_ID"),
+        codename: extract_os_field(content, "VERSION_CODENAME"),
+    }
+}
+
 fn extract_os_field(content: &str, field_name: &str) -> String {
     content
         .lines()
@@ -1944,8 +1973,8 @@ fn handle_run_tool(tool_dirs: &[PathBuf], tool_name: &str, module_dirs: &[PathBu
 /// Handles the default behavior when no command is specified
 /// Returns exit code based on overall success
 fn handle_run_all_modules(module_dirs: &[PathBuf]) -> i32 {
-    let (version, codename) = detect_debian_version();
-    log_message(LogLevel::Pass, &format!("Detected: Debian {} ({})", version, codename));
+    let os = detect_os();
+    log_message(LogLevel::Pass, &format!("Detected: {}", os.display()));
     log_message(LogLevel::Info, "No arguments provided. Discovering and running all modules...");
 
     let modules = match list_modules(module_dirs) {

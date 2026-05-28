@@ -7,9 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-The unreleased work landed as seven stacked PRs (A, B, D, C, E, F, G) on
-the `patch` branch through May 2026. They are grouped here by area rather
-than by PR.
+The unreleased work landed as stacked PRs (A through H plus the raccoon
+platform-compatibility branch) through May 2026. They are grouped here
+by area rather than by PR.
+
+### Ubuntu 26.04 compatibility (raccoon)
+
+- **OS detection rename.** Replaced `detect_debian_version()` with
+  `detect_os()` returning a proper `OsInfo { id, version, codename }`
+  struct. The old function printed "Debian 26.04 (questing)" on an
+  Ubuntu 26.04 host, which was wrong on two counts. The new
+  `OsInfo::display()` prints "Ubuntu 26.04 (questing)" or "Debian 13
+  (trixie)" depending on `ID=` in `/etc/os-release`. Old function kept
+  as `#[deprecated]` for one release.
+- **CI matrix expanded.** `.github/workflows/ci.yml` now builds on five
+  containers: `ubuntu:24.04`, `ubuntu:26.04`, `debian:13` (required) plus
+  `ubuntu:22.04`, `debian:12` (advisory). Failures on advisory rows do
+  not block merges but are visible in the run summary.
+- **Preflight package check.** New `tools/preflight.sh` runs
+  `apt-cache policy` against every package HARDN installs and reports
+  `ok` / `miss` / `nocand` per row. CI runs it on every matrix entry so
+  a package rename or drop (audispd-plugins folded into auditd,
+  iptables-persistent replaced by nftables-persistent) trips the build
+  instead of silently degrading.
+- **nftables awareness.** New `hardn_uses_nftables` predicate in
+  `tools/env-detect.sh` detects whether iptables is running as the nft
+  shim. `modules/hardening.sh` installs `nftables-persistent` on those
+  hosts and falls back to `iptables-persistent` on legacy. Override via
+  `HARDN_USES_NFTABLES=0` or `1`.
+- **README badges** now list Debian 12 + 13 and Ubuntu 22.04 + 24.04 +
+  26.04. New `docs/supported-platforms.md` explains what the CI matrix
+  checks and lists per-release caveats.
 
 ### Observability: Prometheus + Grafana wired through (PR G)
 

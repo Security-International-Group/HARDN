@@ -15,12 +15,23 @@ env:
 
 jobs:
   build:
-    name: Build and Deploy
+    name: Build and Deploy (${{ matrix.container }})
     runs-on: ubuntu-latest
-    container: ubuntu:24.04
+    container: ${{ matrix.container }}
     timeout-minutes: 45
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Matrix scope: the current LTSes HARDN actively supports.
+        # 22.04 / Debian 12 are deferred until the GTK4 crate is bumped
+        # to a version compatible with older libgtk-4-dev (tracked as the
+        # original plan's PR-M).
+        container:
+          - ubuntu:24.04
+          - ubuntu:26.04
+          - debian:13
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -63,6 +74,14 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
+
+      - name: Preflight package availability
+        # Verify every package HARDN tries to install resolves on this
+        # release. A rename or drop (audispd-plugins, iptables-persistent
+        # on newer Debian/Ubuntu) trips the build here instead of silently
+        # degrading at install time. The full TSV report is printed inline
+        # so it's visible in the job log without an artifact upload.
+        run: bash usr/share/hardn/tools/preflight.sh
 
       - name: Install build dependencies from debian/control
         run: |
