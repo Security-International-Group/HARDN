@@ -1,12 +1,13 @@
 use chrono::Utc;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[path = "utils/alerts.rs"]
 mod alerts;
@@ -79,6 +80,25 @@ fn restart_service(service: &str) -> Result<(), std::io::Error> {
     }
 
     Ok(())
+}
+
+/// Returns true when the unit is `enabled` (or `enabled-runtime`) and not
+/// masked. Used to gate auto-restart so the monitor respects an operator
+/// or postinst that has deliberately disabled a unit. Without this gate,
+/// watching `legion-daemon.service` (intentionally disabled by postinst
+/// because `hardn.service` runs the same code) drives a ping-pong where
+/// restarting legion-daemon causes systemd to stop hardn.service via the
+/// `Conflicts=` directive.
+fn is_enabled_unmasked(service: &str) -> bool {
+    let out = match Command::new("systemctl")
+        .args(["is-enabled", service])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return false,
+    };
+    let state = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    matches!(state.as_str(), "enabled" | "enabled-runtime" | "alias")
 }
 
 fn service_exists(service: &str) -> bool {
@@ -309,12 +329,95 @@ fn log_networkd_metrics() {
     }
 }
 
+/// Per-service auto-restart backoff. After `MAX_RESTART_ATTEMPTS`
+/// consecutive failed restarts inside `BACKOFF_WINDOW`, the monitor stops
+/// trying and emits a critical alert. Without this, a permanently-failing
+/// service (e.g. `hardn-api` with empty `/etc/hardn/authorized_keys`) pins
+/// the monitor in a hot restart loop that interacts badly with systemd's
+/// own `StartLimitBurst` and produces "Start request repeated too quickly"
+/// across the journal.
+#[derive(Default, Clone, Debug)]
+struct RestartState {
+    consecutive_failures: u32,
+    first_failure_at: Option<Instant>,
+    backed_off_since: Option<Instant>,
+}
+
+const MAX_RESTART_ATTEMPTS: u32 = 3;
+const BACKOFF_WINDOW: Duration = Duration::from_secs(300);
+
+fn restart_state() -> &'static Mutex<HashMap<String, RestartState>> {
+    static S: OnceLock<Mutex<HashMap<String, RestartState>>> = OnceLock::new();
+    S.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Returns true if the monitor should attempt a restart of `service`.
+/// Updates internal state. After `MAX_RESTART_ATTEMPTS` failures within
+/// `BACKOFF_WINDOW`, returns false and emits a one-shot critical alert.
+fn should_attempt_restart(service: &str, last_attempt_succeeded: bool) -> bool {
+    let mut map = match restart_state().lock() {
+        Ok(m) => m,
+        Err(_) => return true, // poisoned: fail open rather than block recovery
+    };
+    let entry = map.entry(service.to_string()).or_default();
+    let now = Instant::now();
+
+    // Successful restart -> reset state.
+    if last_attempt_succeeded {
+        entry.consecutive_failures = 0;
+        entry.first_failure_at = None;
+        entry.backed_off_since = None;
+        return true;
+    }
+
+    // Already backed off; check whether the window has expired.
+    if let Some(backed_off_at) = entry.backed_off_since {
+        if now.duration_since(backed_off_at) < BACKOFF_WINDOW {
+            return false;
+        }
+        // Window expired: reset and let one more attempt through.
+        entry.consecutive_failures = 0;
+        entry.first_failure_at = None;
+        entry.backed_off_since = None;
+    }
+
+    if entry.first_failure_at.is_none() {
+        entry.first_failure_at = Some(now);
+    }
+    entry.consecutive_failures = entry.consecutive_failures.saturating_add(1);
+
+    if entry.consecutive_failures > MAX_RESTART_ATTEMPTS {
+        entry.backed_off_since = Some(now);
+        emit_alert(
+            "critical",
+            "hardn-monitor",
+            &format!(
+                "{} has failed to start {} times in a row; auto-restart suspended for {}s. Manual intervention required.",
+                service, entry.consecutive_failures, BACKOFF_WINDOW.as_secs()
+            ),
+            &format!("svc-backoff:{}", service),
+        );
+        return false;
+    }
+    true
+}
+
 fn monitor_services() {
-    // Services that HARDN monitor should track and auto-heal
+    // Services that HARDN monitor should track and auto-heal.
+    //
+    // `legion-daemon.service` was previously in this list. It is the
+    // response-disabled variant of the LEGION daemon and is intentionally
+    // NOT enabled on new installs (postinst disables it). `hardn.service`
+    // declares `Conflicts=legion-daemon.service`. Watching both caused a
+    // hard ping-pong: monitor saw legion-daemon as "stopped, restart me",
+    // systemd then stopped hardn.service to honour the conflict, hardn
+    // came back via `Restart=always`, repeat until `StartLimitBurst=5`
+    // tripped. Drop it from the default watch list; operators who
+    // explicitly enable legion-daemon will still get it watched via the
+    // `is_enabled_unmasked` gate further down.
     let services = vec![
         ("hardn.service", "hardn"),
         ("hardn-api.service", "hardn-api"),
-        ("legion-daemon.service", "legion"),
     ];
 
     let mut status_messages = Vec::new();
@@ -335,7 +438,32 @@ fn monitor_services() {
                 status_messages.push(format!("{}:{}", alias, status));
 
                 if status == "stopped" {
-                    let _ = restart_service(service);
+                    // Respect operator intent: skip auto-restart for units
+                    // the operator (or postinst) has deliberately disabled
+                    // or masked. Without this gate, monitor fights the
+                    // operator's choice to disable a service.
+                    if !is_enabled_unmasked(service) {
+                        log_message(
+                            "INFO",
+                            &format!(
+                                "{} is stopped but is disabled or masked; respecting that state",
+                                service
+                            ),
+                        );
+                        continue;
+                    }
+                    if !should_attempt_restart(service, false) {
+                        log_message(
+                            "WARN",
+                            &format!(
+                                "{} is stopped, but auto-restart is in backoff; skipping",
+                                service
+                            ),
+                        );
+                        continue;
+                    }
+                    let restart_ok = restart_service(service).is_ok();
+                    let _ = should_attempt_restart(service, restart_ok);
                 }
             }
             Err(e) => {
@@ -677,5 +805,67 @@ fn main() {
 
 
         thread::sleep(Duration::from_secs(30));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Regression: ISSUE-180. Repeated failed restarts must back off so the
+    // monitor can't drive systemd's StartLimitBurst into start-limit-hit on
+    // a service that's failing for a configuration reason (empty
+    // /etc/hardn/authorized_keys for hardn-api, or the legion-daemon vs
+    // hardn.service Conflicts ping-pong).
+    #[test]
+    fn restart_backoff_kicks_in_after_max_attempts() {
+        let svc = "test-svc-backoff";
+        // Clear state in case another test touched it.
+        restart_state().lock().unwrap().remove(svc);
+
+        // First MAX_RESTART_ATTEMPTS failed attempts must all be allowed.
+        for _ in 0..MAX_RESTART_ATTEMPTS {
+            assert!(
+                should_attempt_restart(svc, false),
+                "should permit attempts until the limit is hit"
+            );
+        }
+        // The next failure crosses the threshold and engages backoff.
+        assert!(
+            !should_attempt_restart(svc, false),
+            "should block once we exceed MAX_RESTART_ATTEMPTS"
+        );
+        // Subsequent calls while in backoff stay blocked.
+        assert!(!should_attempt_restart(svc, false));
+    }
+
+    #[test]
+    fn successful_restart_resets_backoff_counter() {
+        let svc = "test-svc-reset";
+        restart_state().lock().unwrap().remove(svc);
+
+        // Record some failures.
+        let _ = should_attempt_restart(svc, false);
+        let _ = should_attempt_restart(svc, false);
+
+        // A successful attempt clears the counter so we can try again.
+        assert!(should_attempt_restart(svc, true));
+        // After reset, a fresh failure is allowed (counter back to 1).
+        assert!(should_attempt_restart(svc, false));
+    }
+
+    #[test]
+    fn each_service_tracks_independently() {
+        let a = "test-svc-indep-a";
+        let b = "test-svc-indep-b";
+        restart_state().lock().unwrap().remove(a);
+        restart_state().lock().unwrap().remove(b);
+
+        for _ in 0..MAX_RESTART_ATTEMPTS {
+            let _ = should_attempt_restart(a, false);
+        }
+        // a has used up its budget; b has not.
+        assert!(!should_attempt_restart(a, false));
+        assert!(should_attempt_restart(b, false));
     }
 }
