@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Service-restart loop fix (ISSUE-180)
+
+Reported by Orinax. After install, `hardn.service` would keep getting
+SIGTERM'd a few seconds into each run and eventually go to
+`Active: failed (Result: start-limit-hit)`. Root cause was inside
+`hardn-monitor`:
+
+1. The monitor watched `legion-daemon.service` and auto-restarted it
+   whenever it appeared stopped. `legion-daemon.service` is the
+   response-disabled variant of the LEGION daemon and is intentionally
+   **not** enabled on new installs (`debian/postinst` disables it).
+   `hardn.service` declares `Conflicts=legion-daemon.service`. So:
+   monitor saw legion-daemon = stopped, ran `systemctl restart
+   legion-daemon`, systemd stopped `hardn.service` to honour the
+   conflict, `Restart=always` brought it back, monitor ran again,
+   repeat. After 5 such cycles `StartLimitBurst` tripped and
+   `hardn.service` went to `start-limit-hit`.
+2. The same shape hit `hardn-api.service` whenever
+   `/etc/hardn/authorized_keys` was empty (the API refuses to start
+   without keys, by design). Monitor restarted it, it failed, repeat.
+
+Fixes in `src/hardn-monitor.rs`:
+- Dropped `legion-daemon.service` from the default watch list. Operators
+  who explicitly enable it will still get it watched via the gate below.
+- New `is_enabled_unmasked()` gate. The monitor now skips auto-restart
+  for any unit that is `disabled`, `static`, `masked`, or `linked`.
+  Operator intent is respected.
+- New per-service backoff. After `MAX_RESTART_ATTEMPTS = 3` consecutive
+  failed restarts inside a 5-minute window the monitor stops trying and
+  emits a one-shot `critical` alert tagged `svc-backoff:<service>`. A
+  successful restart resets the counter. Each service tracks
+  independently.
+- Three regression tests in `hardn-monitor::tests` cover the backoff
+  threshold, the reset on success, and independent per-service state.
+
+This unblocks the testers reproducing the bug on a fresh Debian 13 VM
+without changing any documented behaviour for a healthy install.
+
+
 The unreleased work landed as seven stacked PRs (A, B, D, C, E, F, G) on
 the `patch` branch through May 2026. They are grouped here by area rather
 than by PR.
