@@ -350,7 +350,25 @@ install-core:
 	@if [ -z "$(DESTDIR)" ]; then \
 		printf '$(SUBSTEP_PREFIX) $(COLOR_STAGE)Reloading systemd and enabling services$(COLORRESET)\n'; \
 		systemctl daemon-reload || true; \
-		systemctl enable --now hardn.service hardn-api.service legion-daemon.service hardn-monitor.service || true; \
+		: ; \
+		: '----- ISSUE-180 follow-up: do not enable+start legion-daemon -----'; \
+		: 'It is the mutually-exclusive variant of hardn.service'; \
+		: '(Conflicts=legion-daemon.service in the unit file). debian/postinst'; \
+		: 'disables it; this Makefile must not re-enable it.'; \
+		: ; \
+		: '----- ISSUE-180 follow-up: only start hardn-api when keys exist -----'; \
+		: 'hardn-api.service refuses to start with an empty'; \
+		: '/etc/hardn/authorized_keys, by design. Calling enable --now'; \
+		: 'on a fresh install prints a scary "Job for hardn-api failed"'; \
+		: 'before the operator has had a chance to register a key.'; \
+		systemctl enable --now hardn.service hardn-monitor.service || true; \
+		if [ -s /etc/hardn/authorized_keys ] && \
+		   grep -qE '^(ssh-|ecdsa-|sk-)' /etc/hardn/authorized_keys 2>/dev/null; then \
+			systemctl enable --now hardn-api.service || true; \
+		else \
+			systemctl enable hardn-api.service || true; \
+			printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)hardn-api enabled but not started: add an SSH public key to /etc/hardn/authorized_keys then run: systemctl start hardn-api.service$(COLORRESET)\n'; \
+		fi; \
 	fi
 
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Installing desktop entries$(COLORRESET)\n'

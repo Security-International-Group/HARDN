@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Install-time noise (ISSUE-180 follow-up)
+
+After PR-181 fixed the `hardn-monitor` restart-loop, the tester
+(Orinax) reported that `sudo make hardn` still prints scary
+"Job for hardn-api.service failed because the control process exited
+with error code" and "Job for legion-daemon.service failed" lines
+during install. The HARDN GUI panels then showed inconsistent service
+state because two terminals queried `systemctl` at different points in
+the still-flapping startup.
+
+Root cause was a single Makefile line:
+
+```makefile
+systemctl enable --now hardn.service hardn-api.service \
+                       legion-daemon.service hardn-monitor.service
+```
+
+Two bugs on that line:
+
+1. `legion-daemon.service` is the mutually-exclusive variant of
+   `hardn.service` (`Conflicts=legion-daemon.service` in the unit
+   file). `debian/postinst` explicitly disables it; the Makefile
+   silently re-enabled it.
+
+2. `hardn-api.service` correctly refuses to start when
+   `/etc/hardn/authorized_keys` is empty (HARDN-API has no concept of
+   anonymous access). `enable --now` on a fresh install hits that
+   refusal before the operator has had a chance to register a key, and
+   surfaces it as a generic systemd failure.
+
+Fix in `Makefile` (target `hardn-internal`):
+
+* Drop `legion-daemon.service` from the enable-and-start list. Matches
+  `debian/postinst`'s posture.
+* Gate the `--now` on `hardn-api.service` behind a presence check for
+  a valid public key in `/etc/hardn/authorized_keys`. When no key is
+  present, the service is still enabled (so it starts on next boot
+  after the operator adds a key) but not started immediately. A
+  friendly warning tells the operator the exact `systemctl start`
+  command to run.
+
+Regression test: `tests/static/makefile-install-safety.t.sh` greps the
+Makefile to lock in both invariants, plus asserts that
+`hardn.service` and `hardn-monitor.service` are still enabled+started
+on a normal install so the fix can't accidentally drop them.
+
 ### CI: `dependency-review.yml` workflow
 
 New standalone workflow at `.github/workflows/dependency-review.yml`
