@@ -1,0 +1,151 @@
+name: test
+
+# Runs the tests/ harness on every PR and main push. Designed to be marked
+# as a REQUIRED check in branch protection so it has to pass before the
+# heavier ci.yml build can merge. The two workflows run in parallel; the
+# gating is enforced by branch protection, not by workflow chaining.
+#
+# What this workflow does:
+#   1. Installs the prereqs the harness needs (shellcheck, systemd,
+#      python yaml/fastapi/httpx/psutil, Rust toolchain).
+#   2. Runs bash tests/run-all.sh.
+#   3. Inlines the Markdown report into the GitHub Actions job summary.
+#   4. Uploads the report as an artifact regardless of pass/fail.
+#   5. Fails the job (and therefore the required check) on any harness
+#      failure.
+
+on:
+  # Run on every push to every branch (and every tag) so feature
+  # branches get harness coverage before they open a PR. Same story
+  # for pull_request: drop the main-only filter so PRs targeting any
+  # branch -- patch, raccoon, ISSUE-XXX -- also gate on the harness.
+  # Concurrency below cancels superseded runs on the same ref so this
+  # doesn't pile up runners.
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+  DEBIAN_FRONTEND: noninteractive
+
+concurrency:
+  # Cancel a queued / in-progress run when a new push lands on the same
+  # PR or branch. Keeps PR turnaround tight without piling up runners.
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harness:
+    name: Test Harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # v1.93.1
+        with:
+          toolchain: stable
+
+      - name: Cache cargo registry and git
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-
+            ${{ runner.os }}-cargo-
+
+      - name: Install harness + build dependencies
+        # Two groups in one apt invocation:
+        # 1. Harness prereqs (shellcheck, systemd-analyze via the systemd
+        #    package, python3-yaml). Without these the suites would
+        #    SKIP rather than run.
+        # 2. Build prereqs for the hardn + hardn-monitor binaries. The
+        #    workspace Cargo.toml has GTK4/glib/gio/vte4 as top-level
+        #    deps (only hardn-gui uses them, but they sit in the
+        #    workspace graph so `cargo build --bin hardn` still needs
+        #    them to resolve). libvte-2.91-gtk4-dev transitively
+        #    installs every glib/gobject/gio/gtk4-dev that cargo needs.
+        #    Same set ci.yml uses.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+              shellcheck \
+              systemd \
+              python3 \
+              python3-yaml \
+              python3-pip \
+              pkg-config \
+              libssl-dev \
+              libsqlite3-dev \
+              libvte-2.91-gtk4-dev
+          # FastAPI testclient + its httpx dep + psutil for hardn-api.
+          # Use --break-system-packages because Ubuntu 24+ blocks pip
+          # writes into /usr without it.
+          python3 -m pip install --quiet --break-system-packages \
+              fastapi 'httpx<1' psutil
+
+      - name: Pre-build hardn binaries
+        # Only the two binaries the harness actually exercises:
+        # cargo/cargo-test runs `cargo test` on each, and
+        # integration/cli-help spawns `target/debug/hardn`.
+        # `--bins` would also pull in hardn-gui, which drags in GTK4
+        # system libraries (glib-sys, gobject-sys, gio-sys, gtk4-sys,
+        # vte4) that aren't installed in this workflow's environment.
+        run: cargo build --bin hardn --bin hardn-monitor --quiet
+
+      - name: Run test harness
+        id: harness
+        # The orchestrator writes tests/reports/test-report-<ts>.md, prints
+        # the report path on the last line of stdout, and exits 1 on any
+        # failure. We capture the report path so the next two steps can
+        # find it even if the harness exits non-zero.
+        run: |
+          set +e
+          bash tests/run-all.sh
+          ec=$?
+          # Discover the freshest report.
+          report=$(ls -t tests/reports/test-report-*.md 2>/dev/null | head -1 || true)
+          echo "exit_code=$ec" >> "$GITHUB_OUTPUT"
+          echo "report=$report" >> "$GITHUB_OUTPUT"
+          exit $ec
+
+      - name: Inline report into job summary
+        if: always()
+        # Drop the full Markdown report into the run's summary page so it
+        # renders inline. Falls back to a notice when the report file is
+        # missing (harness crashed before writing it).
+        run: |
+          report='${{ steps.harness.outputs.report }}'
+          if [ -n "$report" ] && [ -f "$report" ]; then
+              cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          else
+              {
+                  echo "# HARDN test report"
+                  echo
+                  echo "**No report file was produced.** The harness exited before writing one."
+                  echo "Check the run log for the failure."
+              } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: test-report
+          path: tests/reports/test-report-*.md
+          if-no-files-found: warn
+          retention-days: 30

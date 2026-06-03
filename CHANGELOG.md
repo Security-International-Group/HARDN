@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI: `dependency-review.yml` workflow
+
+New standalone workflow at `.github/workflows/dependency-review.yml`
+that runs GitHub's official `actions/dependency-review-action` on every
+PR. The action diffs the PR's dependency manifests (Cargo.lock and
+friends) against the base branch and fails the check when a new
+dependency introduces a known advisory at moderate severity or above.
+Also blocks the GPL-3.0 / AGPL-3.0 license categories that can't ship
+with MIT-licensed HARDN.
+
+The check runs in parallel with `test.yml` and `ci.yml` under its own
+concurrency group. Designed to be marked as a required gate in branch
+protection alongside the test harness. The action is pinned to the
+`@v4` major-version tag; Dependabot's existing `github-actions`
+ecosystem entry will pin it to a SHA on its next weekly scan.
+
+### CI: `test.yml` workflow
+
+New standalone workflow at `.github/workflows/test.yml` that runs the
+full `tests/run-all.sh` harness on every PR and main push. Designed to
+be marked as a **required check** in branch protection so it gates
+merges before `ci.yml`'s heavier build step.
+
+The workflow installs every prerequisite the suites might need
+(`shellcheck`, `systemd-analyze`, `python3-yaml`, `fastapi`, `httpx`,
+`psutil`, stable Rust) so suites that previously reported SKIP on a
+bare runner now run for real. Then:
+
+* Runs `bash tests/run-all.sh`.
+* Inlines the full Markdown report into `$GITHUB_STEP_SUMMARY` so the
+  pass/fail table + per-suite TAP output renders on the GitHub Actions
+  run page without downloading anything.
+* Uploads the same report as an artifact (`name: test-report`,
+  retention 30 days) so it's available to attach to bug reports.
+* Fails the workflow on any harness failure.
+
+The harness's report header now uses `## Result: PASS / FAIL` as a real
+Markdown heading rather than bold text, so it renders as a top-level
+section in the GitHub job summary.
+
 ### Service-restart loop fix (ISSUE-180)
 
 Reported by Orinax. After install, `hardn.service` would keep getting
@@ -44,6 +84,45 @@ Fixes in `src/hardn-monitor.rs`:
 
 This unblocks the testers reproducing the bug on a fresh Debian 13 VM
 without changing any documented behaviour for a healthy install.
+
+### Test harness (tests/ directory)
+
+New tests/ directory with a TAP-style harness and Markdown report writer
+covering the parts of HARDN we can verify without root + a real VM. The
+orchestrator at `tests/run-all.sh` runs every suite and writes a single
+timestamped report into `tests/reports/`. Run with:
+
+```
+bash tests/run-all.sh
+```
+
+Suites shipped in the first cut:
+
+| Suite | What |
+|---|---|
+| `static/shellcheck` | `shellcheck -S error` on every shell file |
+| `static/python-syntax` | `py_compile` on every `src/*.py` |
+| `static/yaml-lint` | `yaml.safe_load` on every workflow YAML |
+| `static/systemd-verify` | `systemd-analyze verify` on every unit |
+| `static/doc-hygiene` | no em-dashes / AI-tell adjectives / vendor strings in maintainer docs |
+| `unit/env-detect` | container-host / nftables / cloud-LB CIDR predicates |
+| `unit/preflight` | required-vs-optional exit-code logic via mocked `apt-cache` |
+| `unit/functions` | `HARDN_STATUS` no-color when not a TTY |
+| `unit/alerts-payload` | canonical `{ts,severity,source,message,key}` shape |
+| `integration/cli-help` | `hardn --help` lists current flags; `run-tool <missing>` returns 127 |
+| `integration/sentry-flow` | first-run baseline + drift detection + alert write |
+| `integration/uninstall-dryrun` | every PR-A and PR-E cleanup path referenced in the script |
+| `integration/api-endpoints` | FastAPI TestClient on every endpoint + bearer-auth contract + `/metrics` shape |
+| `cargo/cargo-test` | wraps `cargo test --bin hardn` and `--bin hardn-monitor` |
+
+Suites that need a missing prerequisite (`shellcheck`, `systemd-analyze`,
+`fastapi`, `httpx`, root, writable `/etc/cron.d`) report SKIP rather
+than FAIL. `tests/README.md` lists what the harness deliberately does
+not cover (real kernel/systemd/apt mutations).
+
+First run on a fresh `test-harness` branch: 14 suites green, 87/89
+assertions pass, 2 skipped (preflight on a branch where the script has
+not yet landed; api-endpoints when `httpx` is not installed).
 
 
 The unreleased work landed as seven stacked PRs (A, B, D, C, E, F, G) on

@@ -1,0 +1,64 @@
+name: dependency-review
+
+# Runs GitHub's official actions/dependency-review-action on every PR.
+# It diffs the PR's dependency manifests (Cargo.lock, pip requirements,
+# etc.) against the base ref and fails the check when a new dependency
+# introduces a known vulnerability at or above the configured severity.
+#
+# Why a separate workflow:
+#   * Keeps the check independently markable as a required gate in
+#     branch protection (same pattern as test.yml).
+#   * Runs in parallel with test.yml and ci.yml; no chain dependency.
+#   * Lives under its own concurrency group so a new PR push cancels
+#     the prior in-flight review.
+#
+# The action is intentionally pinned to the major-version tag rather
+# than a SHA. Dependabot (.github/dependabot.yml, github-actions
+# ecosystem) will open a PR to pin it to a specific SHA on its next
+# weekly scan -- matching how every other action in this repo is
+# locked down.
+
+on:
+  # Run on every PR regardless of target branch. The action is
+  # PR-centric because it needs a base/head comparison to diff
+  # dependency manifests; raw push events don't get one. Feature
+  # branches still get covered the moment they open a PR (to main,
+  # to patch, to raccoon, or to each other).
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Needed so the action can write a one-shot summary comment on the PR.
+  pull-requests: write
+
+concurrency:
+  group: dependency-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
+        with:
+          # Fail the check when a PR adds a dependency with a known
+          # advisory at or above this level. "moderate" matches what
+          # most GitHub repos use as a sensible default; raise to
+          # "high" or "critical" if it generates too much noise.
+          fail-on-severity: moderate
+
+          # Block dependencies that ship under licenses we cannot
+          # distribute alongside MIT-licensed HARDN. Empty allow-list
+          # so the action uses its built-in compatibility check.
+          deny-licenses: GPL-3.0, AGPL-3.0
+
+          # Render the full advisory + license summary as a PR comment
+          # the first time, then update it in place on subsequent runs.
+          comment-summary-in-pr: on-failure
