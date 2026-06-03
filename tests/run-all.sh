@@ -117,9 +117,14 @@ done
     printf '\n'
 
     if [ "$fail_suites" -eq 0 ] && [ "$fail_assertions" -eq 0 ]; then
-        printf '**Result: PASS**\n'
+        if [ "$skip_assertions" -gt 0 ]; then
+            printf '## Result: PASS (with %d skipped)\n' "$skip_assertions"
+        else
+            printf '## Result: PASS\n'
+        fi
     else
-        printf '**Result: FAIL**\n'
+        printf '## Result: FAIL (%d assertion failures across %d suites)\n' \
+            "$fail_assertions" "$fail_suites"
     fi
 
     printf '\n## Details\n'

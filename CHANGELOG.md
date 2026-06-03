@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI: `test.yml` workflow
+
+New standalone workflow at `.github/workflows/test.yml` that runs the
+full `tests/run-all.sh` harness on every PR and main push. Designed to
+be marked as a **required check** in branch protection so it gates
+merges before `ci.yml`'s heavier build step.
+
+The workflow installs every prerequisite the suites might need
+(`shellcheck`, `systemd-analyze`, `python3-yaml`, `fastapi`, `httpx`,
+`psutil`, stable Rust) so suites that previously reported SKIP on a
+bare runner now run for real. Then:
+
+* Runs `bash tests/run-all.sh`.
+* Inlines the full Markdown report into `$GITHUB_STEP_SUMMARY` so the
+  pass/fail table + per-suite TAP output renders on the GitHub Actions
+  run page without downloading anything.
+* Uploads the same report as an artifact (`name: test-report`,
+  retention 30 days) so it's available to attach to bug reports.
+* Fails the workflow on any harness failure.
+
+The harness's report header now uses `## Result: PASS / FAIL` as a real
+Markdown heading rather than bold text, so it renders as a top-level
+section in the GitHub job summary.
+
 ### Service-restart loop fix (ISSUE-180)
 
 Reported by Orinax. After install, `hardn.service` would keep getting

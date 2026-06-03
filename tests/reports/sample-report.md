@@ -1,7 +1,7 @@
 # HARDN test report
 
-* generated: 2026-06-03 12:12:07 UTC
-* commit:    `d095477 PATCH(docs): plug PR-G coverage gaps in five remaining docs`
+* generated: 2026-06-03 12:22:11 UTC
+* commit:    `7f4e0ab Autoformat Python code with Black [198f76aa1e920ebb477524e2b919e73921d13966]`
 * host:      `Linux 6.18.5 x86_64`
 * os:        ubuntu 24.04 (noble)
 
@@ -9,19 +9,19 @@
 
 | Suite | Total | Pass | Fail | Skip | Exit | Duration |
 |---|---:|---:|---:|---:|---:|---:|
-| cargo/cargo-test.t.sh | 2 | 2 | 0 | 0 | 0 | 545ms |
-| integration/api-endpoints.t.py | 1 | 0 | 0 | 1 | 0 | 298ms |
-| integration/cli-help.t.sh | 5 | 5 | 0 | 0 | 0 | 202ms |
-| integration/sentry-flow.t.sh | 4 | 4 | 0 | 0 | 0 | 239ms |
-| integration/uninstall-dryrun.t.sh | 11 | 11 | 0 | 0 | 0 | 1083ms |
-| static/doc-hygiene.t.sh | 3 | 3 | 0 | 0 | 0 | 25ms |
-| static/python-syntax.t.sh | 1 | 1 | 0 | 0 | 0 | 61ms |
-| static/shellcheck.t.sh | 32 | 32 | 0 | 0 | 0 | 4375ms |
+| cargo/cargo-test.t.sh | 2 | 2 | 0 | 0 | 0 | 807ms |
+| integration/api-endpoints.t.py | 1 | 0 | 0 | 1 | 0 | 282ms |
+| integration/cli-help.t.sh | 5 | 5 | 0 | 0 | 0 | 205ms |
+| integration/sentry-flow.t.sh | 4 | 4 | 0 | 0 | 0 | 243ms |
+| integration/uninstall-dryrun.t.sh | 11 | 11 | 0 | 0 | 0 | 1043ms |
+| static/doc-hygiene.t.sh | 3 | 3 | 0 | 0 | 0 | 33ms |
+| static/python-syntax.t.sh | 1 | 1 | 0 | 0 | 0 | 62ms |
+| static/shellcheck.t.sh | 32 | 32 | 0 | 0 | 0 | 4104ms |
 | static/systemd-verify.t.sh | 4 | 4 | 0 | 0 | 0 | 246ms |
-| static/yaml-lint.t.sh | 7 | 7 | 0 | 0 | 0 | 385ms |
-| unit/alerts-payload.t.sh | 5 | 5 | 0 | 0 | 0 | 143ms |
-| unit/env-detect.t.sh | 7 | 7 | 0 | 0 | 0 | 78ms |
-| unit/functions.t.sh | 6 | 6 | 0 | 0 | 0 | 87ms |
+| static/yaml-lint.t.sh | 8 | 8 | 0 | 0 | 0 | 425ms |
+| unit/alerts-payload.t.sh | 5 | 5 | 0 | 0 | 0 | 137ms |
+| unit/env-detect.t.sh | 7 | 7 | 0 | 0 | 0 | 68ms |
+| unit/functions.t.sh | 6 | 6 | 0 | 0 | 0 | 77ms |
 | unit/preflight.t.sh | 1 | 0 | 0 | 1 | 0 | 9ms |
 
 ## Totals
@@ -30,12 +30,12 @@
 |---|---:|
 | Suites run        | 14 |
 | Suites with fails | 0 |
-| Assertions        | 89 |
-| Pass              | 87 |
+| Assertions        | 90 |
+| Pass              | 88 |
 | Fail              | 0 |
 | Skip              | 2 |
 
-**Result: PASS**
+## Result: PASS (with 2 skipped)
 
 ## Details
 
@@ -173,7 +173,7 @@ ok 4 - systemd/legion-daemon.service
 ### static/yaml-lint.t.sh
 
 \`\`\`
-1..7
+1..8
 ok 1 - .github/FUNDING.yml
 ok 2 - .github/ISSUE_TEMPLATE/bug-report.yml
 ok 3 - .github/codeql-config.yml
@@ -181,7 +181,8 @@ ok 4 - .github/dependabot.yml
 ok 5 - .github/workflows/black.yml
 ok 6 - .github/workflows/ci.yml
 ok 7 - .github/workflows/codeql.yml
-# static/yaml-lint totals: total=7 pass=7 fail=0 skip=0
+ok 8 - .github/workflows/test.yml
+# static/yaml-lint totals: total=8 pass=8 fail=0 skip=0
 \`\`\`
 
 ### unit/alerts-payload.t.sh
