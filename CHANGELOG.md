@@ -45,6 +45,45 @@ Fixes in `src/hardn-monitor.rs`:
 This unblocks the testers reproducing the bug on a fresh Debian 13 VM
 without changing any documented behaviour for a healthy install.
 
+### Test harness (tests/ directory)
+
+New tests/ directory with a TAP-style harness and Markdown report writer
+covering the parts of HARDN we can verify without root + a real VM. The
+orchestrator at `tests/run-all.sh` runs every suite and writes a single
+timestamped report into `tests/reports/`. Run with:
+
+```
+bash tests/run-all.sh
+```
+
+Suites shipped in the first cut:
+
+| Suite | What |
+|---|---|
+| `static/shellcheck` | `shellcheck -S error` on every shell file |
+| `static/python-syntax` | `py_compile` on every `src/*.py` |
+| `static/yaml-lint` | `yaml.safe_load` on every workflow YAML |
+| `static/systemd-verify` | `systemd-analyze verify` on every unit |
+| `static/doc-hygiene` | no em-dashes / AI-tell adjectives / vendor strings in maintainer docs |
+| `unit/env-detect` | container-host / nftables / cloud-LB CIDR predicates |
+| `unit/preflight` | required-vs-optional exit-code logic via mocked `apt-cache` |
+| `unit/functions` | `HARDN_STATUS` no-color when not a TTY |
+| `unit/alerts-payload` | canonical `{ts,severity,source,message,key}` shape |
+| `integration/cli-help` | `hardn --help` lists current flags; `run-tool <missing>` returns 127 |
+| `integration/sentry-flow` | first-run baseline + drift detection + alert write |
+| `integration/uninstall-dryrun` | every PR-A and PR-E cleanup path referenced in the script |
+| `integration/api-endpoints` | FastAPI TestClient on every endpoint + bearer-auth contract + `/metrics` shape |
+| `cargo/cargo-test` | wraps `cargo test --bin hardn` and `--bin hardn-monitor` |
+
+Suites that need a missing prerequisite (`shellcheck`, `systemd-analyze`,
+`fastapi`, `httpx`, root, writable `/etc/cron.d`) report SKIP rather
+than FAIL. `tests/README.md` lists what the harness deliberately does
+not cover (real kernel/systemd/apt mutations).
+
+First run on a fresh `test-harness` branch: 14 suites green, 87/89
+assertions pass, 2 skipped (preflight on a branch where the script has
+not yet landed; api-endpoints when `httpx` is not installed).
+
 
 The unreleased work landed as seven stacked PRs (A, B, D, C, E, F, G) on
 the `patch` branch through May 2026. They are grouped here by area rather

@@ -1,0 +1,4 @@
+# Generated test reports. The sample-report.md is committed so reviewers
+# can see what a run looks like without running it; everything else is
+# per-run artefacts.
+reports/test-report-*.md
