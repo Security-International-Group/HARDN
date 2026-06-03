@@ -84,9 +84,13 @@ jobs:
               fastapi 'httpx<1' psutil
 
       - name: Pre-build hardn binaries
-        # The cargo/cargo-test and integration/cli-help suites both want a
-        # built binary. Doing this here lets the cache do its job.
-        run: cargo build --bins --quiet
+        # Only the two binaries the harness actually exercises:
+        # cargo/cargo-test runs `cargo test` on each, and
+        # integration/cli-help spawns `target/debug/hardn`.
+        # `--bins` would also pull in hardn-gui, which drags in GTK4
+        # system libraries (glib-sys, gobject-sys, gio-sys, gtk4-sys,
+        # vte4) that aren't installed in this workflow's environment.
+        run: cargo build --bin hardn --bin hardn-monitor --quiet
 
       - name: Run test harness
         id: harness
