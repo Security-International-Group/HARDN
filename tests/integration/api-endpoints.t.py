@@ -4,6 +4,7 @@
 Skipped cleanly when fastapi / psutil / starlette aren't available.
 The orchestrator picks up the trailing TAP summary line either way.
 """
+
 import importlib.util
 import os
 import sys
@@ -96,10 +97,14 @@ os.environ["HARDN_AUTHORIZED_KEYS"] = keys_path
 
 alerts_path = os.path.join(tmp, "alerts.jsonl")
 with open(alerts_path, "w") as f:
-    f.write('{"ts":"t","severity":"critical","source":"sentry/sudoers",'
-            '"message":"m","key":"sentry:sudoers:added:/x"}\n')
-    f.write('{"ts":"t","severity":"warning","source":"hardn-monitor",'
-            '"message":"m","key":"svc-down:hardn-api"}\n')
+    f.write(
+        '{"ts":"t","severity":"critical","source":"sentry/sudoers",'
+        '"message":"m","key":"sentry:sudoers:added:/x"}\n'
+    )
+    f.write(
+        '{"ts":"t","severity":"warning","source":"hardn-monitor",'
+        '"message":"m","key":"svc-down:hardn-api"}\n'
+    )
 
 cron_path = os.path.join(tmp, "cron_summary.json")
 with open(cron_path, "w") as f:
@@ -126,50 +131,69 @@ client = TestClient(api.app)
 
 # 2. /health is unauthenticated and returns healthy.
 r = client.get("/health")
-check(r.status_code == 200 and r.json().get("status") == "healthy",
-      "/health returns 200 + status=healthy",
-      diag=f"status={r.status_code} body={r.text[:200]}")
+check(
+    r.status_code == 200 and r.json().get("status") == "healthy",
+    "/health returns 200 + status=healthy",
+    diag=f"status={r.status_code} body={r.text[:200]}",
+)
 
 # 3. /overwatch/system without auth -> 401/403.
 r = client.get("/overwatch/system")
-check(r.status_code in (401, 403),
-      "/overwatch/system rejects unauthenticated requests",
-      diag=f"status={r.status_code}")
+check(
+    r.status_code in (401, 403),
+    "/overwatch/system rejects unauthenticated requests",
+    diag=f"status={r.status_code}",
+)
 
 # 4. /overwatch/system with the registered bearer -> 200.
 key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAATESTKEY hardn-api-test"
 r = client.get("/overwatch/system", headers={"Authorization": f"Bearer {key}"})
-check(r.status_code == 200,
-      "/overwatch/system accepts the registered SSH key",
-      diag=f"status={r.status_code} body={r.text[:200]}")
+check(
+    r.status_code == 200,
+    "/overwatch/system accepts the registered SSH key",
+    diag=f"status={r.status_code} body={r.text[:200]}",
+)
 
 # 5. /overwatch/system with a different but format-valid key -> 401.
 fake = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAUNREGISTERED notreg"
 r = client.get("/overwatch/system", headers={"Authorization": f"Bearer {fake}"})
-check(r.status_code in (401, 403),
-      "/overwatch/system rejects an unregistered key",
-      diag=f"status={r.status_code}")
+check(
+    r.status_code in (401, 403),
+    "/overwatch/system rejects an unregistered key",
+    diag=f"status={r.status_code}",
+)
 
 # 6. /metrics is unauthenticated, returns Prometheus text-format.
 r = client.get("/metrics")
-ok = (r.status_code == 200 and "hardn_info" in r.text and "# HELP " in r.text)
-check(ok, "/metrics returns Prometheus text exposition",
-      diag=f"status={r.status_code} first 200 bytes: {r.text[:200]}")
+ok = r.status_code == 200 and "hardn_info" in r.text and "# HELP " in r.text
+check(
+    ok,
+    "/metrics returns Prometheus text exposition",
+    diag=f"status={r.status_code} first 200 bytes: {r.text[:200]}",
+)
 
 # 7. /metrics reports the alert counts from our temp alerts.jsonl (PR-G).
 r = client.get("/metrics")
-has_sentry_drift = 'hardn_sentry_drift_total{verb="added",category="sudoers"} 1' in r.text
-check(has_sentry_drift,
-      "/metrics reflects SENTRY drift counts from alerts.jsonl",
-      diag=f"text excerpt: {r.text[:1000]}")
+has_sentry_drift = (
+    'hardn_sentry_drift_total{verb="added",category="sudoers"} 1' in r.text
+)
+check(
+    has_sentry_drift,
+    "/metrics reflects SENTRY drift counts from alerts.jsonl",
+    diag=f"text excerpt: {r.text[:1000]}",
+)
 
 # 8. /metrics reports the cron-job last-run from our temp cron_summary.json.
 r = client.get("/metrics")
-has_cron = ('hardn_cron_last_success{job="hardn-sentry"} 1' in r.text
-            and 'hardn_cron_last_duration_seconds{job="hardn-sentry"}' in r.text)
-check(has_cron,
-      "/metrics reflects cron summary state",
-      diag=f"text excerpt: {r.text[:1500]}")
+has_cron = (
+    'hardn_cron_last_success{job="hardn-sentry"} 1' in r.text
+    and 'hardn_cron_last_duration_seconds{job="hardn-sentry"}' in r.text
+)
+check(
+    has_cron,
+    "/metrics reflects cron summary state",
+    diag=f"text excerpt: {r.text[:1500]}",
+)
 
 emit_summary(total, passed, failed, skipped)
 sys.exit(failed != 0)
