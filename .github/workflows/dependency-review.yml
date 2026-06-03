@@ -19,8 +19,13 @@ name: dependency-review
 # locked down.
 
 on:
+  # Run on every PR regardless of target branch. The action is
+  # PR-centric because it needs a base/head comparison to diff
+  # dependency manifests; raw push events don't get one. Feature
+  # branches still get covered the moment they open a PR (to main,
+  # to patch, to raccoon, or to each other).
   pull_request:
-    branches: ['main']
+  workflow_dispatch:
 
 permissions:
   contents: read

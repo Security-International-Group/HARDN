@@ -15,10 +15,14 @@ name: test
 #      failure.
 
 on:
+  # Run on every push to every branch (and every tag) so feature
+  # branches get harness coverage before they open a PR. Same story
+  # for pull_request: drop the main-only filter so PRs targeting any
+  # branch -- patch, raccoon, ISSUE-XXX -- also gate on the harness.
+  # Concurrency below cancels superseded runs on the same ref so this
+  # doesn't pile up runners.
   push:
-    branches: ['main']
   pull_request:
-    branches: ['main']
   workflow_dispatch:
 
 permissions: {}
