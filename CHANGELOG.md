@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI: `dependency-review.yml` workflow
+
+New standalone workflow at `.github/workflows/dependency-review.yml`
+that runs GitHub's official `actions/dependency-review-action` on every
+PR. The action diffs the PR's dependency manifests (Cargo.lock and
+friends) against the base branch and fails the check when a new
+dependency introduces a known advisory at moderate severity or above.
+Also blocks the GPL-3.0 / AGPL-3.0 license categories that can't ship
+with MIT-licensed HARDN.
+
+The check runs in parallel with `test.yml` and `ci.yml` under its own
+concurrency group. Designed to be marked as a required gate in branch
+protection alongside the test harness. The action is pinned to the
+`@v4` major-version tag; Dependabot's existing `github-actions`
+ecosystem entry will pin it to a SHA on its next weekly scan.
+
 ### CI: `test.yml` workflow
 
 New standalone workflow at `.github/workflows/test.yml` that runs the
