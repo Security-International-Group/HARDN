@@ -1203,7 +1203,12 @@ fi
 # AUDIT (Enhanced with auditd MITRE ATT&CK rules)
 # ==========================================
 HARDN_STATUS "Installing auditd..."
-if apt_install "auditd" "Installing auditd components" 120 auditd audispd-plugins; then
+# audispd-plugins was folded into the auditd package in audit-userspace 3.x
+# (Debian 13 / Ubuntu 24.04+). On those releases it is either a transitional
+# empty package (apt prints a warning) or not present at all (apt errors).
+# Dropping it from the install line silences the warning and keeps the
+# auditd install clean across Debian 12 + 13 and Ubuntu 22.04 + 24.04.
+if apt_install "auditd" "Installing auditd components" 120 auditd; then
     HARDN_STATUS "auditd installed successfully"
     systemctl enable auditd 2>/dev/null || true
     systemctl start auditd 2>/dev/null || true
@@ -1425,50 +1430,12 @@ sysctl -p /etc/sysctl.d/99-hardn-network-tuning.conf 2>/dev/null || true
 # ==========================================
 # clamav
 # ==========================================
-HARDN_STATUS "Installing ClamAV..."
-if ! apt_install "clamav" "Installing ClamAV" 120 clamav clamav-daemon; then
-    log_warning "ClamAV installation failed, continuing..."
-fi
-systemctl enable clamav-daemon 2>/dev/null || true
-systemctl start clamav-daemon 2>/dev/null || true       
-# Update ClamAV database
-mkdir -p /var/log/hardn 2>/dev/null || true
-FRESHCLAM_LOG="/var/log/hardn/freshclam-update.log"
-HARDN_STATUS "Updating ClamAV signatures..."
-update_succeeded=0
-
-if systemctl list-unit-files | grep -q '^clamav-freshclam.service'; then
-    systemctl enable clamav-freshclam 2>/dev/null || true
-    systemctl stop clamav-freshclam 2>/dev/null || true
-fi
-
-if command -v freshclam >/dev/null 2>&1; then
-    if timeout 300 freshclam --stdout --no-warnings >"$FRESHCLAM_LOG" 2>&1; then
-        update_succeeded=1
-        HARDN_STATUS "ClamAV signature update complete (see $FRESHCLAM_LOG)"
-    fi
-fi
-
-if [ $update_succeeded -eq 0 ]; then
-    if systemctl list-unit-files | grep -q '^clamav-freshclam.service'; then
-        if systemctl restart clamav-freshclam 2>/dev/null; then
-            update_succeeded=1
-            HARDN_STATUS "clamav-freshclam service restarted to refresh signatures"
-        fi
-    fi
-fi
-
-if systemctl list-unit-files | grep -q '^clamav-freshclam.service'; then
-    systemctl start clamav-freshclam 2>/dev/null || true
-fi
-
-if [ $update_succeeded -eq 0 ]; then
-    if compgen -G '/var/lib/clamav/*.[cC][lL][dD]' >/dev/null 2>&1 || compgen -G '/var/lib/clamav/*.[cC][vV][dD]' >/dev/null 2>&1; then
-        HARDN_STATUS "Existing ClamAV signatures detected; updates will occur when connectivity is available (see $FRESHCLAM_LOG)"
-    else
-        log_warning "ClamAV signatures missing; review $FRESHCLAM_LOG for remediation"
-    fi
-fi
+# NOTE: ClamAV install + enable + freshclam update lives in the earlier
+# "Installing ClamAV..." block above (~line 1239). The previous duplicate
+# block here was idempotent on package install but triggered a SECOND
+# ~250MB freshclam signature download on every hardening run, which on
+# slow / metered connections wedged the run for minutes. One install,
+# one freshclam.
 
 # =========================================
 # rkhunter

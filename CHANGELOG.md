@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Stability sweep across Debian 12-13 + Ubuntu 22.04-24.04 (ISSUE-180 follow-up)
+
+Four additional fixes layered onto the install-time-noise fix below,
+each pinning down one stability bug surfaced during the four-OS audit:
+
+- **`hardn-monitor.service` no longer depends on `legion-daemon.service`.**
+  The unit's `After=`/`Wants=` lines used to list `legion-daemon.service`,
+  which is the mutually-exclusive variant of `hardn.service`
+  (`Conflicts=` in the .service file) and is disabled by `debian/postinst`.
+  Listing it as a `Wants=` triggered transient activation on every
+  `systemctl start hardn-monitor`, which then stopped `hardn.service`.
+  Same class of bug PR-181 fixed in the Rust monitor; this fixes the
+  unit-dependency layer too.
+
+- **`legion-daemon.service` `ExecStartPre` no longer strips the setgid bit
+  from `/var/lib/hardn`.** Previously the prep step `chmod 755`'d the
+  data dir, clobbering `debian/postinst`'s `2770 root:hardn` mode. After
+  that ran, the `hardn` user (who runs `hardn-api.service`) could no
+  longer write under `/var/lib/hardn`. Changed to `chmod 2770` to match
+  what postinst sets.
+
+- **`audispd-plugins` dropped from the auditd install line.** Folded into
+  the `auditd` package in audit-userspace 3.x (Debian 13 / Ubuntu 24.04
+  and later). Asking for it explicitly produces a "transitional package"
+  warning on those releases. Removed; everywhere we support, `auditd`
+  alone covers it.
+
+- **Duplicate ClamAV install block removed from `hardening.sh`.** The
+  module installed ClamAV twice and triggered two `freshclam` signature
+  downloads (~250MB each) per hardening run, which on slow / metered
+  connections wedged the run for minutes. Now one install, one
+  freshclam.
+
+Regression guard: new `tests/static/systemd-unit-safety.t.sh` greps the
+unit files to lock in: hardn-monitor does not depend on legion-daemon;
+legion-daemon does not chmod-755 the data dir; hardn.service still has
+the `Conflicts=`; hardn-api still gates start on `authorized_keys`.
+
 ### Install-time noise (ISSUE-180 follow-up)
 
 After PR-181 fixed the `hardn-monitor` restart-loop, the tester
