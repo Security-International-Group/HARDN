@@ -1,8 +1,15 @@
 [Unit]
 Description=HARDN Centralized Monitoring and Logging Service
-# Bring monitor up after network + core services so it can attach to logs/metrics
-After=network-online.target hardn.service hardn-api.service legion-daemon.service
-Wants=network-online.target hardn.service hardn-api.service legion-daemon.service
+# Bring monitor up after network + core services so it can attach to logs/metrics.
+#
+# legion-daemon.service is intentionally NOT listed here. It is the
+# mutually-exclusive (Conflicts=hardn.service) variant that postinst
+# disables; listing it in Wants= would transitively start it on any
+# 'systemctl start hardn-monitor', which would then stop hardn.service
+# to honour the conflict. PR-181 fixed the same class of bug in the
+# Rust hardn-monitor code; this fixes the systemd-dependency layer.
+After=network-online.target hardn.service hardn-api.service
+Wants=network-online.target hardn.service hardn-api.service
 StartLimitIntervalSec=300
 StartLimitBurst=5
 

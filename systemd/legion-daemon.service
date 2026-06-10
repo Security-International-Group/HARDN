@@ -17,8 +17,12 @@ Group=root
 # Keep everything consistent with the rest of the stack tomorevent the previous order loops 
 WorkingDirectory=/usr/share/hardn
 
-# Create necessary directories before starting
-ExecStartPre=/bin/bash -c 'mkdir -p /var/lib/hardn/legion /var/log/hardn && chmod 755 /var/lib/hardn /var/lib/hardn/legion'
+# Create necessary directories before starting.
+# Mode 2770 matches what debian/postinst sets: setgid so new files
+# inherit the hardn group, group-writable so the hardn user can persist
+# state. The previous 'chmod 755' silently clobbered postinst's
+# permissions and left hardn-api unable to write under /var/lib/hardn.
+ExecStartPre=/bin/bash -c 'mkdir -p /var/lib/hardn/legion /var/log/hardn && chmod 2770 /var/lib/hardn /var/lib/hardn/legion'
 
 # Use the correct binary path and create baseline if needed
 # (If hardn.service already created a baseline, this condition is a no-op.)

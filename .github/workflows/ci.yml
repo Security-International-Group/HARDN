@@ -27,6 +27,10 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_TOKEN }}
+      - name: Legion Harden Runner
+        uses: OpenSource-For-Freedom/Legion_runner@v1
+        with:
+          egress-policy: audit 
 
       - name: Install build dependencies
         run: |
