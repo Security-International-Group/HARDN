@@ -43,8 +43,14 @@ pub fn run_script(path: &Path, kind: &str, module_dirs: &[PathBuf]) -> HardnResu
         .status()
         .map_err(|e| HardnError::ExecutionFailed(format!("Failed to execute {}: {}", kind, e)))?;
 
+    // Note: a zero exit code does NOT mean the script ran without warnings.
+    // HARDN_STATUS warning / error calls inside a tool do not change the
+    // exit code, so we report the run as "finished" and leave it to the
+    // operator to inspect the inline [WARNING] / [ERROR] lines the tool
+    // itself emitted. Claiming "completed successfully" after warnings
+    // confused testers (Orinax, dev_testing 2026-06-13).
     if status.success() {
-        log_message(LogLevel::Pass, &format!("{} completed successfully", kind));
+        log_message(LogLevel::Info, &format!("{} run finished (exit 0)", kind));
     } else {
         log_message(
             LogLevel::Warning,

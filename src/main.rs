@@ -1387,9 +1387,13 @@ fn run_all_tools() -> i32 {
         if let Some(path) = find_script(&tool_dirs, tool_name) {
             match run_script(&path, "tool", &module_dirs) {
                 Ok(status) if status.success() => {
+                    // run_script already logs the exit-0 line. Avoid
+                    // the older "completed successfully" wording here
+                    // because a zero exit code does not imply the tool
+                    // ran without warnings; see runner.rs.
                     log_message(
-                        LogLevel::Pass,
-                        &format!("Tool {} completed successfully", tool_name),
+                        LogLevel::Info,
+                        &format!("Tool {} finished", tool_name),
                     );
                     succeeded += 1;
                 }
@@ -2101,7 +2105,7 @@ fn get_security_tools() -> Vec<SecurityToolInfo> {
         },
         SecurityToolInfo {
             name: "ClamAV",
-            service_name: "clamv-daemon",
+            service_name: "clamav-daemon",
             description: "Antivirus engine for detecting trojans and malware",
         },
         SecurityToolInfo {
