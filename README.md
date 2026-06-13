@@ -172,6 +172,9 @@ The hardening modules and tools read these in addition to the defaults:
 | `HARDN_ALERT_JOURNALD_TAG` | `HARDN-ALERT` | syslog tag for journald-bound alerts |
 | `HARDN_ALERT_DEDUPE_TTL_SEC` | `21600` | Dedupe window for journald + webhook fanout |
 | `HARDN_NO_WELCOME` | `0` | `1` suppresses the GUI welcome wizard |
+| `HARDN_NO_UPDATE_CHECK` | `0` | `1` skips the GUI update-availability check entirely (air-gapped hosts) |
+| `HARDN_UPDATE_CHECK_TTL_SEC` | `21600` | Cache TTL for the update check, in seconds (bounded to 1h..30d) |
+| `HARDN_UPDATE_RELEASES_URL` | github API | Override the releases endpoint for tests or a private mirror |
 | `HARDN_PROMETHEUS_PORT` | `9090` | Prometheus listen port |
 | `HARDN_PROMETHEUS_URL` | `http://localhost:9090` | URL Grafana provisions as the default data source |
 | `HARDN_PROMETHEUS_ALLOWED_CIDRS` | (none) | Allowlist for the Prometheus port |

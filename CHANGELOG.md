@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Update notifier in `hardn-gui`
+
+New module `src/utils/updates.rs` plus a banner in the GTK4 GUI that tells
+the operator when a newer HARDN release is available on the
+Security-International-Group GitHub repo. The banner is read-only: it does
+not install anything. The operator runs `apt upgrade hardn` themselves so
+the system package manager stays the single source of truth for what is
+installed.
+
+Design choices that stay locked in via
+`tests/static/update-notifier-honesty.t.sh`:
+
+* `HARDN_NO_UPDATE_CHECK=1` short-circuits the check before any curl call,
+  so air-gapped hosts never make a network attempt.
+* HTTP is a shell-out to `curl -fsS -m 5 -A "hardn/<version>"`; no new
+  compile-time deps. Same pattern as `utils::alerts` uses for the webhook
+  sink.
+* Cache lives at `$XDG_CACHE_HOME/hardn/update-check.json`. Default TTL is
+  6 hours, bounded between 1 hour and 30 days, override via
+  `HARDN_UPDATE_CHECK_TTL_SEC`.
+* `HARDN_UPDATE_RELEASES_URL` overrides the default
+  `api.github.com/repos/Security-International-Group/HARDN/releases/latest`
+  for tests or private mirrors.
+* Draft and pre-release releases are skipped (notifier fires on stable
+  cuts only).
+* Tag comparison is numeric so v1.10.0 wins over v1.2.0 (string compare
+  gets that backwards).
+* "Don't show again" writes a per-tag marker at
+  `$XDG_CONFIG_HOME/hardn/update-dismissed-<tag>.marker`, so the next
+  release pops the banner again even after an earlier dismiss.
+
+The banner shows three buttons: "Release notes" (opens the GitHub release
+page via `xdg-open`), "Dismiss" (per-session hide), and "Don't show again"
+(writes the marker).
+
+12 new Rust unit tests in `updates::tests` cover the numeric tag compare
+(including the lexical-trap case v1.10.0 vs v1.2.0), the draft and
+pre-release skip, the cache round-trip, the dismiss-marker path
+sanitisation, the opt-out env-var truthy values, and the safety bounds on
+the cache TTL constant.
+
+
+
 ### Stability sweep across Debian 12-13 + Ubuntu 22.04-24.04 (ISSUE-180 follow-up)
 
 Four additional fixes layered onto the install-time-noise fix below,

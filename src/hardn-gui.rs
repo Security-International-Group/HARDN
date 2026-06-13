@@ -12,6 +12,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use vte4::{PtyFlags, Terminal as VteTerminal, TerminalExt, TerminalExtManual};
 
+// Pull the update-notifier helpers in directly. Same #[path] pattern
+// hardn-monitor.rs uses for utils/alerts.rs.
+#[path = "utils/updates.rs"]
+mod updates;
+
 // Simple normalized event structure
 #[derive(Clone, Debug)]
 struct EventItem {
@@ -494,6 +499,66 @@ fn first_comment_summary(path: &std::path::Path) -> Option<String> {
         break;
     }
     None
+}
+
+/// Build the update-availability banner. Returns a horizontally-laid-out
+/// GtkBox holding: a label that names the new tag + the running version,
+/// a "Release notes" button (opens the GitHub release page via xdg-open),
+/// a session-dismiss button, and a "Don't show again" button that writes a
+/// per-tag marker so the next release pops the banner again.
+fn build_update_banner(info: updates::UpdateInfo) -> GtkBox {
+    let row = GtkBox::new(Orientation::Horizontal, 10);
+    row.set_margin_top(6);
+    row.set_margin_bottom(6);
+    row.set_margin_start(10);
+    row.set_margin_end(10);
+    row.add_css_class("box-header");
+
+    let text = Label::new(None);
+    text.set_use_markup(true);
+    text.set_xalign(0.0);
+    text.set_hexpand(true);
+    text.set_wrap(true);
+    text.set_markup(&format!(
+        "<b>HARDN {} is available.</b> You are running {}. \
+         Run <tt>sudo apt update &amp;&amp; sudo apt upgrade hardn</tt> when ready.",
+        glib::markup_escape_text(&info.latest_tag),
+        glib::markup_escape_text(updates::VERSION),
+    ));
+
+    let notes = gtk4::Button::with_label("Release notes");
+    notes.set_tooltip_text(Some("Open the release page in your browser"));
+    {
+        let url = info.release_url.clone();
+        notes.connect_clicked(move |_| {
+            updates::open_url(&url);
+        });
+    }
+
+    let dismiss = gtk4::Button::with_label("Dismiss");
+    dismiss.set_tooltip_text(Some("Hide for this session"));
+    let row_for_dismiss = row.clone();
+    dismiss.connect_clicked(move |_| {
+        row_for_dismiss.set_visible(false);
+    });
+
+    let mute = gtk4::Button::with_label("Don't show again");
+    mute.set_tooltip_text(Some(
+        "Suppress this banner for this version. A newer release will show it again.",
+    ));
+    let tag_for_mute = info.latest_tag.clone();
+    let row_for_mute = row.clone();
+    mute.connect_clicked(move |_| {
+        let _ = updates::dismiss(&tag_for_mute);
+        row_for_mute.set_visible(false);
+    });
+
+    row.append(&text);
+    row.append(&notes);
+    row.append(&dismiss);
+    row.append(&mute);
+
+    row
 }
 
 /// Path to the marker file. When it exists, the welcome wizard does not
@@ -1073,6 +1138,14 @@ fn main() {
         let right_box = GtkBox::new(Orientation::Vertical, 0);
         right_box.set_hexpand(true);
         right_box.set_vexpand(true);
+        // Update-availability banner. Sits above the header so the operator
+        // sees it on first paint without scrolling. Stays hidden when no
+        // newer release is out, the operator opted out via
+        // HARDN_NO_UPDATE_CHECK, or the network call failed (an air-gapped
+        // host never sees any scary error in the GUI).
+        if let Some(info) = updates::check_for_update_to_show() {
+            right_box.append(&build_update_banner(info));
+        }
         right_box.append(&header_box);
         right_box.append(&badge_box);
         right_box.append(&notebook);
