@@ -38,7 +38,7 @@ assert_file_exists "$SETUP_RS"     "src/setup/main.rs ships"
 assert_file_exists "$RUNNER_RS"    "src/execution/runner.rs ships"
 assert_file_exists "$FUNCTIONS_SH" "tools/functions.sh ships"
 
-tap_plan 7
+tap_plan 11
 
 # T1: extract service_name values from main.rs vs setup/main.rs and
 # require both lists to agree. This catches typos like clamv-daemon
@@ -64,10 +64,25 @@ else
     done
 fi
 
-# T1 sanity: known systemd unit names for the packages we ship. If any of
-# these substrings is missing from the list (e.g. clamav was misspelled),
-# we catch it.
-for needle in "clamav-daemon" "fail2ban" "ufw" "auditd"; do
+# T1 sanity: known systemd unit names for the packages we ship.
+#
+# Every entry here MUST have a real systemd unit AND be installable on
+# Debian/Ubuntu. We also include the units that ship via HARDN's own
+# observability stack (grafana-server, prometheus, prometheus-node-exporter).
+# When a future tool gets a sh script under usr/share/hardn/tools/ but
+# its service does not land in this Status list, operators see "13 tools
+# in Run menu but only 9 in Status" drift and lose visibility into what
+# is and isn't running. Caught here at pre-push time.
+for needle in \
+    "clamav-daemon" \
+    "fail2ban" \
+    "ufw" \
+    "auditd" \
+    "suricata" \
+    "grafana-server" \
+    "prometheus" \
+    "prometheus-node-exporter" \
+; do
     if printf '%s\n' "$main_names" | grep -qxF "$needle"; then
         tap_ok "src/main.rs lists $needle as a security tool service_name"
     else

@@ -1057,6 +1057,30 @@ fn get_security_tools() -> Vec<SecurityToolInfo> {
             _process_name: "ossec-analysisd",
             description: "Host-based Intrusion Detection System",
         },
+        SecurityToolInfo {
+            name: "Suricata",
+            service_name: "suricata",
+            _process_name: "suricata",
+            description: "Network IDS/IPS engine - Inline traffic inspection",
+        },
+        SecurityToolInfo {
+            name: "Grafana",
+            service_name: "grafana-server",
+            _process_name: "grafana-server",
+            description: "Visualisation dashboard for HARDN metrics and alerts",
+        },
+        SecurityToolInfo {
+            name: "Prometheus",
+            service_name: "prometheus",
+            _process_name: "prometheus",
+            description: "Metrics scraper feeding the HARDN observability stack",
+        },
+        SecurityToolInfo {
+            name: "Node Exporter",
+            service_name: "prometheus-node-exporter",
+            _process_name: "node_exporter",
+            description: "Prometheus node-level metrics exporter",
+        },
     ]
 }
 
