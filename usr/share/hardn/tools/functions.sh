@@ -131,10 +131,27 @@ is_service_active() {
     systemctl is-active --quiet "$service" 2>/dev/null
 }
 
-# Check if a service exists
+# Check if a systemd unit exists on this host.
+#
+# The previous implementation grepped the output of
+# 'systemctl list-unit-files --type=service'. That cache lags after a
+# fresh 'apt install', so the freshly-installed unit reports missing
+# for a moment, and any caller that uses service_exists as a gate
+# (e.g. enable_service) then emits a misleading
+# "Service X does not exist" warning. See dev_testing screenshot
+# from Orinax 2026-06-13.
+#
+# We instead read the unit's LoadState property, which is the authoritative
+# source systemd itself uses. Available since systemd 230 (Debian 9+,
+# Ubuntu 16.04+).
 service_exists() {
     local service="$1"
-    systemctl list-unit-files --type=service | grep -q "^${service}\.service"
+    local state
+    state=$(systemctl show "${service}.service" --property=LoadState --value 2>/dev/null)
+    case "$state" in
+        loaded|masked) return 0 ;;
+        *)             return 1 ;;
+    esac
 }
 
 # Check if running as root

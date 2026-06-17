@@ -446,7 +446,9 @@ fn run_all_modules() -> i32 {
         if let Some(path) = find_script(&module_dirs, module_name) {
             match run_script(&path, "module", &module_dirs) {
                 Ok(status) if status.success() => {
-                    log_message(LogLevel::Pass, &format!("Module {} completed successfully", module_name));
+                    // Same caveat as the tool path: exit 0 does not imply
+                    // the module ran warning-free.
+                    log_message(LogLevel::Info, &format!("Module {} finished", module_name));
                     succeeded += 1;
                 },
                 Ok(_) => {
@@ -506,7 +508,10 @@ fn run_all_tools() -> i32 {
         if let Some(path) = find_script(&tool_dirs, tool_name) {
             match run_script(&path, "tool", &module_dirs) {
                 Ok(status) if status.success() => {
-                    log_message(LogLevel::Pass, &format!("Tool {} completed successfully", tool_name));
+                    // Exit 0 does not imply the tool ran without warnings;
+                    // the inline [WARNING]/[ERROR] HARDN_STATUS calls in
+                    // the tool scripts don't propagate to the exit code.
+                    log_message(LogLevel::Info, &format!("Tool {} finished", tool_name));
                     succeeded += 1;
                 },
                 Ok(_) => {
@@ -1051,6 +1056,30 @@ fn get_security_tools() -> Vec<SecurityToolInfo> {
             service_name: "ossec",
             _process_name: "ossec-analysisd",
             description: "Host-based Intrusion Detection System",
+        },
+        SecurityToolInfo {
+            name: "Suricata",
+            service_name: "suricata",
+            _process_name: "suricata",
+            description: "Network IDS/IPS engine - Inline traffic inspection",
+        },
+        SecurityToolInfo {
+            name: "Grafana",
+            service_name: "grafana-server",
+            _process_name: "grafana-server",
+            description: "Visualisation dashboard for HARDN metrics and alerts",
+        },
+        SecurityToolInfo {
+            name: "Prometheus",
+            service_name: "prometheus",
+            _process_name: "prometheus",
+            description: "Metrics scraper feeding the HARDN observability stack",
+        },
+        SecurityToolInfo {
+            name: "Node Exporter",
+            service_name: "prometheus-node-exporter",
+            _process_name: "node_exporter",
+            description: "Prometheus node-level metrics exporter",
         },
     ]
 }
@@ -1864,8 +1893,10 @@ fn run_script(path: &Path, kind: &str, module_dirs: &[PathBuf]) -> HardnResult<E
             format!("Failed to execute {}: {}", kind, e)
         ))?;
 
+    // Same as src/execution/runner.rs: zero exit does not imply the
+    // script ran warning-free.
     if status.success() {
-        log_message(LogLevel::Pass, &format!("{} completed successfully", kind));
+        log_message(LogLevel::Info, &format!("{} run finished (exit 0)", kind));
     } else {
         log_message(LogLevel::Warning, &format!("{} exited with status: {}", kind, status));
     }

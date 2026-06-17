@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ClamAV signature fetch + Status list drift (dev_testing 2026-06-13 follow-up)
+
+Two bugs surfaced in Orinax's dev_testing screenshots after the
+tool-output-honesty round landed:
+
+- **`clamv.sh` now fetches signatures inline when none are on disk.**
+  Previously the script warned `ClamAV virus definition files not found`
+  and then tried to start `clamav-daemon`, which refuses to start
+  without a signature database. The daemon then sat inactive and
+  Status reported ClamAV as down. New behaviour: if neither
+  `/var/lib/clamav/{main,daily}.{cvd,cld}` exists, stop
+  `clamav-freshclam.service` (to release the lock), run
+  `freshclam --quiet` with a 5-minute timeout, log to
+  `/var/log/hardn/freshclam.log`, and only then attempt to enable
+  `clamav-daemon`. Final status now honestly reports which of the two
+  services actually came up.
+
+- **Status security-tool list now covers all 13 deployed tools.**
+  The Run menu listed 13 entries; Status only listed 9, producing
+  `Total active security tools: 1/9` instead of `1/13`. Root cause:
+  `get_security_tools()` in `src/main.rs` and `src/setup/main.rs`
+  was last updated before PR-G added the Prometheus + Grafana stack
+  and before Suricata shipped. Added Suricata, Grafana,
+  Prometheus, and Node Exporter to both lists with their real
+  systemd unit names (`suricata`, `grafana-server`, `prometheus`,
+  `prometheus-node-exporter`).
+
+Regression guard: `tests/static/tool-output-honesty.t.sh` extended
+from 7 to 11 assertions. The needle list now includes
+`suricata`, `grafana-server`, `prometheus`, and
+`prometheus-node-exporter`, so any future tool script added under
+`usr/share/hardn/tools/` that does not also land in the Status list
+trips pre-push CI.
+
 ### Stability sweep across Debian 12-13 + Ubuntu 22.04-24.04 (ISSUE-180 follow-up)
 
 Four additional fixes layered onto the install-time-noise fix below,
