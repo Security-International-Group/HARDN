@@ -10,18 +10,12 @@ name: Metrics
 #
 # REQUIRED SECRET: METRICS_TOKEN
 #   The default GITHUB_TOKEN cannot read the GitHub Traffic API
-#   (views / clones). To populate the traffic panel a personal access
-#   token with `repo` scope must be provisioned as the repository
-#   secret METRICS_TOKEN. Without it the workflow still runs, but the
-#   views / clones counters render as zero.
-#
-#   Provision:
-#     1. github.com/settings/tokens -> Fine-grained token
-#     2. Repository access: this repo only (HARDN)
-#     3. Permissions: Contents (read+write), Metadata (read),
-#        Administration (read) so the Traffic API is reachable
-#     4. Settings -> Secrets and variables -> Actions -> New
-#        repository secret -> name METRICS_TOKEN.
+#   (views / clones). The action also queries GraphQL for the owner
+#   profile on every run, which a PAT must be able to authenticate
+#   against. Provision a classic PAT with `repo` scope (or a
+#   fine-grained PAT whose Resource owner is Security-International-Group
+#   with Contents read, Metadata read, and Administration read) and
+#   store it as the repo secret METRICS_TOKEN.
 
 on:
   schedule:
@@ -48,25 +42,21 @@ jobs:
           template: repository
           filename: .github/metrics.svg
           output_action: commit
+          committer_branch: main
           committer_message: "chore(metrics): refresh repo metrics SVG"
 
-          # Repo card baseline: stars, watchers, forks, language %,
-          # topics, license, last commit, issue / PR counters.
-          base: ""
-          repositories_affiliations: owner, collaborator
-          repositories_forks: no
-
           # Traffic: views and clones for the last 14 days.
-          # Requires METRICS_TOKEN with repo scope; see header.
+          # Requires METRICS_TOKEN; default GITHUB_TOKEN cannot read the
+          # Traffic API.
           plugin_traffic: yes
 
-          # Contributors: who's doing most of the work, by commit share
+          # Contributors: who is doing most of the work, by commit share
           # over the last 12 months, plus a categorical breakdown so the
-          # split between Rust core / shell tools / docs / tests is
+          # split between Rust core, shell tools, docs, and tests is
           # visible at a glance.
           plugin_contributors: yes
+          plugin_contributors_head: main
           plugin_contributors_sections: contributors, categories
-          plugin_contributors_base: HEAD~365..HEAD
           plugin_contributors_categories: >-
             {
               "Rust core": "src/**",
@@ -78,7 +68,6 @@ jobs:
 
           # Followup: open issue / PR aging.
           plugin_followup: yes
-          plugin_followup_sections: repositories
           plugin_followup_indepth: yes
 
           # Topics: list of repo topics as chips.
@@ -86,12 +75,11 @@ jobs:
           plugin_topics_limit: 15
           plugin_topics_mode: icons
 
-          # Code snippet: most recent commit's diff hunk, gives a sense
-          # of the kind of change being made without leaving the README.
+          # Code snippet: most recent commit's diff hunk.
           plugin_code: yes
           plugin_code_lines: 12
 
-          # Reactions: how the audience is engaging with issues / PRs.
+          # Reactions: 30-day reaction engagement on issues and PRs.
           plugin_reactions: yes
           plugin_reactions_limit: 100
           plugin_reactions_days: 30
