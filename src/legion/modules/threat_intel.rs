@@ -100,119 +100,137 @@ impl ThreatIntelligence {
         Ok(())
     }
 
+    // The four feed updaters below have NO real upstream integration. Real
+    // AbuseIPDB / AlienVault OTX / VirusTotal / NVD pulls have not landed
+    // yet. Under the default feature set the functions are no-ops that
+    // emit a one-line warning so operators do not get a false sense of
+    // coverage. Builds with --features demo load a small hardcoded
+    // fixture set for screenshot / GUI rendering only.
+
     async fn update_abuseipdb_feed(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        // Simulate AbuseIPDB API call (replace with actual implementation)
-        eprintln!("Updating AbuseIPDB blacklist...");
-
-        // In a real implementation, this would make HTTP requests to AbuseIPDB API
-        // For demo purposes, we'll add some sample malicious IPs
-        let malicious_ips = vec![
-            "185.220.101.1",  // Known Tor exit node
-            "91.240.118.222", // Known malicious IP
-            "45.155.205.233", // Known C2 server
-        ];
-
-        for ip_str in malicious_ips {
-            if let Ok(ip) = ip_str.parse::<IpAddr>() {
-                let entry = ThreatEntry {
-                    indicator: ip_str.to_string(),
-                    threat_type: ThreatType::Malware,
-                    severity: Severity::High,
-                    source: "AbuseIPDB".to_string(),
-                    first_seen: Utc::now() - Duration::days(30),
-                    last_seen: Utc::now(),
-                    confidence: 0.9,
-                    tags: vec!["malware".to_string(), "botnet".to_string()],
-                };
-                self.ip_blacklist.insert(ip, entry);
+        #[cfg(feature = "demo")]
+        {
+            // Fixture data, not real intel. Demo builds only.
+            let malicious_ips = vec![
+                "185.220.101.1",
+                "91.240.118.222",
+                "45.155.205.233",
+            ];
+            for ip_str in malicious_ips {
+                if let Ok(ip) = ip_str.parse::<IpAddr>() {
+                    let entry = ThreatEntry {
+                        indicator: ip_str.to_string(),
+                        threat_type: ThreatType::Malware,
+                        severity: Severity::High,
+                        source: "AbuseIPDB-fixture".to_string(),
+                        first_seen: Utc::now() - Duration::days(30),
+                        last_seen: Utc::now(),
+                        confidence: 0.9,
+                        tags: vec!["fixture".to_string()],
+                    };
+                    self.ip_blacklist.insert(ip, entry);
+                }
             }
+            eprintln!("threat_intel: loaded AbuseIPDB fixture (demo feature)");
         }
-
+        #[cfg(not(feature = "demo"))]
+        {
+            eprintln!("threat_intel: AbuseIPDB integration not implemented; no indicators loaded");
+        }
         Ok(())
     }
 
     async fn update_alienvault_feed(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        eprintln!("Updating AlienVault OTX indicators...");
-
-        // Sample domains from AlienVault OTX
-        let malicious_domains = vec![
-            "malicious-domain-001.com",
-            "c2-server-example.net",
-            "phishing-site-demo.org",
-        ];
-
-        for domain in malicious_domains {
-            let entry = ThreatEntry {
-                indicator: domain.to_string(),
-                threat_type: ThreatType::Phishing,
-                severity: Severity::High,
-                source: "AlienVault OTX".to_string(),
-                first_seen: Utc::now() - Duration::days(15),
-                last_seen: Utc::now(),
-                confidence: 0.85,
-                tags: vec!["phishing".to_string(), "scam".to_string()],
-            };
-            self.domain_blacklist.insert(domain.to_string(), entry);
+        #[cfg(feature = "demo")]
+        {
+            let malicious_domains = vec![
+                "malicious-domain-001.com",
+                "c2-server-example.net",
+                "phishing-site-demo.org",
+            ];
+            for domain in malicious_domains {
+                let entry = ThreatEntry {
+                    indicator: domain.to_string(),
+                    threat_type: ThreatType::Phishing,
+                    severity: Severity::High,
+                    source: "AlienVault-OTX-fixture".to_string(),
+                    first_seen: Utc::now() - Duration::days(15),
+                    last_seen: Utc::now(),
+                    confidence: 0.85,
+                    tags: vec!["fixture".to_string()],
+                };
+                self.domain_blacklist.insert(domain.to_string(), entry);
+            }
+            eprintln!("threat_intel: loaded AlienVault OTX fixture (demo feature)");
         }
-
+        #[cfg(not(feature = "demo"))]
+        {
+            eprintln!("threat_intel: AlienVault OTX integration not implemented; no indicators loaded");
+        }
         Ok(())
     }
 
     async fn update_virustotal_feed(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        eprintln!("Updating VirusTotal file hashes...");
-
-        // Sample malicious file hashes
-        let malicious_hashes = vec![
-            "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
-            "b772d5c4e6b8c1f4a8f2e9d3c5a7b9e1f2d4c6a8b0e2f4d6c8a0b2e4f6d8a",
-        ];
-
-        for hash in malicious_hashes {
-            let entry = ThreatEntry {
-                indicator: hash.to_string(),
-                threat_type: ThreatType::Malware,
-                severity: Severity::Critical,
-                source: "VirusTotal".to_string(),
-                first_seen: Utc::now() - Duration::days(7),
-                last_seen: Utc::now(),
-                confidence: 0.95,
-                tags: vec!["malware".to_string(), "trojan".to_string()],
-            };
-            self.file_hash_blacklist.insert(hash.to_string(), entry);
+        #[cfg(feature = "demo")]
+        {
+            let malicious_hashes = vec![
+                "a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3",
+                "b772d5c4e6b8c1f4a8f2e9d3c5a7b9e1f2d4c6a8b0e2f4d6c8a0b2e4f6d8a",
+            ];
+            for hash in malicious_hashes {
+                let entry = ThreatEntry {
+                    indicator: hash.to_string(),
+                    threat_type: ThreatType::Malware,
+                    severity: Severity::Critical,
+                    source: "VirusTotal-fixture".to_string(),
+                    first_seen: Utc::now() - Duration::days(7),
+                    last_seen: Utc::now(),
+                    confidence: 0.95,
+                    tags: vec!["fixture".to_string()],
+                };
+                self.file_hash_blacklist.insert(hash.to_string(), entry);
+            }
+            eprintln!("threat_intel: loaded VirusTotal fixture (demo feature)");
         }
-
+        #[cfg(not(feature = "demo"))]
+        {
+            eprintln!("threat_intel: VirusTotal integration not implemented; no indicators loaded");
+        }
         Ok(())
     }
 
     async fn update_cve_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        eprintln!("Updating CVE database...");
-
-        // Sample CVEs
-        let cves = vec![
-            Vulnerability {
-                cve_id: "CVE-2023-12345".to_string(),
-                description: "Critical vulnerability in OpenSSL".to_string(),
-                severity: Severity::Critical,
-                cvss_score: 9.8,
-                affected_packages: vec!["openssl".to_string(), "libssl1.1".to_string()],
-                published_date: Utc::now() - Duration::days(30),
-                last_modified: Utc::now() - Duration::days(5),
-            },
-            Vulnerability {
-                cve_id: "CVE-2023-23456".to_string(),
-                description: "High severity vulnerability in SSH".to_string(),
-                severity: Severity::High,
-                cvss_score: 7.5,
-                affected_packages: vec!["openssh-server".to_string()],
-                published_date: Utc::now() - Duration::days(20),
-                last_modified: Utc::now() - Duration::days(2),
-            },
-        ];
-
-        for cve in cves {
-            self.cve_database.insert(cve.cve_id.clone(), cve);
+        #[cfg(feature = "demo")]
+        {
+            let cves = vec![
+                Vulnerability {
+                    cve_id: "CVE-2023-12345".to_string(),
+                    description: "Fixture CVE: critical vulnerability in OpenSSL".to_string(),
+                    severity: Severity::Critical,
+                    cvss_score: 9.8,
+                    affected_packages: vec!["openssl".to_string(), "libssl1.1".to_string()],
+                    published_date: Utc::now() - Duration::days(30),
+                    last_modified: Utc::now() - Duration::days(5),
+                },
+                Vulnerability {
+                    cve_id: "CVE-2023-23456".to_string(),
+                    description: "Fixture CVE: high severity vulnerability in SSH".to_string(),
+                    severity: Severity::High,
+                    cvss_score: 7.5,
+                    affected_packages: vec!["openssh-server".to_string()],
+                    published_date: Utc::now() - Duration::days(20),
+                    last_modified: Utc::now() - Duration::days(2),
+                },
+            ];
+            for cve in cves {
+                self.cve_database.insert(cve.cve_id.clone(), cve);
+            }
+            eprintln!("threat_intel: loaded CVE fixture (demo feature)");
         }
-
+        #[cfg(not(feature = "demo"))]
+        {
+            eprintln!("threat_intel: NVD CVE integration not implemented; no records loaded");
+        }
         Ok(())
     }
 
