@@ -62,9 +62,7 @@ def tap_skip(msg):
 
 
 def tap_summary():
-    print(
-        f"# {NAME} totals: total={_count} pass={_pass} fail={_fail} skip={_skip}"
-    )
+    print(f"# {NAME} totals: total={_count} pass={_pass} fail={_fail} skip={_skip}")
     return 0 if _fail == 0 else 1
 
 
