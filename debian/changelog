@@ -1,3 +1,36 @@
+hardn (1.2.92-1) bookworm; urgency=medium
+
+  [ Security integrity (P0 audit sweep) ]
+  * hardn-api binds 127.0.0.1 by default; new CIDR allowlist middleware
+    enforces HARDN_API_ALLOWED_CIDRS on every request
+  * ufw.sh no longer opens 8000/tcp and 9002/tcp unconditionally;
+    remote access is CIDR-scoped operator opt-in
+  * threat_intel fixture indicators gated behind the 'demo' cargo
+    feature; production builds load no fabricated IOCs
+  * LEGION risk weights renormalized so unwired collectors (network,
+    file integrity) no longer dilute the risk score
+
+  [ CI enforcement ]
+  * cargo fmt --check, cargo clippy -D warnings, blocking shellcheck
+  * cargo audit and cargo deny gate every merge (deny.toml added)
+  * Workspace made fmt- and clippy-clean; atty and quick-xml
+    dependencies removed (both carried RUSTSEC advisories; quick-xml
+    was unused)
+
+  [ Stability and honesty fixes since 1.1.0 ]
+  * Tool runs no longer print PASS on warning-laden executions
+  * service_exists uses systemctl LoadState (fixes post-install race)
+  * ClamAV fetches virus definitions inline when missing so
+    clamav-daemon can actually start
+  * Security Tools status list covers all 13 deployed tools
+  * hardn-monitor no longer restart-loops against legion-daemon
+  * Duplicate ClamAV install and audispd-plugins remnants removed
+  * Metrics workflow removed (unusable token requirements)
+  * Version sync: this entry aligns debian/changelog with Cargo.toml;
+    the test harness now blocks drift between the two
+
+ -- Tim Burns <92951498+OpenSource-For-Freedom@users.noreply.github.com>  Sun, 05 Jul 2026 12:07:21 +0000
+
 hardn (1.1.0-1) bookworm; urgency=medium
 
   [ Audit framework — 100% coverage (194/194 rules) ]
