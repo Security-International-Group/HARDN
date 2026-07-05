@@ -3387,7 +3387,7 @@ impl Legion {
                 let mut snapshot = alerts.clone();
                 drop(alerts);
 
-                snapshot.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
+                snapshot.sort_by_key(|b| std::cmp::Reverse(b.last_seen));
 
                 let total_alerts = snapshot.len();
 

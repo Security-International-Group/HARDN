@@ -103,7 +103,7 @@ impl ResponseEngine {
     pub async fn add_rule(&self, rule: ResponseRule) {
         let mut rules = self.rules.write().await;
         rules.push(rule);
-        rules.sort_by(|a, b| b.priority.cmp(&a.priority)); // Higher priority first
+        rules.sort_by_key(|b| std::cmp::Reverse(b.priority)); // Higher priority first
     }
 
     pub async fn execute_response(
