@@ -37,7 +37,7 @@ CI="$REPO_ROOT/.github/workflows/ci.yml"
 
 assert_file_exists "$CI" ".github/workflows/ci.yml ships"
 
-tap_plan 6
+tap_plan 7
 
 # S1: cosign installer present.
 if grep -qE 'sigstore/cosign-installer' "$CI"; then
@@ -84,6 +84,17 @@ if grep -qE 'cosign[[:space:]]+sign-blob[^#]*\|\|[[:space:]]+true' "$CI"; then
     grep -nE 'cosign[[:space:]]+sign-blob[^#]*\|\|[[:space:]]+true' "$CI" | sed 's/^/# /'
 else
     tap_ok "cosign sign-blob is not silenced with '|| true'"
+fi
+
+# S7: the checksum line must not name IMG_1233.jpeg. The release job only
+# downloads the .deb artifact; the imagery is added by a different job and
+# is absent here, so 'sha256sum ... IMG_1233.jpeg' fails the step under
+# 'set -e'. This regression bit a real release build (v1.2.134).
+if grep -nE 'sha256sum[^#]*IMG_1233\.jpeg' "$CI" >/dev/null 2>&1; then
+    tap_not_ok "sha256sum must not reference IMG_1233.jpeg (absent from the release job)"
+    grep -nE 'sha256sum[^#]*IMG_1233\.jpeg' "$CI" | sed 's/^/# /'
+else
+    tap_ok "sha256sum does not reference the release-job-absent IMG_1233.jpeg"
 fi
 
 tap_summary

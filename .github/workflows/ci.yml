@@ -440,9 +440,11 @@ jobs:
         run: |
           DEB_NAME="${{ steps.version.outputs.deb_name }}"
 
-          # SHA256SUMS over everything we publish (the .deb and the logo),
-          # so a consumer can verify integrity without cosign too.
-          sha256sum -- *.deb IMG_1233.jpeg > SHA256SUMS
+          # SHA256SUMS over the release artifact so a consumer can verify
+          # integrity without cosign too. Only the .deb is downloaded into
+          # this job (release_assets), so checksum exactly that; the release
+          # imagery is added by a different job and is not present here.
+          sha256sum -- *.deb > SHA256SUMS
           cat SHA256SUMS
 
           # Detached signature + certificate for the .deb. cosign writes
