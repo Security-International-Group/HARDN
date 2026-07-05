@@ -30,6 +30,7 @@
 //! noisy condition can't pager-spam an on-call.
 
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
@@ -48,6 +49,105 @@ const DEFAULT_DEDUPE_PATH: &str = "/var/lib/hardn/alerts/seen.json";
 const DEFAULT_DEDUPE_TTL_SEC: u64 = 6 * 3600;
 /// Hard cap on curl webhook duration so a slow receiver can't stall the caller.
 const WEBHOOK_TIMEOUT_SEC: u64 = 10;
+
+/// Where failed webhook deliveries are queued for retry. Operators override
+/// with `$HARDN_ALERT_QUEUE_PATH`.
+const DEFAULT_QUEUE_PATH: &str = "/var/lib/hardn/alerts/queue.jsonl";
+/// Give up on a queued alert after this many failed attempts (then drop it
+/// with a journald note) so the queue can't grow without bound.
+const MAX_DELIVERY_ATTEMPTS: u32 = 10;
+
+/// Seconds to wait before the Nth retry (1-based), exponential with a cap.
+/// attempts=1 -> 2s, 2 -> 4s, 3 -> 8s ... capped at 1h. The backoff is
+/// realized across drain cycles (each queued item stores its next-retry
+/// timestamp) rather than by sleeping inline, so producing an alert never
+/// blocks the caller.
+fn backoff_secs(attempts: u32) -> u64 {
+    const BASE: u64 = 2;
+    const CAP: u64 = 3600;
+    BASE.saturating_pow(attempts.min(20)).min(CAP)
+}
+
+/// One spilled alert awaiting redelivery. Stored one-per-line as JSON in the
+/// queue file. `payload` is the raw alert body; it is re-signed at send time
+/// so the HMAC secret never touches disk.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct QueueItem {
+    payload: String,
+    attempts: u32,
+    next_retry: u64,
+    first_failed: u64,
+}
+
+/// Pure state transition for a queued item after one delivery attempt.
+/// Returns `None` when the item should be dropped (delivered successfully,
+/// or attempts exhausted) and `Some(rescheduled)` when it should stay queued
+/// with a later `next_retry`.
+fn reschedule(mut item: QueueItem, success: bool, now: u64) -> Option<QueueItem> {
+    if success {
+        return None;
+    }
+    item.attempts = item.attempts.saturating_add(1);
+    if item.attempts >= MAX_DELIVERY_ATTEMPTS {
+        return None;
+    }
+    item.next_retry = now.saturating_add(backoff_secs(item.attempts));
+    Some(item)
+}
+
+/// Pure single drain pass. Items whose `next_retry` is still in the future
+/// are kept untouched; due items are handed to `send` and rescheduled or
+/// dropped by [`reschedule`]. Factored out so the scheduling can be unit
+/// tested with a fake sender instead of a live curl.
+fn drain_pass<F>(items: Vec<QueueItem>, now: u64, mut send: F) -> Vec<QueueItem>
+where
+    F: FnMut(&str) -> bool,
+{
+    let mut remaining = Vec::new();
+    for item in items {
+        if item.next_retry > now {
+            remaining.push(item);
+            continue;
+        }
+        let ok = send(&item.payload);
+        if let Some(next) = reschedule(item, ok, now) {
+            remaining.push(next);
+        }
+    }
+    remaining
+}
+
+fn load_queue(path: &Path) -> Vec<QueueItem> {
+    let contents = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    contents
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str::<QueueItem>(l).ok())
+        .collect()
+}
+
+fn save_queue(path: &Path, items: &[QueueItem]) {
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    // An empty queue removes the file so a healthy system leaves no stray
+    // state behind.
+    if items.is_empty() {
+        let _ = fs::remove_file(path);
+        return;
+    }
+    let mut buf = String::new();
+    for item in items {
+        if let Ok(line) = serde_json::to_string(item) {
+            buf.push_str(&line);
+            buf.push('\n');
+        }
+    }
+    let _ = fs::write(path, buf);
+}
 
 /// Compute HMAC-SHA256(key, message) and return it as lowercase hex.
 ///
@@ -154,6 +254,8 @@ pub struct AlertSinks {
     /// so the receiver can prove the alert came from HARDN and was not forged
     /// or tampered with in transit.
     pub webhook_secret: Option<String>,
+    /// Where failed webhook deliveries are spilled for retry with backoff.
+    pub queue_path: PathBuf,
     /// When true, never fork curl / systemd-cat. Used by the unit tests.
     pub silent: bool,
 }
@@ -181,12 +283,16 @@ impl AlertSinks {
         let webhook_secret = std::env::var("HARDN_ALERT_WEBHOOK_SECRET")
             .ok()
             .filter(|s| !s.is_empty());
+        let queue_path = std::env::var("HARDN_ALERT_QUEUE_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(DEFAULT_QUEUE_PATH));
         Self {
             dedupe_path,
             dedupe_ttl_sec,
             journald_tag,
             webhook_url,
             webhook_secret,
+            queue_path,
             silent: false,
         }
     }
@@ -202,9 +308,13 @@ impl AlertSinks {
         }
         self.send_journald(severity, source, message);
         if let Some(url) = &self.webhook_url {
+            // Flush any backlog first so recovered receivers catch up in
+            // order, then deliver the new alert (spilling it if the POST
+            // fails). Neither step blocks on retries.
+            self.drain_queue(url);
             let ts = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
             let payload = build_alert_payload(&ts, severity, source, message, key);
-            self.send_webhook(url, &payload);
+            self.deliver_webhook(url, &payload);
         }
         self.mark_sent(key);
     }
@@ -274,22 +384,57 @@ impl AlertSinks {
             .status();
     }
 
-    /// POST the alert JSON to the configured webhook. We shell out to curl
-    /// because HARDN already depends on it and adding reqwest doubles compile
-    /// times. Body is piped via stdin (`--data-binary @-`) so no shell
-    /// escaping is needed.
+    /// Deliver one alert now; on failure, spill it to the retry queue.
+    fn deliver_webhook(&self, url: &str, payload: &str) {
+        if !self.post_once(url, payload) {
+            self.spill(payload);
+        }
+    }
+
+    /// Append a failed payload to the retry queue with an initial backoff.
+    fn spill(&self, payload: &str) {
+        let now = unix_now();
+        let item = QueueItem {
+            payload: payload.to_string(),
+            attempts: 1,
+            next_retry: now.saturating_add(backoff_secs(1)),
+            first_failed: now,
+        };
+        let mut queue = load_queue(&self.queue_path);
+        queue.push(item);
+        save_queue(&self.queue_path, &queue);
+    }
+
+    /// Attempt to redeliver every due item in the retry queue, rescheduling
+    /// or dropping each per [`reschedule`]. Non-blocking: items not yet due
+    /// are left untouched and future forwards revisit them.
+    fn drain_queue(&self, url: &str) {
+        let queue = load_queue(&self.queue_path);
+        if queue.is_empty() {
+            return;
+        }
+        let now = unix_now();
+        let remaining = drain_pass(queue, now, |payload| self.post_once(url, payload));
+        save_queue(&self.queue_path, &remaining);
+    }
+
+    /// POST the alert JSON to the configured webhook. Returns true on a 2xx
+    /// (curl `-fsS` exits non-zero on connection failure or HTTP >= 400).
+    /// We shell out to curl because HARDN already depends on it and adding
+    /// reqwest doubles compile times. Body is piped via stdin
+    /// (`--data-binary @-`) so no shell escaping is needed.
     ///
     /// When `webhook_secret` is set, the exact body is signed with
     /// HMAC-SHA256 and the digest is sent as `X-HARDN-Signature: sha256=<hex>`.
     /// The receiver recomputes the HMAC over the raw body and compares in
     /// constant time (see contrib/webhook-receiver/verify.py).
-    fn send_webhook(&self, url: &str, payload: &str) {
+    fn post_once(&self, url: &str, payload: &str) -> bool {
         // Quick URL sanity check — only http(s) URLs allowed.
         if !(url.starts_with("http://") || url.starts_with("https://")) {
-            return;
+            return false;
         }
         if !Path::new("/usr/bin/curl").exists() && !Path::new("/bin/curl").exists() {
-            return;
+            return false;
         }
 
         let mut args: Vec<String> = vec![
@@ -318,12 +463,15 @@ impl AlertSinks {
             .spawn()
         {
             Ok(c) => c,
-            Err(_) => return,
+            Err(_) => return false,
         };
         if let Some(mut stdin) = child.stdin.take() {
             let _ = stdin.write_all(payload.as_bytes());
         }
-        let _ = child.wait();
+        match child.wait() {
+            Ok(status) => status.success(),
+            Err(_) => false,
+        }
     }
 }
 
@@ -410,6 +558,7 @@ mod tests {
             journald_tag: "test".into(),
             webhook_url: None,
             webhook_secret: None,
+            queue_path: std::path::PathBuf::from("/dev/null"),
             silent: false, // we want forward()'s dedupe logic to run; silent disables side effects below
         }
     }
@@ -439,6 +588,94 @@ mod tests {
         assert!(mac.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
+    fn queue_item(payload: &str, attempts: u32, next_retry: u64) -> QueueItem {
+        QueueItem {
+            payload: payload.to_string(),
+            attempts,
+            next_retry,
+            first_failed: 0,
+        }
+    }
+
+    #[test]
+    fn backoff_is_monotonic_and_capped() {
+        assert_eq!(backoff_secs(1), 2);
+        assert_eq!(backoff_secs(2), 4);
+        assert_eq!(backoff_secs(3), 8);
+        // Grows until it saturates at the 1h cap and never exceeds it.
+        assert!(backoff_secs(4) > backoff_secs(3));
+        assert_eq!(backoff_secs(20), 3600);
+        assert_eq!(backoff_secs(100), 3600);
+    }
+
+    #[test]
+    fn reschedule_drops_on_success() {
+        let item = queue_item("p", 1, 0);
+        assert_eq!(reschedule(item, true, 100), None);
+    }
+
+    #[test]
+    fn reschedule_bumps_attempts_and_delays_on_failure() {
+        let item = queue_item("p", 1, 0);
+        let next = reschedule(item, false, 100).expect("should stay queued");
+        assert_eq!(next.attempts, 2);
+        // next_retry is pushed into the future by the backoff for attempt 2.
+        assert_eq!(next.next_retry, 100 + backoff_secs(2));
+    }
+
+    #[test]
+    fn reschedule_gives_up_after_max_attempts() {
+        // attempts already at the ceiling minus one; one more failure drops it.
+        let item = queue_item("p", MAX_DELIVERY_ATTEMPTS - 1, 0);
+        assert_eq!(reschedule(item, false, 100), None);
+    }
+
+    #[test]
+    fn drain_pass_leaves_items_not_yet_due() {
+        // next_retry in the future -> untouched, sender never called.
+        let items = vec![queue_item("future", 1, 1_000)];
+        let mut calls = 0;
+        let out = drain_pass(items, 500, |_| {
+            calls += 1;
+            true
+        });
+        assert_eq!(calls, 0);
+        assert_eq!(out.len(), 1);
+    }
+
+    #[test]
+    fn drain_pass_drops_delivered_and_reschedules_failed() {
+        let items = vec![
+            queue_item("ok", 1, 0),   // due, will succeed -> dropped
+            queue_item("fail", 1, 0), // due, will fail -> rescheduled
+        ];
+        let out = drain_pass(items, 500, |payload| payload == "ok");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].payload, "fail");
+        assert_eq!(out[0].attempts, 2);
+        assert!(out[0].next_retry > 500);
+    }
+
+    #[test]
+    fn queue_round_trips_through_disk() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("queue.jsonl");
+        let items = vec![queue_item("a", 1, 10), queue_item("b", 3, 20)];
+        save_queue(&path, &items);
+        let loaded = load_queue(&path);
+        assert_eq!(loaded, items);
+    }
+
+    #[test]
+    fn saving_empty_queue_removes_the_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("queue.jsonl");
+        save_queue(&path, &[queue_item("a", 1, 10)]);
+        assert!(path.exists());
+        save_queue(&path, &[]);
+        assert!(!path.exists());
+    }
+
     #[test]
     fn dedupe_blocks_second_call_within_ttl() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -459,6 +696,7 @@ mod tests {
             journald_tag: "test".into(),
             webhook_url: None,
             webhook_secret: None,
+            queue_path: std::path::PathBuf::from("/dev/null"),
             silent: true,
         };
         sinks.mark_sent("k");
@@ -474,6 +712,7 @@ mod tests {
             journald_tag: "HARDN-ALERT".into(),
             webhook_url: None,
             webhook_secret: None,
+            queue_path: std::path::PathBuf::from("/dev/null"),
             silent: true,
         };
         assert_eq!(sinks.dedupe_ttl_sec, 6 * 3600);
