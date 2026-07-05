@@ -102,7 +102,10 @@ pub fn check_security_policies() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Check for security modules
-    if let Ok(output) = Command::new("lsmod").args(["|", "grep", "security"]).output() {
+    if let Ok(output) = Command::new("lsmod")
+        .args(["|", "grep", "security"])
+        .output()
+    {
         let output_str = String::from_utf8_lossy(&output.stdout);
         let security_modules: Vec<&str> = output_str.lines().collect();
 
@@ -171,9 +174,7 @@ pub fn check_file_integrity() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     } else {
-        safe_println!(
-            "    AIDE not installed - consider installing for file integrity monitoring",
-        );
+        safe_println!("    AIDE not installed - consider installing for file integrity monitoring",);
     }
 
     Ok(())

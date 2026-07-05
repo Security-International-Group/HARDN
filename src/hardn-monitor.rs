@@ -74,7 +74,10 @@ fn restart_service(service: &str) -> Result<(), std::io::Error> {
         emit_alert(
             "error",
             "hardn-monitor",
-            &format!("Failed to restart {} (manual intervention required)", service),
+            &format!(
+                "Failed to restart {} (manual intervention required)",
+                service
+            ),
             &format!("svc-restart-failed:{}", service),
         );
     }
@@ -393,7 +396,9 @@ fn should_attempt_restart(service: &str, last_attempt_succeeded: bool) -> bool {
             "hardn-monitor",
             &format!(
                 "{} has failed to start {} times in a row; auto-restart suspended for {}s. Manual intervention required.",
-                service, entry.consecutive_failures, BACKOFF_WINDOW.as_secs()
+                service,
+                entry.consecutive_failures,
+                BACKOFF_WINDOW.as_secs()
             ),
             &format!("svc-backoff:{}", service),
         );
@@ -712,7 +717,10 @@ fn log_database_metrics() {
                         if let Some(db_part) = line.split(" db=[").nth(1) {
                             if let Some(db_info) = db_part.split(']').next() {
                                 if db_info == "not_initialized" {
-                                    log_message("INFO", "Database - status=not_initialized (waiting for first baseline)");
+                                    log_message(
+                                        "INFO",
+                                        "Database - status=not_initialized (waiting for first baseline)",
+                                    );
                                 } else {
                                     // Parse database info: baselines=X,anomalies=Y,latest_age=Z,size=W
                                     let mut baselines = 0i64;
@@ -778,7 +786,6 @@ fn log_database_metrics() {
 fn main() {
     log_message("INFO", "HARDN Centralized Monitor starting");
 
-
     let _ = fs::create_dir_all("/var/log/hardn");
     let _ = fs::create_dir_all("/var/run");
     if let Ok(pid) = std::process::id().to_string().parse::<u32>() {
@@ -793,7 +800,7 @@ fn main() {
         // Check services every 30 seconds
         monitor_services();
 
-        // Core 
+        // Core
         log_core_services();
         log_systemd_metrics();
         log_journal_metrics();
@@ -802,7 +809,6 @@ fn main() {
         log_metrics_from_api();
         log_database_metrics();
         log_message("DEBUG", "Monitoring inter-service communication channels");
-
 
         thread::sleep(Duration::from_secs(30));
     }

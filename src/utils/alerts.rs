@@ -120,8 +120,8 @@ impl AlertSinks {
         let dedupe_path = std::env::var("HARDN_ALERT_DEDUPE_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(DEFAULT_DEDUPE_PATH));
-        let journald_tag = std::env::var("HARDN_ALERT_JOURNALD_TAG")
-            .unwrap_or_else(|_| "HARDN-ALERT".to_string());
+        let journald_tag =
+            std::env::var("HARDN_ALERT_JOURNALD_TAG").unwrap_or_else(|_| "HARDN-ALERT".to_string());
         let webhook_url = std::env::var("HARDN_ALERT_WEBHOOK_URL")
             .ok()
             .filter(|s| !s.is_empty());
@@ -184,9 +184,7 @@ impl AlertSinks {
         };
         let line = format!("[{}] {}", source, message);
 
-        if Path::new("/usr/bin/systemd-cat").exists()
-            || Path::new("/bin/systemd-cat").exists()
-        {
+        if Path::new("/usr/bin/systemd-cat").exists() || Path::new("/bin/systemd-cat").exists() {
             let mut child = match Command::new("systemd-cat")
                 .args(["-t", &self.journald_tag, "-p", priority])
                 .stdin(Stdio::piped())
@@ -206,7 +204,14 @@ impl AlertSinks {
 
         // logger(1) fallback — universally available on Debian.
         let _ = Command::new("logger")
-            .args(["-t", &self.journald_tag, "-p", &format!("user.{}", priority), "--", &line])
+            .args([
+                "-t",
+                &self.journald_tag,
+                "-p",
+                &format!("user.{}", priority),
+                "--",
+                &line,
+            ])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
@@ -226,10 +231,14 @@ impl AlertSinks {
         let mut child = match Command::new("curl")
             .args([
                 "-fsS",
-                "-m", &WEBHOOK_TIMEOUT_SEC.to_string(),
-                "-X", "POST",
-                "-H", "Content-Type: application/json",
-                "--data-binary", "@-",
+                "-m",
+                &WEBHOOK_TIMEOUT_SEC.to_string(),
+                "-X",
+                "POST",
+                "-H",
+                "Content-Type: application/json",
+                "--data-binary",
+                "@-",
                 url,
             ])
             .stdin(Stdio::piped())

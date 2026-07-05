@@ -1,12 +1,12 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use gtk4::glib::{timeout_add_local, ControlFlow};
+use gtk4::glib::{ControlFlow, timeout_add_local};
 use gtk4::prelude::{ApplicationExt, ApplicationExtManual};
 use gtk4::{
-    gdk, prelude::*, Application, ApplicationWindow, Box as GtkBox, CssProvider, Label, Notebook,
-    Orientation, Paned, Picture, ScrolledWindow, TextBuffer, TextMark, TextView,
-    STYLE_PROVIDER_PRIORITY_APPLICATION,
+    Application, ApplicationWindow, Box as GtkBox, CssProvider, Label, Notebook, Orientation,
+    Paned, Picture, STYLE_PROVIDER_PRIORITY_APPLICATION, ScrolledWindow, TextBuffer, TextMark,
+    TextView, gdk, prelude::*,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -88,7 +88,9 @@ fn strip_control(s: &str) -> String {
             if chars.peek() == Some(&'[') {
                 chars.next(); // consume '['
                 for c2 in chars.by_ref() {
-                    if c2.is_ascii_alphabetic() { break; }
+                    if c2.is_ascii_alphabetic() {
+                        break;
+                    }
                 }
             } else {
                 chars.next(); // two-char escape (e.g. \x1b=)
@@ -444,7 +446,11 @@ fn build_tools_inventory() -> String {
         if path.extension().and_then(|s| s.to_str()) != Some("sh") {
             continue;
         }
-        let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?").to_string();
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("?")
+            .to_string();
         let desc = first_comment_summary(&path).unwrap_or_else(|| "(no description)".into());
         tools.push((name, desc));
     }
@@ -597,7 +603,10 @@ fn show_welcome_wizard(parent: &ApplicationWindow) {
         let page_box = GtkBox::new(Orientation::Vertical, 14);
         let h = gtk4::Label::new(None);
         h.set_xalign(0.0);
-        h.set_markup(&format!("<span size='x-large' weight='bold'>{}</span>", title));
+        h.set_markup(&format!(
+            "<span size='x-large' weight='bold'>{}</span>",
+            title
+        ));
         let b = gtk4::Label::new(None);
         b.set_use_markup(true);
         b.set_wrap(true);
@@ -744,7 +753,7 @@ fn main() {
                         "/usr/local/share/hardn",
                         "/etc/hardn",
                     ];
-                    
+
                     // Validate path against whitelist of allowed directories
                     let validated = std::path::PathBuf::from(&path_str)
                         .canonicalize()

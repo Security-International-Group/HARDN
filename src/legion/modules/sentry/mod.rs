@@ -300,12 +300,8 @@ where
     report
 }
 
-fn fire_alert<F>(
-    alert: &mut F,
-    entries: &BTreeMap<String, BaselineEntry>,
-    path: &str,
-    verb: &str,
-) where
+fn fire_alert<F>(alert: &mut F, entries: &BTreeMap<String, BaselineEntry>, path: &str, verb: &str)
+where
     F: FnMut(&str, &str, &str, &str),
 {
     let category_label = entries
@@ -375,7 +371,11 @@ mod tests {
         save_baseline(&baseline_path, &baseline).unwrap();
 
         // Mutate the file.
-        fs::write(&sudoers, "alice ALL=(ALL) NOPASSWD: ALL\nbob ALL=(ALL) NOPASSWD: ALL\n").unwrap();
+        fs::write(
+            &sudoers,
+            "alice ALL=(ALL) NOPASSWD: ALL\nbob ALL=(ALL) NOPASSWD: ALL\n",
+        )
+        .unwrap();
 
         // Run with a synthetic watch list pointing at the temp dir.
         let watch_pat = format!("{}/sudoers", dir.path().display());
@@ -390,7 +390,9 @@ mod tests {
 
         let alerts: RefCell<Vec<(String, String, String)>> = RefCell::new(vec![]);
         let report = run_with_config(&cfg, |sev, src, msg, _| {
-            alerts.borrow_mut().push((sev.into(), src.into(), msg.into()));
+            alerts
+                .borrow_mut()
+                .push((sev.into(), src.into(), msg.into()));
         });
 
         assert!(!report.first_run);
@@ -406,20 +408,32 @@ mod tests {
         let mut prev = BTreeMap::new();
         prev.insert(
             "/a".into(),
-            BaselineEntry { category: "x".into(), sha256: "1".into() },
+            BaselineEntry {
+                category: "x".into(),
+                sha256: "1".into(),
+            },
         );
         prev.insert(
             "/b".into(),
-            BaselineEntry { category: "x".into(), sha256: "2".into() },
+            BaselineEntry {
+                category: "x".into(),
+                sha256: "2".into(),
+            },
         );
         let mut cur = BTreeMap::new();
         cur.insert(
             "/a".into(),
-            BaselineEntry { category: "x".into(), sha256: "1".into() },
+            BaselineEntry {
+                category: "x".into(),
+                sha256: "1".into(),
+            },
         );
         cur.insert(
             "/c".into(),
-            BaselineEntry { category: "x".into(), sha256: "3".into() },
+            BaselineEntry {
+                category: "x".into(),
+                sha256: "3".into(),
+            },
         );
         let (added, removed, changed) = diff(&prev, &cur);
         assert_eq!(added, vec!["/c"]);

@@ -12,10 +12,10 @@ use crate::core::config::*;
 use crate::core::types::*;
 use crate::display::banner::print_banner;
 use crate::execution::run_script;
-use crate::utils::{detect_debian_version, log_message, LogLevel};
+use crate::utils::{LogLevel, detect_debian_version, log_message};
 use crate::utils::{env_or_defaults, find_script, join_paths, list_modules};
 use chrono::{DateTime, Utc};
-use comfy_table::{presets::UTF8_FULL, Table};
+use comfy_table::{Table, presets::UTF8_FULL};
 use glob::glob;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
@@ -549,11 +549,7 @@ struct HardnSnapshotContext {
 }
 
 fn sanitize_score(value: f64) -> f64 {
-    if value.is_finite() {
-        value
-    } else {
-        0.0
-    }
+    if value.is_finite() { value } else { 0.0 }
 }
 
 fn persist_hardn_monitor_snapshot(
@@ -1051,15 +1047,14 @@ fn generate_security_report() {
         audit: audit_summary.clone(),
     };
 
-    let snapshot = HardnMonitorSnapshot::new(
-        component_scores,
-        total_score,
-        grade,
-        snapshot_context,
-    );
+    let snapshot =
+        HardnMonitorSnapshot::new(component_scores, total_score, grade, snapshot_context);
 
     if let Err(e) = persist_hardn_monitor_snapshot(&snapshot) {
-        log_message(LogLevel::Warning, &format!("Could not save monitor snapshot: {}", e));
+        log_message(
+            LogLevel::Warning,
+            &format!("Could not save monitor snapshot: {}", e),
+        );
     }
 
     // Add interactive menu if there are recommendations
@@ -1087,17 +1082,23 @@ fn generate_security_report() {
 
         match choice.as_str() {
             "a" if tool_score < 30.0 => {
-                println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+                println!(
+                    "\n═══════════════════════════════════════════════════════════════════════════════\n"
+                );
                 // Run tool selection menu
                 select_and_run_tool();
             }
             "b" if module_score < 15.0 => {
-                println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+                println!(
+                    "\n═══════════════════════════════════════════════════════════════════════════════\n"
+                );
                 // Run module selection menu
                 select_and_run_module();
             }
             "c" if audit_score < 30.0 => {
-                println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+                println!(
+                    "\n═══════════════════════════════════════════════════════════════════════════════\n"
+                );
                 // Display HARDN audit report
                 display_hardn_audit_report(
                     audit_summary
@@ -1106,12 +1107,16 @@ fn generate_security_report() {
                 );
             }
             "d" => {
-                println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+                println!(
+                    "\n═══════════════════════════════════════════════════════════════════════════════\n"
+                );
                 // Return to main menu
             }
             _ => {
                 println!("\nInvalid selection. Returning to main menu.");
-                println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+                println!(
+                    "\n═══════════════════════════════════════════════════════════════════════════════\n"
+                );
             }
         }
     } else {
@@ -1391,10 +1396,7 @@ fn run_all_tools() -> i32 {
                     // the older "completed successfully" wording here
                     // because a zero exit code does not imply the tool
                     // ran without warnings; see runner.rs.
-                    log_message(
-                        LogLevel::Info,
-                        &format!("Tool {} finished", tool_name),
-                    );
+                    log_message(LogLevel::Info, &format!("Tool {} finished", tool_name));
                     succeeded += 1;
                 }
                 Ok(_) => {
@@ -1441,10 +1443,7 @@ fn run_everything() -> i32 {
         LogLevel::Warning,
         "WARNING: Sandbox mode is NOT included in batch operations",
     );
-    log_message(
-        LogLevel::Info,
-        "Starting comprehensive system hardening...",
-    );
+    log_message(LogLevel::Info, "Starting comprehensive system hardening...");
 
     // Check if comprehensive hardening script exists
     let comprehensive_script_paths = vec![
@@ -2154,7 +2153,7 @@ fn check_service_status(service_name: &str) -> ServiceStatus {
                 active: false,
                 enabled: false,
                 pid: None,
-            }
+            };
         }
     };
 
@@ -2171,7 +2170,7 @@ fn check_service_status(service_name: &str) -> ServiceStatus {
                 active,
                 enabled: false,
                 pid: None,
-            }
+            };
         }
     };
 
@@ -2526,8 +2525,8 @@ fn restart_systemd_service(service_name: &str, optional: bool) {
 /// Interactive service monitor with log viewing capabilities
 fn interactive_service_monitor() -> i32 {
     use std::io::{self, Write};
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
     use std::time::Duration;
 
@@ -2695,13 +2694,7 @@ fn interactive_service_monitor() -> i32 {
 
                         thread::spawn(move || {
                             let mut child = Command::new("journalctl")
-                                .args([
-                                    "-f",
-                                    "-u",
-                                    service_name.as_str(),
-                                    "--since",
-                                    "today",
-                                ])
+                                .args(["-f", "-u", service_name.as_str(), "--since", "today"])
                                 .stdout(Stdio::piped())
                                 .spawn()
                                 .expect("Failed to start journalctl");

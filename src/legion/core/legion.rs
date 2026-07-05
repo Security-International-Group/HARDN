@@ -12,7 +12,6 @@ use super::framework_pipeline;
 use crate::core::config::{DEFAULT_LIB_DIR, DEFAULT_LOG_DIR};
 use crate::core::cron::CronOrchestrator;
 use crate::legion::functions;
-use crate::utils::emit_alert;
 use crate::legion::modules::auth::auth as auth_mod;
 use crate::legion::modules::behavioral::{
     BehaviorClassification, BehavioralAnalyzer, ProcessBehavior,
@@ -38,9 +37,10 @@ use crate::legion::modules::services as services_mod;
 use crate::legion::modules::threat_intel::{SecurityIndicator, Severity, ThreatIntelManager};
 use crate::legion::modules::usb as usb_mod;
 use crate::legion::modules::vulnerabilities as vulnerabilities_mod;
+use crate::utils::emit_alert;
 use chrono::{DateTime, Utc};
 use clap::{Arg, Command as ClapCommand};
-use comfy_table::{presets::UTF8_FULL_CONDENSED, Attribute, Cell, Color, Table};
+use comfy_table::{Attribute, Cell, Color, Table, presets::UTF8_FULL_CONDENSED};
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -51,7 +51,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 
 /// Security event types for active monitoring
 #[derive(Debug, Clone)]
@@ -287,11 +287,7 @@ impl LegionMonitorMetrics {
 }
 
 fn sanitize_metric(value: f64) -> f64 {
-    if value.is_finite() {
-        value
-    } else {
-        0.0
-    }
+    if value.is_finite() { value } else { 0.0 }
 }
 
 fn normalize_key(text: &str) -> String {
@@ -760,7 +756,7 @@ impl Legion {
         response_enabled: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let config = Config::load()?;
-    let baseline = BaselineManager::new(&config)?;
+        let baseline = BaselineManager::new(&config)?;
 
         // Initialize threat intelligence
         let threat_intel_path = std::path::PathBuf::from("/var/lib/hardn/legion/threat_intel.json");
@@ -868,18 +864,17 @@ impl Legion {
                 cron_log_root.display(),
                 cron_state_path.display()
             ));
-            
+
             // Enhanced daemon mode: run checks in a loop with adjustable intensity
             loop {
-               let profile = if self
+                let profile = if self
                     .loop_iteration
-                    .is_multiple_of(FULL_SCAN_INTERVAL_CYCLES) 
+                    .is_multiple_of(FULL_SCAN_INTERVAL_CYCLES)
                 {
-                   ScanProfile::Full
+                    ScanProfile::Full
                 } else {
-                   ScanProfile::Quick
+                    ScanProfile::Quick
                 };
-            
 
                 if self.verbose {
                     functions::blank_line();
@@ -1710,8 +1705,8 @@ impl Legion {
         if total_diff == 0 {
             return Ok(0.0);
         }
-    let usage = (total_diff - idle_diff) as f64 / total_diff as f64;
-    Ok(usage.clamp(0.0, 1.0))
+        let usage = (total_diff - idle_diff) as f64 / total_diff as f64;
+        Ok(usage.clamp(0.0, 1.0))
     }
 
     /// Get current memory usage as a percentage (0.0 to 1.0)

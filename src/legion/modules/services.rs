@@ -61,7 +61,10 @@ pub fn check_critical_services() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     for service in critical_services {
-        if let Ok(output) = Command::new("systemctl").args(["is-active", service]).output() {
+        if let Ok(output) = Command::new("systemctl")
+            .args(["is-active", service])
+            .output()
+        {
             let status_str = String::from_utf8_lossy(&output.stdout);
             let status = status_str.trim();
             if status == "active" {

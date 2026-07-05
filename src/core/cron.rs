@@ -207,7 +207,13 @@ impl CronJob {
         let safe: String = self
             .name
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         PathBuf::from(CRON_LOCK_DIR).join(format!("{}.lock", safe))
     }
@@ -228,7 +234,10 @@ impl CronJob {
             // Ensure the lock directory exists. Failure here is non-fatal — we
             // fall through to running unlocked rather than skipping the job.
             if let Err(err) = fs::create_dir_all(CRON_LOCK_DIR) {
-                warn!("Cannot create {}: {} — running '{}' without flock", CRON_LOCK_DIR, err, self.name);
+                warn!(
+                    "Cannot create {}: {} — running '{}' without flock",
+                    CRON_LOCK_DIR, err, self.name
+                );
                 let mut cmd = Command::new(&self.command);
                 cmd.args(&self.args);
                 return cmd;
@@ -236,7 +245,8 @@ impl CronJob {
 
             let mut cmd = Command::new(flock_path);
             cmd.arg("-n")
-                .arg("-E").arg(FLOCK_BUSY_EXIT.to_string())
+                .arg("-E")
+                .arg(FLOCK_BUSY_EXIT.to_string())
                 .arg(&lock_path)
                 .arg("--")
                 .arg(&self.command)
@@ -489,7 +499,7 @@ impl CronOrchestrator {
             clamscan_log.display()
         );
 
-    let jobs: Vec<Arc<ScheduledJob>> = vec![
+        let jobs: Vec<Arc<ScheduledJob>> = vec![
             Arc::new(ScheduledJob::new(CronJob::weekly_job(
                 "hardn-security-report",
                 "Generate HARDN security snapshot",
@@ -576,7 +586,10 @@ impl CronOrchestrator {
                 "Create daily Legion baseline snapshot",
                 &log_root,
                 "legion-daily-baseline.log",
-                DailyTime { hour: 1, minute: 30 },
+                DailyTime {
+                    hour: 1,
+                    minute: 30,
+                },
                 "/usr/bin/hardn",
                 &["legion", "--create-baseline", "--json"],
             ))),
@@ -589,7 +602,10 @@ impl CronOrchestrator {
                 "Diff high-value files against persisted baseline",
                 &log_root,
                 "hardn-sentry.log",
-                DailyTime { hour: 2, minute: 15 },
+                DailyTime {
+                    hour: 2,
+                    minute: 15,
+                },
                 "/usr/bin/hardn",
                 &["--sentry-check"],
             ))),

@@ -23,7 +23,7 @@ pub mod crypto {
         }
 
         // Check for expiring certificates
-    if let Ok(_output) = Command::new("openssl").arg("version").output() {
+        if let Ok(_output) = Command::new("openssl").arg("version").output() {
             safe_println!("    OpenSSL available for certificate validation");
         }
 
@@ -94,7 +94,7 @@ pub mod crypto {
         }
 
         // Check GPG agent status
-    if let Ok(_output) = Command::new("gpg-agent").arg("--version").output() {
+        if let Ok(_output) = Command::new("gpg-agent").arg("--version").output() {
             safe_println!("    GPG agent available");
         }
 

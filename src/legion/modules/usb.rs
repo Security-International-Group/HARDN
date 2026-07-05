@@ -42,7 +42,10 @@ pub fn check_usb_storage() -> Result<(), Box<dyn std::error::Error>> {
     safe_println!("  Checking USB storage devices...");
 
     // Check for mounted USB devices
-    if let Ok(output) = Command::new("mount").args(["|", "grep", "/dev/sd"]).output() {
+    if let Ok(output) = Command::new("mount")
+        .args(["|", "grep", "/dev/sd"])
+        .output()
+    {
         let output_str = String::from_utf8_lossy(&output.stdout);
         let mounted_devices: Vec<&str> = output_str.lines().collect();
 
@@ -70,7 +73,10 @@ pub fn detect_usb_anomalies() -> Result<(), Box<dyn std::error::Error>> {
     safe_println!("  Detecting USB-related security anomalies...");
 
     // Check for unauthorized USB device access
-    if let Ok(output) = Command::new("lsof").args(["/dev/bus/usb/", "-F", "p"]).output() {
+    if let Ok(output) = Command::new("lsof")
+        .args(["/dev/bus/usb/", "-F", "p"])
+        .output()
+    {
         let output_str = String::from_utf8_lossy(&output.stdout);
         let usb_access_processes: Vec<&str> = output_str
             .lines()
