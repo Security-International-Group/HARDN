@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Signed webhook alerts (HMAC-SHA256)
+
+The alert webhook fanout can now sign every POST. When
+`HARDN_ALERT_WEBHOOK_SECRET` is set, HARDN computes HMAC-SHA256 over the
+exact request body and sends it as `X-HARDN-Signature: sha256=<hex>`, so a
+receiver can prove an alert came from HARDN and was not forged or altered
+in transit. Signing is optional and off by default (unsigned behaviour is
+unchanged when the secret is unset). The HMAC is built on the `sha2` crate
+already in the tree, with no new dependency, and is verified against the
+RFC 4231 known-answer vector in the unit tests. A dependency-free reference
+receiver ships at `contrib/webhook-receiver/verify.py`, which recomputes the
+HMAC over the raw body and compares in constant time.
+
 ### P0 audit sweep: network exposure, threat-intel fixtures, risk-score dilution
 
 A focused sweep on three integrity bugs surfaced by an internal senior-engineer
