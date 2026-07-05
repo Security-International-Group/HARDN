@@ -382,7 +382,7 @@ impl IncidentCorrelator {
     pub fn add_correlation_rule(&mut self, rule: CorrelationRule) {
         self.correlation_rules.push(rule);
         self.correlation_rules
-            .sort_by(|a, b| b.priority.cmp(&a.priority));
+            .sort_by_key(|b| std::cmp::Reverse(b.priority));
     }
 
     pub fn get_active_incidents(&self) -> Vec<&Incident> {

@@ -1,0 +1,11 @@
+# Pin the toolchain so CI and local development lint with the same
+# clippy. Without this, GitHub's runners track latest stable and a new
+# clippy release can turn main red overnight with lints no local
+# machine has seen (this happened with 1.96's unnecessary_sort_by).
+# Bumps to this pin are deliberate commits: update the channel, run
+# 'cargo clippy --all-targets --all-features -- -D warnings', fix
+# what the new release flags, and land it all in one PR.
+[toolchain]
+channel = "1.96.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

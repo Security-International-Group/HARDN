@@ -232,10 +232,8 @@ impl ProcessBehavior {
                         read_sensitive = true;
                     }
                 }
-                FileOpType::Write | FileOpType::Create => {
-                    if self.is_system_file(&file_op.path) {
-                        write_system = true;
-                    }
+                FileOpType::Write | FileOpType::Create if self.is_system_file(&file_op.path) => {
+                    write_system = true;
                 }
                 _ => {}
             }
