@@ -54,9 +54,12 @@ jobs:
             whiptail
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # v1.93.1
-        with:
-          toolchain: stable
+        # No toolchain input: honor rust-toolchain.toml (pinned channel) so
+        # the .deb is built with the exact same compiler SAST lints against
+        # and the same one developers use locally. Passing 'stable' here let
+        # the runner drift to whatever stable is current, which is how a new
+        # clippy/rustc release turned main red without any code change.
+        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
 
       - name: Cache cargo registry and git
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae #v5.0.5
