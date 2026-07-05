@@ -53,6 +53,27 @@ ProtectSystem=strict
 ReadWritePaths=/var/log/hardn /var/lib/hardn
 
 PrivateTmp=yes
+# Hardening ceiling. The API is an unprivileged (User=hardn) local HTTP
+# service; it takes no privileged actions, so it carries the full
+# SystemCallFilter=@system-service set. MemoryDenyWriteExecute is
+# deliberately OMITTED: CPython and native extensions (psutil) can map
+# W+X pages and MDWX would crash the interpreter. RestrictAddressFamilies
+# is HTTP-only (no netlink). No ProtectProc: psutil reads other
+# processes for the overwatch endpoints.
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+PrivateDevices=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
 
 [Install]
 WantedBy=multi-user.target

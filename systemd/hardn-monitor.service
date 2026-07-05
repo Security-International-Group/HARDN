@@ -40,6 +40,26 @@ ProtectSystem=strict
 # Allow writes where the monitor stores state / logs
 ReadWritePaths=/var/lib/hardn /var/log/hardn
 PrivateTmp=yes
+# Hardening ceiling. The monitor polls systemctl and curls the local
+# API; it takes no privileged response actions, so it can carry the
+# full SystemCallFilter=@system-service set (which strips @privileged)
+# and MemoryDenyWriteExecute (safe for the Rust binary; no JIT). No
+# ProtectProc: the monitor reads other units' state.
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+PrivateDevices=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
 
 # Resource limits
 MemoryMax=256M
