@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use std::fmt;
 
 /// Log levels for colored console output

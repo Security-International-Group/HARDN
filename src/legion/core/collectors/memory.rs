@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use std::fs;
 
 use crate::legion::core::framework::{

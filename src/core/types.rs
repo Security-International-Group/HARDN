@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /// Service status information
 #[derive(Debug)]
 pub struct ServiceStatus {

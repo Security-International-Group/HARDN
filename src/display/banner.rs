@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /// Prints the HARDN ASCII art banner
 /// Displayed at the start of every program execution
 pub fn print_banner() {

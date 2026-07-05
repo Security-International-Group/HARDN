@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Cron job orchestrator for HARDN
 //!
 //! Coordinates recurring maintenance jobs that keep Legion telemetry, HARDN service

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // banner display function
 pub fn display_banner() {
     let banner = r#"

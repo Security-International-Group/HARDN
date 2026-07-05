@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Shared alert emission for the HARDN alert channel.
 //!
 //! Alerts are appended as JSON lines to `/var/log/hardn/alerts.jsonl`.

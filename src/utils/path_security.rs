@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use std::path::{Path, PathBuf, Component};
 
 /// Validates and sanitizes a path to prevent path traversal attacks

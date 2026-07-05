@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use rusqlite::{Connection, Result, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

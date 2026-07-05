@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pub mod alerts;
 pub mod logging;
 pub mod paths;

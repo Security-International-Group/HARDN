@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pub mod baseline;
 pub mod collectors;
 pub mod config;

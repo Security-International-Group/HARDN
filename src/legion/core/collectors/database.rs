@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use crate::legion::core::baseline::BaselineManager;
 use crate::legion::core::framework::{
     CollectionContext, FrameworkError, TelemetryCategory, TelemetryPayload, TelemetryRecord,

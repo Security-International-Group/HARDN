@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // use crate::legion::safe_println;
 use std::process::Command;
 

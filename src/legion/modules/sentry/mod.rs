@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Sentry: high-value file drift detector ("tattletale phase 1").
 //!
 //! Watches a small, hand-picked list of files that an attacker would have to

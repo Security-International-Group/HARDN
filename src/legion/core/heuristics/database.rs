@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use crate::legion::core::framework::{
     AnalysisContext, FindingSeverity, FrameworkError, HeuristicFinding, HeuristicModule,
     TelemetryPayload,
