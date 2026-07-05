@@ -3214,7 +3214,8 @@ fn run_legion(args: &[String]) -> i32 {
 
     // Ensure LEGION banner and colorized output are ready before checks begin
     crate::legion::functions::enable_color(
-        atty::is(atty::Stream::Stdout) && std::env::var_os("NO_COLOR").is_none(),
+        std::io::IsTerminal::is_terminal(&std::io::stdout())
+            && std::env::var_os("NO_COLOR").is_none(),
     );
     crate::legion::banner::display_banner();
 
@@ -3249,7 +3250,7 @@ fn main() {
             "-h" | "--help" | "help" | "-a" | "--about" | "about"
         ),
         _ => false,
-    } && atty::is(atty::Stream::Stdout);
+    } && std::io::IsTerminal::is_terminal(&std::io::stdout());
 
     if show_banner {
         print_banner();
