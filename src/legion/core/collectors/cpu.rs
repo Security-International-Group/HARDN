@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use std::fs;
 use std::thread;
 use std::time::Duration;

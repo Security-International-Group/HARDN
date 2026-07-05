@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #![allow(dead_code)]
 
 use std::collections::HashMap;

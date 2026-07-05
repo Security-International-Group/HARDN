@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use crate::legion::core::collectors::{
     CpuTelemetrySource, DatabaseTelemetrySource, MemoryTelemetrySource,
 };

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use std::fs;
 use std::process::Command;
 

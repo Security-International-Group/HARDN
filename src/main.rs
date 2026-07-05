@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Refactored main.rs - now using modular architecture
 
 mod cli;

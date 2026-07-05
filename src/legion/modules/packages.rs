@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use std::process::Command;
 
 /// Package and binary integrity checks

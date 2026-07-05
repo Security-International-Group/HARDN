@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 

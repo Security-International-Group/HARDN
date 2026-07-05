@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use crate::legion::core::framework::{
     Finding, FindingSeverity, FrameworkError, ResponseAction, ResponseContext, ResponseModule,
     ResponseOutcome, ResponseStatus,

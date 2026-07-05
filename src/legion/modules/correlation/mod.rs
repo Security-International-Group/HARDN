@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use std::fmt;
 use std::io::{self, Write};
 use std::process::{self, Command};

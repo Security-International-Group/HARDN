@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /// Application version — read from Cargo.toml at compile time so it always
 /// matches the release tag. To change the displayed version, update `version`
 /// in Cargo.toml only.

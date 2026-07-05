@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Declare submodules
 
 // Future modules - commented out until implemented

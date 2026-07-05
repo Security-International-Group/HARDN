@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Legion security HEURISTICS engine module DEMO
 //! This crate exposes two primary groups of functionality:
 //! - `core`: foundational orchestration, configuration, and baseline collectors

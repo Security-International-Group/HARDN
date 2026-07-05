@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use std::fs;
 
 /// Detect the Debian version and codename from /etc/os-release

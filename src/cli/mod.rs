@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 /*use clap::{App, Arg};
 
 // mod.rs - CLI module

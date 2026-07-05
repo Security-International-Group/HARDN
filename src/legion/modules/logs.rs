@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use std::process::Command;
 
 /// Log analysis and monitoring

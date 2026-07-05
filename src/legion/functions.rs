@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 use once_cell::sync::Lazy;
 use std::io::IsTerminal;
 use std::sync::atomic::{AtomicBool, Ordering};

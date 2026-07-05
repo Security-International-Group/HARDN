@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pub mod cpu;
 pub mod database;
 pub mod memory;
