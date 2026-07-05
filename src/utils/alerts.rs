@@ -20,12 +20,17 @@
 //!     the `HARDN-ALERT` syslog tag, so `journalctl -t HARDN-ALERT` and
 //!     existing log-forwarders pick them up with zero extra plumbing.
 //!   * **webhook** — when `$HARDN_ALERT_WEBHOOK_URL` is set, the same
-//!     payload is POSTed (via curl) to that URL.
+//!     payload is POSTed (via curl) to that URL. When
+//!     `$HARDN_ALERT_WEBHOOK_SECRET` is also set, the body is signed with
+//!     HMAC-SHA256 and the digest is sent as
+//!     `X-HARDN-Signature: sha256=<hex>` so the receiver can prove the
+//!     alert came from HARDN (see `contrib/webhook-receiver/verify.py`).
 //!
 //! Both sinks honour a TTL-based dedupe (default 6h) keyed by `key`, so a
 //! noisy condition can't pager-spam an on-call.
 
 use chrono::Utc;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
@@ -43,6 +48,47 @@ const DEFAULT_DEDUPE_PATH: &str = "/var/lib/hardn/alerts/seen.json";
 const DEFAULT_DEDUPE_TTL_SEC: u64 = 6 * 3600;
 /// Hard cap on curl webhook duration so a slow receiver can't stall the caller.
 const WEBHOOK_TIMEOUT_SEC: u64 = 10;
+
+/// Compute HMAC-SHA256(key, message) and return it as lowercase hex.
+///
+/// HMAC (RFC 2104) is `H((key ^ opad) || H((key ^ ipad) || msg))`. We build
+/// it on the `sha2` crate that HARDN already depends on rather than pulling
+/// in a separate `hmac` crate, and prove correctness with a known-answer
+/// test against the RFC 4231 vector (see the tests module). Keys longer than
+/// the 64-byte block are hashed down first, per the spec.
+fn hmac_sha256(key: &[u8], message: &[u8]) -> String {
+    const BLOCK: usize = 64;
+    let mut block_key = [0u8; BLOCK];
+    if key.len() > BLOCK {
+        let digest = Sha256::digest(key);
+        block_key[..digest.len()].copy_from_slice(&digest);
+    } else {
+        block_key[..key.len()].copy_from_slice(key);
+    }
+
+    let mut ipad = [0x36u8; BLOCK];
+    let mut opad = [0x5cu8; BLOCK];
+    for i in 0..BLOCK {
+        ipad[i] ^= block_key[i];
+        opad[i] ^= block_key[i];
+    }
+
+    let mut inner = Sha256::new();
+    inner.update(ipad);
+    inner.update(message);
+    let inner_digest = inner.finalize();
+
+    let mut outer = Sha256::new();
+    outer.update(opad);
+    outer.update(inner_digest);
+    let mac = outer.finalize();
+
+    let mut hex = String::with_capacity(mac.len() * 2);
+    for b in mac {
+        hex.push_str(&format!("{:02x}", b));
+    }
+    hex
+}
 
 /// Build one JSON-lines payload. Pure function so callers can test
 /// formatting without touching disk.
@@ -103,6 +149,11 @@ pub struct AlertSinks {
     pub dedupe_ttl_sec: u64,
     pub journald_tag: String,
     pub webhook_url: Option<String>,
+    /// Optional HMAC-SHA256 secret. When set, every webhook POST carries an
+    /// `X-HARDN-Signature: sha256=<hex>` header over the exact request body,
+    /// so the receiver can prove the alert came from HARDN and was not forged
+    /// or tampered with in transit.
+    pub webhook_secret: Option<String>,
     /// When true, never fork curl / systemd-cat. Used by the unit tests.
     pub silent: bool,
 }
@@ -110,6 +161,7 @@ pub struct AlertSinks {
 impl AlertSinks {
     /// Read sink configuration from environment variables. All keys optional:
     ///   `HARDN_ALERT_WEBHOOK_URL`      — POST destination
+    ///   `HARDN_ALERT_WEBHOOK_SECRET`   — HMAC-SHA256 signing key (unsigned if unset)
     ///   `HARDN_ALERT_DEDUPE_TTL_SEC`   — dedupe window (default 6h)
     ///   `HARDN_ALERT_DEDUPE_PATH`      — override cache path (default /var/lib/hardn/alerts/seen.json)
     ///   `HARDN_ALERT_JOURNALD_TAG`     — syslog tag (default HARDN-ALERT)
@@ -126,11 +178,15 @@ impl AlertSinks {
         let webhook_url = std::env::var("HARDN_ALERT_WEBHOOK_URL")
             .ok()
             .filter(|s| !s.is_empty());
+        let webhook_secret = std::env::var("HARDN_ALERT_WEBHOOK_SECRET")
+            .ok()
+            .filter(|s| !s.is_empty());
         Self {
             dedupe_path,
             dedupe_ttl_sec,
             journald_tag,
             webhook_url,
+            webhook_secret,
             silent: false,
         }
     }
@@ -220,7 +276,13 @@ impl AlertSinks {
 
     /// POST the alert JSON to the configured webhook. We shell out to curl
     /// because HARDN already depends on it and adding reqwest doubles compile
-    /// times. Body is piped via stdin (`-d @-`) so no shell escaping is needed.
+    /// times. Body is piped via stdin (`--data-binary @-`) so no shell
+    /// escaping is needed.
+    ///
+    /// When `webhook_secret` is set, the exact body is signed with
+    /// HMAC-SHA256 and the digest is sent as `X-HARDN-Signature: sha256=<hex>`.
+    /// The receiver recomputes the HMAC over the raw body and compares in
+    /// constant time (see contrib/webhook-receiver/verify.py).
     fn send_webhook(&self, url: &str, payload: &str) {
         // Quick URL sanity check — only http(s) URLs allowed.
         if !(url.starts_with("http://") || url.starts_with("https://")) {
@@ -229,19 +291,27 @@ impl AlertSinks {
         if !Path::new("/usr/bin/curl").exists() && !Path::new("/bin/curl").exists() {
             return;
         }
+
+        let mut args: Vec<String> = vec![
+            "-fsS".to_string(),
+            "-m".to_string(),
+            WEBHOOK_TIMEOUT_SEC.to_string(),
+            "-X".to_string(),
+            "POST".to_string(),
+            "-H".to_string(),
+            "Content-Type: application/json".to_string(),
+        ];
+        if let Some(secret) = &self.webhook_secret {
+            let sig = hmac_sha256(secret.as_bytes(), payload.as_bytes());
+            args.push("-H".to_string());
+            args.push(format!("X-HARDN-Signature: sha256={}", sig));
+        }
+        args.push("--data-binary".to_string());
+        args.push("@-".to_string());
+        args.push(url.to_string());
+
         let mut child = match Command::new("curl")
-            .args([
-                "-fsS",
-                "-m",
-                &WEBHOOK_TIMEOUT_SEC.to_string(),
-                "-X",
-                "POST",
-                "-H",
-                "Content-Type: application/json",
-                "--data-binary",
-                "@-",
-                url,
-            ])
+            .args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -339,8 +409,34 @@ mod tests {
             dedupe_ttl_sec: 60,
             journald_tag: "test".into(),
             webhook_url: None,
+            webhook_secret: None,
             silent: false, // we want forward()'s dedupe logic to run; silent disables side effects below
         }
+    }
+
+    // RFC 4231 Test Case 2: a known-answer vector for HMAC-SHA-256.
+    //   key  = "Jefe"
+    //   data = "what do ya want for nothing?"
+    //   HMAC-SHA-256 =
+    //     5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843
+    // If this passes, our hand-built HMAC construction matches the spec.
+    #[test]
+    fn hmac_sha256_matches_rfc4231_vector() {
+        let mac = hmac_sha256(b"Jefe", b"what do ya want for nothing?");
+        assert_eq!(
+            mac,
+            "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+        );
+    }
+
+    // A key longer than the 64-byte block must be hashed down first (RFC 2104).
+    // This just checks the long-key path produces a stable 64-hex-char digest.
+    #[test]
+    fn hmac_sha256_handles_oversized_key() {
+        let long_key = vec![0xaau8; 131];
+        let mac = hmac_sha256(&long_key, b"Test Using Larger Than Block-Size Key");
+        assert_eq!(mac.len(), 64);
+        assert!(mac.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]
@@ -362,6 +458,7 @@ mod tests {
             dedupe_ttl_sec: 0, // expires immediately
             journald_tag: "test".into(),
             webhook_url: None,
+            webhook_secret: None,
             silent: true,
         };
         sinks.mark_sent("k");
@@ -376,6 +473,7 @@ mod tests {
             dedupe_ttl_sec: DEFAULT_DEDUPE_TTL_SEC,
             journald_tag: "HARDN-ALERT".into(),
             webhook_url: None,
+            webhook_secret: None,
             silent: true,
         };
         assert_eq!(sinks.dedupe_ttl_sec, 6 * 3600);
