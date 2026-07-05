@@ -1,12 +1,12 @@
-use atty::Stream;
 use once_cell::sync::Lazy;
+use std::io::IsTerminal;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 // use crate::legion::safe_println;
 use crate::utils::LogLevel;
 
 static COLOR_ENABLED: Lazy<AtomicBool> = Lazy::new(|| {
-    let enabled = atty::is(Stream::Stdout) && std::env::var_os("NO_COLOR").is_none();
+    let enabled = std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
     AtomicBool::new(enabled)
 });
 

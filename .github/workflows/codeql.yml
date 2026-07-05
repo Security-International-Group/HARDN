@@ -127,6 +127,35 @@ jobs:
           pip install ruff
           ruff check .
 
+  supply-chain:
+    name: Supply chain (cargo audit + cargo deny)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+
+      - name: Cache scanner binaries
+        id: cache-scanners
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/bin/cargo-audit
+            ~/.cargo/bin/cargo-deny
+          key: ${{ runner.os }}-supply-chain-tools-v1
+
+      - name: Install cargo-audit and cargo-deny
+        if: steps.cache-scanners.outputs.cache-hit != 'true'
+        run: cargo install --locked cargo-audit cargo-deny
+
+      - name: cargo audit (RUSTSEC advisory scan of Cargo.lock)
+        run: cargo audit
+
+      - name: cargo deny check (advisories, bans, licenses, sources)
+        run: cargo deny check
+
   shell-lint:
     name: Shell lint (shellcheck)
     runs-on: ubuntu-latest
@@ -160,6 +189,7 @@ jobs:
       - codeql
       - static-analysis
       - shell-lint
+      - supply-chain
     if: always()
     steps:
       - name: Generate Security Report
