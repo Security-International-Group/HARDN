@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Durable webhook delivery (retry queue with backoff)
+
+A failed webhook POST is no longer lost. When a delivery fails (slow
+receiver, transient network, receiver restart) the alert is spilled to
+`/var/lib/hardn/alerts/queue.jsonl` (override with
+`HARDN_ALERT_QUEUE_PATH`) and retried on subsequent forwards with
+exponential backoff (2s, 4s, 8s ... capped at 1h), giving up after 10
+attempts so the queue cannot grow without bound. The backoff is realized
+across drain cycles by storing each item's next-retry timestamp rather
+than sleeping inline, so producing an alert never blocks the caller. On
+each forward the backlog is drained first so a recovered receiver catches
+up in order. Queued payloads are re-signed at send time, so the HMAC
+secret never touches disk. The scheduling and backoff math are covered by
+unit tests using an injectable sender (no live server required).
+
 ### Signed webhook alerts (HMAC-SHA256)
 
 The alert webhook fanout can now sign every POST. When
