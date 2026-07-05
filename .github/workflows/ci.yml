@@ -296,6 +296,10 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+      # Required for sigstore cosign keyless signing: the job mints a
+      # short-lived OIDC token that cosign exchanges with Fulcio for a
+      # signing certificate. No long-lived key is stored anywhere.
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -308,6 +312,15 @@ jobs:
         with:
           name: hardn-deb-package
           path: release_assets
+
+      - name: Install cosign
+        # NOTE: pinned to the major version tag, not a commit SHA, unlike
+        # the other actions in this repo. The build environment that
+        # authored this change cannot reach the sigstore/cosign-installer
+        # repository to resolve a SHA. Before relying on this in a release,
+        # replace @v3 with the exact '<sha> # v3.x.y' pin to match the
+        # repo's supply-chain convention.
+        uses: sigstore/cosign-installer@v3
 
       - name: Ensure tags are present
         run: |
@@ -417,6 +430,63 @@ jobs:
           } > RELEASE_NOTES.md
         shell: bash
 
+      - name: Sign package and generate checksums (cosign keyless)
+        id: sign
+        working-directory: release_assets
+        env:
+          # Keyless signing: cosign uses the workflow's OIDC identity via
+          # Fulcio + Rekor. No key material is read or written.
+          COSIGN_YES: "true"
+        run: |
+          DEB_NAME="${{ steps.version.outputs.deb_name }}"
+
+          # SHA256SUMS over everything we publish (the .deb and the logo),
+          # so a consumer can verify integrity without cosign too.
+          sha256sum -- *.deb IMG_1233.jpeg > SHA256SUMS
+          cat SHA256SUMS
+
+          # Detached signature + certificate for the .deb. cosign writes
+          # the Rekor transparency-log entry as part of sign-blob.
+          cosign sign-blob \
+            --output-signature "${DEB_NAME}.sig" \
+            --output-certificate "${DEB_NAME}.pem" \
+            "${DEB_NAME}"
+
+          # Sign the checksum manifest too, so the whole asset set is
+          # covered by one verifiable anchor.
+          cosign sign-blob \
+            --output-signature "SHA256SUMS.sig" \
+            --output-certificate "SHA256SUMS.pem" \
+            "SHA256SUMS"
+
+          echo "Signed ${DEB_NAME} and SHA256SUMS with cosign (keyless)."
+
+      - name: Append verification instructions to release notes
+        run: |
+          DEB_NAME="${{ steps.version.outputs.deb_name }}"
+          IDENTITY="https://github.com/${{ github.repository }}/.github/workflows/ci.yml@refs/heads/main"
+          {
+            echo
+            echo "## Verifying this release"
+            echo
+            echo "Every asset is signed with [sigstore cosign](https://docs.sigstore.dev/) keyless signing (no long-lived key). Verify the package:"
+            echo
+            echo '```bash'
+            echo "cosign verify-blob \\"
+            echo "  --certificate ${DEB_NAME}.pem \\"
+            echo "  --signature ${DEB_NAME}.sig \\"
+            echo "  --certificate-identity '${IDENTITY}' \\"
+            echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\"
+            echo "  ${DEB_NAME}"
+            echo '```'
+            echo
+            echo "Or check integrity only:"
+            echo
+            echo '```bash'
+            echo "sha256sum -c SHA256SUMS"
+            echo '```'
+          } >> RELEASE_NOTES.md
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda #v3.0.0
         with:
@@ -427,6 +497,11 @@ jobs:
           files: |
             release_assets/*.deb
             release_assets/IMG_1233.jpeg
+            release_assets/SHA256SUMS
+            release_assets/SHA256SUMS.sig
+            release_assets/SHA256SUMS.pem
+            release_assets/*.deb.sig
+            release_assets/*.deb.pem
           draft: false
           prerelease: false
         env:
