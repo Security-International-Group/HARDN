@@ -37,7 +37,7 @@ CI="$REPO_ROOT/.github/workflows/ci.yml"
 
 assert_file_exists "$CI" ".github/workflows/ci.yml ships"
 
-tap_plan 7
+tap_plan 10
 
 # S1: cosign installer present.
 if grep -qE 'sigstore/cosign-installer' "$CI"; then
@@ -95,6 +95,36 @@ if grep -nE 'sha256sum[^#]*IMG_1233\.jpeg' "$CI" >/dev/null 2>&1; then
     grep -nE 'sha256sum[^#]*IMG_1233\.jpeg' "$CI" | sed 's/^/# /'
 else
     tap_ok "sha256sum does not reference the release-job-absent IMG_1233.jpeg"
+fi
+
+# S8: no manual git-tag push. The tag used to be pushed BEFORE signing, so a
+# failed sign orphaned a tag and bumped the version counter. Tag creation is
+# now delegated to the release action, which runs only after signing. A
+# 'git push ... "$NEW_TAG"' anywhere reintroduces the orphan-tag hazard.
+if grep -nE 'git[[:space:]]+push[^#\n]*NEW_TAG' "$CI" >/dev/null 2>&1; then
+    tap_not_ok "release job must not manually push the tag before signing"
+    grep -nE 'git[[:space:]]+push[^#\n]*NEW_TAG' "$CI" | sed 's/^/# /'
+else
+    tap_ok "release tag is not manually pushed (created atomically by the release step)"
+fi
+
+# S9: signing must come BEFORE the GitHub Release publish step, so a signing
+# failure prevents any release from being created.
+sign_line=$(grep -nE 'cosign[[:space:]]+sign-blob' "$CI" | head -1 | cut -d: -f1)
+release_line=$(grep -nE 'softprops/action-gh-release' "$CI" | head -1 | cut -d: -f1)
+if [ -n "$sign_line" ] && [ -n "$release_line" ] && [ "$sign_line" -lt "$release_line" ]; then
+    tap_ok "cosign signing runs before the GitHub Release publish step"
+else
+    tap_not_ok "cosign signing must run before the release publish step"
+    tap_diag "sign at line ${sign_line:-none}, release at line ${release_line:-none}"
+fi
+
+# S10: the release upload must fail on a missing asset rather than publish a
+# partial set. Every listed file is produced by the sign step and must exist.
+if grep -qE 'fail_on_unmatched_files:[[:space:]]*true' "$CI"; then
+    tap_ok "release upload fails on an unmatched (missing) asset"
+else
+    tap_not_ok "release must set fail_on_unmatched_files: true so a partial asset set fails"
 fi
 
 tap_summary
