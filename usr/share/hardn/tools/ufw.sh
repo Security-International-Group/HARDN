@@ -28,12 +28,32 @@ if command -v ufw >/dev/null 2>&1; then
     ufw default deny incoming || true
     ufw default allow outgoing || true
     ufw default deny routed || true
-    # Remote access: Grafana dashboard (port 9002)
-    ufw allow in 9002/tcp comment 'Grafana dashboard' || true
-    # Remote access: HARDN API (port 8000)
-    ufw allow in 8000/tcp comment 'HARDN API' || true
+    # HARDN API (8000) and Grafana (9002) are loopback by default. To
+    # expose either to specific source ranges set the corresponding env
+    # var to a comma-separated CIDR list before running this script:
+    #   HARDN_REMOTE_API_CIDRS="10.0.0.0/24,192.168.1.0/24"
+    #   HARDN_REMOTE_DASHBOARD_CIDRS="10.0.0.0/24"
+    # An empty / unset value means localhost-only, which is the
+    # recommended default. Loopback is already permitted by the implicit
+    # 'lo' rule that UFW installs, so no per-port rule is needed for that
+    # path.
+    if [ -n "${HARDN_REMOTE_API_CIDRS:-}" ]; then
+        IFS=',' read -ra _api_cidrs <<< "$HARDN_REMOTE_API_CIDRS"
+        for cidr in "${_api_cidrs[@]}"; do
+            cidr_trim="$(echo "$cidr" | xargs)"
+            [ -z "$cidr_trim" ] && continue
+            ufw allow from "$cidr_trim" to any port 8000 proto tcp comment 'HARDN API (operator opt-in)' || true
+        done
+    fi
+    if [ -n "${HARDN_REMOTE_DASHBOARD_CIDRS:-}" ]; then
+        IFS=',' read -ra _dash_cidrs <<< "$HARDN_REMOTE_DASHBOARD_CIDRS"
+        for cidr in "${_dash_cidrs[@]}"; do
+            cidr_trim="$(echo "$cidr" | xargs)"
+            [ -z "$cidr_trim" ] && continue
+            ufw allow from "$cidr_trim" to any port 9002 proto tcp comment 'Grafana (operator opt-in)' || true
+        done
+    fi
     # NOTE: SSH port 22 is intentionally NOT opened.
-    # Remote access is via Grafana (9002) and HARDN API (8000) only.
     ufw allow out 53 comment 'DNS' || true
     ufw allow out 80/tcp comment 'HTTP' || true
     ufw allow out 443/tcp comment 'HTTPS' || true

@@ -14,14 +14,20 @@ WorkingDirectory=/usr/share/hardn
 
 # -u / PYTHONUNBUFFERED for real-time logs in journald
 Environment=PYTHONUNBUFFERED=1
-Environment=HARDN_API_HOST=0.0.0.0
+# Default bind is loopback only. To expose the API to other hosts set both
+# HARDN_API_HOST=0.0.0.0 AND HARDN_API_ALLOWED_CIDRS=10.0.0.0/8,...; the
+# Python middleware rejects any request whose source IP is not inside the
+# allowlist, so a misconfigured bind without a matching CIDR list still
+# fails closed.
+Environment=HARDN_API_HOST=127.0.0.1
 Environment=HARDN_API_PORT=8000
-# Authorized SSH public keys for remote API auth — one key per line
+Environment=HARDN_API_ALLOWED_CIDRS=127.0.0.0/8,::1/128
+# Authorized SSH public keys for remote API auth, one key per line
 Environment=HARDN_AUTHORIZED_KEYS=/etc/hardn/authorized_keys
-# Refuse to start the API if no authorized keys are registered. Without this
-# guard the API listens on 0.0.0.0:8000 and the UFW rule for 8000/tcp leaves
-# it reachable; the API rejects all auth but the open port is still an
-# unnecessary surface. Operators are expected to register at least one key:
+# Refuse to start the API if no authorized keys are registered. Even with
+# the bind defaulting to 127.0.0.1, a local process can still hit the API
+# and we want bearer-auth to mean something. Operators must register at
+# least one key:
 #   echo "$(cat ~/.ssh/id_ed25519.pub)" | sudo tee -a /etc/hardn/authorized_keys
 ExecStartPre=/bin/sh -c 'test -s /etc/hardn/authorized_keys || { echo "HARDN API refusing to start: /etc/hardn/authorized_keys is missing or empty. See README \"Remote Access\"." >&2; exit 1; }'
 # Use env to tolerate python3 path differences across distros after seeing issue between deb 13 and ubuntu 24.04

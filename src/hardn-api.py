@@ -1,13 +1,15 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import ipaddress
 import logging
 import os
 import secrets
 import subprocess
 import time
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import psutil
 
@@ -26,6 +28,50 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+
+# CIDR allowlist enforcement.
+#
+# The API binds to 127.0.0.1 by default (see __main__ at bottom of file and
+# systemd/hardn-api.service). Operators who want remote access set
+# HARDN_API_HOST=0.0.0.0 AND list the permitted source CIDRs in
+# HARDN_API_ALLOWED_CIDRS (comma-separated). The middleware below enforces
+# the allowlist on every request. The default allowlist is loopback only,
+# so a misconfigured bind without a matching CIDR list still rejects
+# remote traffic at L7.
+_raw_cidrs = os.environ.get("HARDN_API_ALLOWED_CIDRS", "127.0.0.0/8,::1/128")
+ALLOWED_NETWORKS: List = []
+for _cidr in (c.strip() for c in _raw_cidrs.split(",")):
+    if not _cidr:
+        continue
+    try:
+        ALLOWED_NETWORKS.append(ipaddress.ip_network(_cidr, strict=False))
+    except ValueError:
+        logger.error("HARDN_API_ALLOWED_CIDRS: discarding malformed entry %r", _cidr)
+
+
+def _client_addr(request: Request) -> Optional[str]:
+    if request.client is None:
+        return None
+    return request.client.host
+
+
+@app.middleware("http")
+async def cidr_allowlist(request: Request, call_next):
+    """Reject requests whose client IP is not inside HARDN_API_ALLOWED_CIDRS."""
+    addr = _client_addr(request)
+    if addr is None:
+        return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+    try:
+        client_ip = ipaddress.ip_address(addr)
+    except ValueError:
+        logger.warning("rejecting request with unparseable client addr: %r", addr)
+        return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+    if not any(client_ip in net for net in ALLOWED_NETWORKS):
+        logger.warning("CIDR allowlist rejected %s on %s", addr, request.url.path)
+        return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+    return await call_next(request)
+
 
 # CORS: restrict to an explicit list; override via HARDN_API_CORS_ORIGINS (comma-separated)
 _raw_origins = os.environ.get(
@@ -710,7 +756,10 @@ def list_endpoints(api_key: str = Depends(verify_ssh_key)):
 if __name__ == "__main__":
     import uvicorn
 
-    api_host = os.environ.get("HARDN_API_HOST", "0.0.0.0")
+    # Default bind is loopback only. Operators who need remote access set
+    # HARDN_API_HOST=0.0.0.0 AND list permitted source CIDRs in
+    # HARDN_API_ALLOWED_CIDRS. The CIDR middleware above is the L7 backstop.
+    api_host = os.environ.get("HARDN_API_HOST", "127.0.0.1")
     api_port = int(os.environ.get("HARDN_API_PORT", "8000"))
 
     print(f"Starting HARDN API server on http://{api_host}:{api_port}")

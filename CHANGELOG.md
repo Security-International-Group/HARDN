@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### P0 audit sweep: network exposure, threat-intel fixtures, risk-score dilution
+
+A focused sweep on three integrity bugs surfaced by an internal senior-engineer
+audit. None of these should ship to a real operator without a fix.
+
+- **`hardn-api` binds to 127.0.0.1 by default and enforces a CIDR allowlist.**
+  Previously `HARDN_API_HOST` defaulted to `0.0.0.0`, the documented
+  `HARDN_API_ALLOWED_CIDRS` env var was not implemented in Python, and the
+  unauthenticated `/health` and `/metrics` endpoints were reachable from any
+  source the L3 firewall let through. The bind default is now loopback, a new
+  `cidr_allowlist` FastAPI middleware reads `HARDN_API_ALLOWED_CIDRS`
+  (default `127.0.0.0/8,::1/128`) and rejects every request whose source IP
+  falls outside, and `systemd/hardn-api.service` ships the matching defaults
+  in `Environment=`. Operators who want remote access must now set both
+  `HARDN_API_HOST=0.0.0.0` AND list the permitted CIDRs explicitly, so a
+  misconfigured bind without a matching allowlist still fails closed at L7.
+
+- **`usr/share/hardn/tools/ufw.sh` no longer opens 8000/tcp and 9002/tcp to
+  the world by default.** The previous rules were unconditional
+  `ufw allow in 8000/tcp` and `ufw allow in 9002/tcp` with no source
+  restriction. Now those ports are loopback-only unless the operator
+  populates `HARDN_REMOTE_API_CIDRS` and/or `HARDN_REMOTE_DASHBOARD_CIDRS`
+  before running the script; each CIDR becomes a `ufw allow from <cidr> to
+  any port <p>` rule labelled "operator opt-in". Loopback access goes
+  through UFW's implicit `lo` rule and needs no per-port grant.
+
+- **`src/legion/modules/threat_intel.rs` no longer ships hardcoded sample
+  IOCs as if they were real intel.** The four feed updaters
+  (`update_abuseipdb_feed`, `update_alienvault_feed`,
+  `update_virustotal_feed`, `update_cve_database`) used to insert
+  `185.220.101.1`, `c2-server-example.net`, sample SHA-256 hashes, and
+  fixture CVE entries into the live blacklists with sources labelled
+  `AbuseIPDB` / `AlienVault OTX` / `VirusTotal`. They are now gated behind
+  a new `demo` Cargo feature and explicitly tagged with `*-fixture` source
+  strings; default builds emit a one-line warning to stderr stating the
+  upstream integration is not implemented and load no indicators. The
+  `(Demo Version)` suffix has been removed from the crate description.
+
+- **LEGION risk scoring no longer dilutes real signal with hardcoded 0.0
+  inputs.** `network_score` and `file_integrity_score` are pinned to 0.0
+  in `legion.rs` because the underlying collectors have not been wired
+  yet. `RiskWeights::default` previously gave each a 0.10 weight, so 20%
+  of the formula's mass was guaranteed to contribute zero, dragging the
+  overall risk score down even when the wired inputs reported real
+  anomalies. The two unwired weights are now pinned to 0.0 and the
+  remaining 0.80 of weight is renormalized across the wired inputs
+  (anomaly 0.3125, threat_intel 0.25, behavioral 0.1875, process 0.125,
+  system_health 0.0625, temporal 0.0625) so the formula still sums to 1.0
+  but only reflects telemetry that is actually being computed. The
+  comment block documents the restoration plan for when the missing
+  collectors land.
+
+Tests:
+  bash tests/run-all.sh -> 75 pass, 4 fail (all pre-existing GTK4
+                          system-dep issues unrelated to this sweep),
+                          3 skip. Static + unit suites all green.
+  python3 -m py_compile src/hardn-api.py -> clean.
+  ruff check src/hardn-api.py            -> clean.
+
 ### ClamAV signature fetch + Status list drift (dev_testing 2026-06-13 follow-up)
 
 Two bugs surfaced in Orinax's dev_testing screenshots after the

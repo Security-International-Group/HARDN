@@ -212,7 +212,3 @@ attached if behaviour looks wrong.
 ## License
 
 MIT. See `LICENSE`.
-
-# Metrics
-
-![GitHub Metrics](.github/metrics.svg)

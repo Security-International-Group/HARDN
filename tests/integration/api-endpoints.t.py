@@ -127,7 +127,24 @@ except Exception as e:
     emit_summary(total, passed, failed, skipped)
     sys.exit(failed != 0)
 
-client = TestClient(api.app)
+
+# The CIDR allowlist middleware in src/hardn-api.py rejects requests whose
+# source IP is not inside HARDN_API_ALLOWED_CIDRS. fastapi.TestClient sets
+# the ASGI scope's client tuple to ("testclient", 50000) by default, which
+# is not a valid IP and would 403 every request. Wrap the app so the
+# scope reports 127.0.0.1, which matches the default allowlist
+# (127.0.0.0/8 + ::1/128).
+real_app = api.app
+
+
+async def app_with_loopback_client(scope, receive, send):
+    if scope.get("type") == "http":
+        scope = dict(scope)
+        scope["client"] = ("127.0.0.1", 0)
+    return await real_app(scope, receive, send)
+
+
+client = TestClient(app_with_loopback_client)
 
 # 2. /health is unauthenticated and returns healthy.
 r = client.get("/health")

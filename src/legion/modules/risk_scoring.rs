@@ -144,15 +144,28 @@ pub struct RiskThresholds {
 
 impl Default for RiskWeights {
     fn default() -> Self {
+        // Two of the eight inputs (network_score, file_integrity_score) are
+        // hardcoded to 0.0 in legion.rs because the underlying telemetry
+        // collectors have not been wired yet. Leaving their original 0.10
+        // weights in place would dilute a real anomaly signal by 20% of the
+        // formula's mass for no detection benefit, so the two unwired
+        // weights are pinned to 0.0 here and the remaining 0.80 of weight
+        // is redistributed across the wired inputs (each scaled by 1.25)
+        // so the formula still sums to 1.0.
+        //
+        // When the missing collectors land, restore the prior distribution:
+        //   anomaly 0.25, threat_intel 0.20, behavioral 0.15,
+        //   network 0.10, process 0.10, file_integrity 0.10,
+        //   system_health 0.05, temporal 0.05
         Self {
-            anomaly_weight: 0.25,
-            threat_intel_weight: 0.20,
-            behavioral_weight: 0.15,
-            network_weight: 0.10,
-            process_weight: 0.10,
-            file_integrity_weight: 0.10,
-            system_health_weight: 0.05,
-            temporal_weight: 0.05,
+            anomaly_weight: 0.3125,
+            threat_intel_weight: 0.25,
+            behavioral_weight: 0.1875,
+            network_weight: 0.0,
+            process_weight: 0.125,
+            file_integrity_weight: 0.0,
+            system_health_weight: 0.0625,
+            temporal_weight: 0.0625,
         }
     }
 }

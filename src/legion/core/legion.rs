@@ -2316,9 +2316,14 @@ impl Legion {
             anomaly_score,
             threat_indicators,
             behavioral_score,
-            network_score: 0.0, // TODO: Implement network scoring
+            // network_score and file_integrity_score are pinned to 0.0
+            // until real collectors land. Their RiskWeights are pinned
+            // to 0.0 in src/legion/modules/risk_scoring.rs so the
+            // zero inputs do not dilute the rest of the formula. See
+            // the RiskWeights::default comment for the restoration plan.
+            network_score: 0.0,
             process_score: behavioral_score,
-            file_integrity_score: 0.0, // TODO: Implement file integrity scoring
+            file_integrity_score: 0.0,
             system_health_score: cpu_usage,
             memory_usage,
             detected_issues: self.detected_issues.clone(),

@@ -57,8 +57,8 @@ Recommends: whiptail,
         aide, 
         rkhunter, 
         auditd
-Description: Linux Security Hardening Framework (Demo Version)
- HARDN is a comprehensive Linux security hardening toolkit demonstration.
+Description: Linux Security Hardening Framework
+ HARDN is a Linux security hardening toolkit for Debian and Ubuntu.
  It integrates essential security tools and provides a framework for
  system hardening and security compliance.
  .
