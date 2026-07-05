@@ -72,17 +72,17 @@ pub mod logs {
         ];
 
         for log_file in log_files {
-            if std::path::Path::new(log_file).exists() {
-                if let Ok(metadata) = std::fs::metadata(log_file) {
-                    let size = metadata.len();
-                    let modified = metadata.modified()?.elapsed()?.as_secs();
-                    safe_println!(
-                        "    {}: {} bytes, modified {} seconds ago",
-                        log_file,
-                        size,
-                        modified
-                    );
-                }
+            if std::path::Path::new(log_file).exists()
+                && let Ok(metadata) = std::fs::metadata(log_file)
+            {
+                let size = metadata.len();
+                let modified = metadata.modified()?.elapsed()?.as_secs();
+                safe_println!(
+                    "    {}: {} bytes, modified {} seconds ago",
+                    log_file,
+                    size,
+                    modified
+                );
             }
         }
 

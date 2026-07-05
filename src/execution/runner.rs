@@ -3,7 +3,7 @@ use std::process::{Command, ExitStatus, Stdio};
 
 use crate::core::config::{DEFAULT_LIB_DIR, DEFAULT_LOG_DIR, DEFAULT_MODULE_DIRS, VERSION};
 use crate::core::{HardnError, HardnResult};
-use crate::utils::{log_message, LogLevel};
+use crate::utils::{LogLevel, log_message};
 
 /// Executes a shell script with proper environment setup
 /// Returns the exit status for proper error propagation

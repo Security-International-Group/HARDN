@@ -86,25 +86,25 @@ impl HeuristicModule for DatabaseHealthHeuristic {
         }
 
         // Check baseline freshness
-        if let Some(age) = latest_age {
-            if age > self.min_baseline_age_hours {
-                let severity = if age > self.min_baseline_age_hours * 2.0 {
-                    FindingSeverity::High
-                } else {
-                    FindingSeverity::Medium
-                };
-                findings.push(HeuristicFinding {
-                    module: self.id(),
-                    code: "STALE_BASELINE".to_string(),
-                    summary: format!(
-                        "Baseline is stale: {:.1} hours old (threshold: {:.1} hours)",
-                        age, self.min_baseline_age_hours
-                    ),
-                    detail: Some(format!("baseline_age_hours={:.1}", age)),
-                    severity,
-                    tags: vec!["database".to_string(), "baseline".to_string()],
-                });
-            }
+        if let Some(age) = latest_age
+            && age > self.min_baseline_age_hours
+        {
+            let severity = if age > self.min_baseline_age_hours * 2.0 {
+                FindingSeverity::High
+            } else {
+                FindingSeverity::Medium
+            };
+            findings.push(HeuristicFinding {
+                module: self.id(),
+                code: "STALE_BASELINE".to_string(),
+                summary: format!(
+                    "Baseline is stale: {:.1} hours old (threshold: {:.1} hours)",
+                    age, self.min_baseline_age_hours
+                ),
+                detail: Some(format!("baseline_age_hours={:.1}", age)),
+                severity,
+                tags: vec!["database".to_string(), "baseline".to_string()],
+            });
         }
 
         Ok(findings)
@@ -254,10 +254,10 @@ impl HeuristicModule for AnomalyRateHeuristic {
 
 fn extract_db_metric(context: &AnalysisContext<'_>, key: &str) -> Option<f64> {
     for record in context.telemetry {
-        if let TelemetryPayload::Metric { name, value, .. } = &record.payload {
-            if name == key {
-                return Some(*value);
-            }
+        if let TelemetryPayload::Metric { name, value, .. } = &record.payload
+            && name == key
+        {
+            return Some(*value);
         }
     }
     None

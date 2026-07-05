@@ -58,12 +58,12 @@ pub mod kernel {
         let mut issues = Vec::new();
 
         for (param, expected) in security_params {
-            if let Ok(output) = Command::new("sysctl").arg("-n").arg(param).output() {
-                if let Ok(value) = String::from_utf8(output.stdout) {
-                    let value = value.trim();
-                    if value != expected {
-                        issues.push(format!("{} = {} (expected {})", param, value, expected));
-                    }
+            if let Ok(output) = Command::new("sysctl").arg("-n").arg(param).output()
+                && let Ok(value) = String::from_utf8(output.stdout)
+            {
+                let value = value.trim();
+                if value != expected {
+                    issues.push(format!("{} = {} (expected {})", param, value, expected));
                 }
             }
         }

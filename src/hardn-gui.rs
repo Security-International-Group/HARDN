@@ -1,12 +1,12 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use gtk4::glib::{timeout_add_local, ControlFlow};
+use gtk4::glib::{ControlFlow, timeout_add_local};
 use gtk4::prelude::{ApplicationExt, ApplicationExtManual};
 use gtk4::{
-    gdk, prelude::*, Application, ApplicationWindow, Box as GtkBox, CssProvider, Label, Notebook,
-    Orientation, Paned, Picture, ScrolledWindow, TextBuffer, TextMark, TextView,
-    STYLE_PROVIDER_PRIORITY_APPLICATION,
+    Application, ApplicationWindow, Box as GtkBox, CssProvider, Label, Notebook, Orientation,
+    Paned, Picture, STYLE_PROVIDER_PRIORITY_APPLICATION, ScrolledWindow, TextBuffer, TextMark,
+    TextView, gdk, prelude::*,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -88,7 +88,9 @@ fn strip_control(s: &str) -> String {
             if chars.peek() == Some(&'[') {
                 chars.next(); // consume '['
                 for c2 in chars.by_ref() {
-                    if c2.is_ascii_alphabetic() { break; }
+                    if c2.is_ascii_alphabetic() {
+                        break;
+                    }
                 }
             } else {
                 chars.next(); // two-char escape (e.g. \x1b=)
@@ -345,68 +347,6 @@ fn now_iso() -> String {
     dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn mk(severity: &str, key: &str, msg: &str) -> Alert {
-        Alert {
-            ts: "2026-05-24T00:00:00Z".into(),
-            severity: severity.into(),
-            source: "test".into(),
-            message: msg.into(),
-            key: key.into(),
-        }
-    }
-
-    #[test]
-    fn alerts_dedupe_by_key_and_update_in_place() {
-        let mut list = AlertsList::default();
-        list.ingest(mk("warning", "svc-down:hardn.service", "first"));
-        list.ingest(mk("warning", "svc-down:hardn.service", "second"));
-        list.ingest(mk("error", "svc-restart-failed:legion-daemon", "boom"));
-        assert_eq!(list.entries.len(), 2);
-        assert_eq!(list.entries[0].1.message, "second");
-        assert_eq!(list.entries[1].1.severity, "error");
-        assert_eq!(list.total_seen, 3);
-    }
-
-    #[test]
-    fn alerts_without_key_never_collapse() {
-        let mut list = AlertsList::default();
-        list.ingest(mk("info", "", "a"));
-        list.ingest(mk("info", "", "b"));
-        list.ingest(mk("info", "", "c"));
-        assert_eq!(list.entries.len(), 3);
-    }
-
-    #[test]
-    fn max_severity_picks_worst() {
-        let mut list = AlertsList::default();
-        list.ingest(mk("info", "k1", "x"));
-        list.ingest(mk("warning", "k2", "y"));
-        list.ingest(mk("error", "k3", "z"));
-        let (count, max_sev) = list.count_by_max_severity();
-        assert_eq!(count, 3);
-        assert_eq!(max_sev, "error");
-    }
-
-    #[test]
-    fn parse_alert_line_handles_well_formed_json() {
-        let line = r#"{"ts":"2026-05-24T00:00:00Z","severity":"warning","source":"hardn-monitor","message":"hardn.service down","key":"svc-down:hardn.service"}"#;
-        let a = parse_alert_line(line).expect("parse ok");
-        assert_eq!(a.severity, "warning");
-        assert_eq!(a.source, "hardn-monitor");
-        assert_eq!(a.key, "svc-down:hardn.service");
-    }
-
-    #[test]
-    fn parse_alert_line_rejects_garbage() {
-        assert!(parse_alert_line("not json").is_none());
-        assert!(parse_alert_line("{}").is_none()); // missing required ts/message
-    }
-}
-
 /// Build a plain-text inventory of the security tools shipped under
 /// `/usr/share/hardn/tools/*.sh`. The first non-shebang, non-blank comment
 /// line of each script is used as the description. Cheap directory walk;
@@ -444,7 +384,11 @@ fn build_tools_inventory() -> String {
         if path.extension().and_then(|s| s.to_str()) != Some("sh") {
             continue;
         }
-        let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?").to_string();
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("?")
+            .to_string();
         let desc = first_comment_summary(&path).unwrap_or_else(|| "(no description)".into());
         tools.push((name, desc));
     }
@@ -597,7 +541,10 @@ fn show_welcome_wizard(parent: &ApplicationWindow) {
         let page_box = GtkBox::new(Orientation::Vertical, 14);
         let h = gtk4::Label::new(None);
         h.set_xalign(0.0);
-        h.set_markup(&format!("<span size='x-large' weight='bold'>{}</span>", title));
+        h.set_markup(&format!(
+            "<span size='x-large' weight='bold'>{}</span>",
+            title
+        ));
         let b = gtk4::Label::new(None);
         b.set_use_markup(true);
         b.set_wrap(true);
@@ -744,7 +691,7 @@ fn main() {
                         "/usr/local/share/hardn",
                         "/etc/hardn",
                     ];
-                    
+
                     // Validate path against whitelist of allowed directories
                     let validated = std::path::PathBuf::from(&path_str)
                         .canonicalize()
@@ -1142,22 +1089,20 @@ fn main() {
 
         // Separate tail for structured alerts (JSON lines).
         let alerts_child = spawn_file_tail("/var/log/hardn/alerts.jsonl").ok();
-        if let Some(mut ch) = alerts_child {
-            if let Some(stdout) = ch.stdout.take() {
+        if let Some(mut ch) = alerts_child
+            && let Some(stdout) = ch.stdout.take() {
                 let alerts_list_for_tail = alerts_list.clone();
                 std::thread::spawn(move || {
                     use std::io::{BufRead, BufReader};
                     let reader = BufReader::new(stdout);
                     for line in reader.lines().map_while(Result::ok) {
-                        if let Some(alert) = parse_alert_line(&line) {
-                            if let Ok(mut list) = alerts_list_for_tail.lock() {
+                        if let Some(alert) = parse_alert_line(&line)
+                            && let Ok(mut list) = alerts_list_for_tail.lock() {
                                 list.ingest(alert);
                             }
-                        }
                     }
                 });
             }
-        }
 
         // Shared state for reader
         let rb = event_buffer.clone();
@@ -1340,42 +1285,33 @@ fn main() {
                     let reader = BufReader::new(stdout);
                     for line in reader.lines().map_while(Result::ok) {
                         if let Ok(mut g) = rb_lines.lock() {
-                            if let Some(h) = parse_service_status(&line) {
-                                if let Ok(mut hs) = service_health_ref.lock() {
+                            if let Some(h) = parse_service_status(&line)
+                                && let Ok(mut hs) = service_health_ref.lock() {
                                     // merge
                                     if h.hardn.is_some() { hs.hardn = h.hardn; }
                                     if h.api.is_some() { hs.api = h.api; }
                                     if h.legion.is_some() { hs.legion = h.legion; }
                                     if h.monitor.is_some() { hs.monitor = h.monitor; }
                                 }
-                            }
-                            if let Some(core) = parse_core_services(&line) {
-                                if let Ok(mut a) = alerts_local.lock() { a.core_services = Some(core); }
-                            }
-                            if let Some(sys) = parse_systemd_metrics(&line) {
-                                if let Ok(mut a) = alerts_local.lock() { a.systemd_metrics = Some(sys); }
-                            }
-                            if let Some(journal) = parse_journal_metrics(&line) {
-                                if let Ok(mut a) = alerts_local.lock() { a.journal_metrics = Some(journal); }
-                            }
-                            if let Some(network) = parse_networkd_metrics(&line) {
-                                if let Ok(mut a) = alerts_local.lock() { a.network_metrics = Some(network); }
-                            }
-                            if let Some(m) = parse_metrics(&line) {
-                                if let Ok(mut a) = alerts_local.lock() { a.metrics = Some(m); }
-                            }
-                            if let Some(db) = parse_database_metrics(&line) {
-                                if let Ok(mut a) = alerts_local.lock() { a.database_metrics = Some(db); }
-                            }
-                            if let Some(ls) = parse_legion_summary(&line) {
-                                if let Ok(mut a) = alerts_local.lock() { a.legion_summary = Some(ls); }
-                            }
+                            if let Some(core) = parse_core_services(&line)
+                                && let Ok(mut a) = alerts_local.lock() { a.core_services = Some(core); }
+                            if let Some(sys) = parse_systemd_metrics(&line)
+                                && let Ok(mut a) = alerts_local.lock() { a.systemd_metrics = Some(sys); }
+                            if let Some(journal) = parse_journal_metrics(&line)
+                                && let Ok(mut a) = alerts_local.lock() { a.journal_metrics = Some(journal); }
+                            if let Some(network) = parse_networkd_metrics(&line)
+                                && let Ok(mut a) = alerts_local.lock() { a.network_metrics = Some(network); }
+                            if let Some(m) = parse_metrics(&line)
+                                && let Ok(mut a) = alerts_local.lock() { a.metrics = Some(m); }
+                            if let Some(db) = parse_database_metrics(&line)
+                                && let Ok(mut a) = alerts_local.lock() { a.database_metrics = Some(db); }
+                            if let Some(ls) = parse_legion_summary(&line)
+                                && let Ok(mut a) = alerts_local.lock() { a.legion_summary = Some(ls); }
                             // If this tail is from hardn-monitor itself, mark monitor as running
-                            if path.ends_with("hardn-monitor.log") {
-                                if let Ok(mut hs) = service_health_ref.lock() {
+                            if path.ends_with("hardn-monitor.log")
+                                && let Ok(mut hs) = service_health_ref.lock() {
                                     hs.monitor = Some(true);
                                 }
-                            }
                             g.push(EventItem { timestamp: now_iso(), source: "file".into(), message: strip_control(&line) });
                         }
                     }
@@ -1398,4 +1334,66 @@ fn main() {
     });
 
     app.run();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mk(severity: &str, key: &str, msg: &str) -> Alert {
+        Alert {
+            ts: "2026-05-24T00:00:00Z".into(),
+            severity: severity.into(),
+            source: "test".into(),
+            message: msg.into(),
+            key: key.into(),
+        }
+    }
+
+    #[test]
+    fn alerts_dedupe_by_key_and_update_in_place() {
+        let mut list = AlertsList::default();
+        list.ingest(mk("warning", "svc-down:hardn.service", "first"));
+        list.ingest(mk("warning", "svc-down:hardn.service", "second"));
+        list.ingest(mk("error", "svc-restart-failed:legion-daemon", "boom"));
+        assert_eq!(list.entries.len(), 2);
+        assert_eq!(list.entries[0].1.message, "second");
+        assert_eq!(list.entries[1].1.severity, "error");
+        assert_eq!(list.total_seen, 3);
+    }
+
+    #[test]
+    fn alerts_without_key_never_collapse() {
+        let mut list = AlertsList::default();
+        list.ingest(mk("info", "", "a"));
+        list.ingest(mk("info", "", "b"));
+        list.ingest(mk("info", "", "c"));
+        assert_eq!(list.entries.len(), 3);
+    }
+
+    #[test]
+    fn max_severity_picks_worst() {
+        let mut list = AlertsList::default();
+        list.ingest(mk("info", "k1", "x"));
+        list.ingest(mk("warning", "k2", "y"));
+        list.ingest(mk("error", "k3", "z"));
+        let (count, max_sev) = list.count_by_max_severity();
+        assert_eq!(count, 3);
+        assert_eq!(max_sev, "error");
+    }
+
+    #[test]
+    fn parse_alert_line_handles_well_formed_json() {
+        let line = r#"{"ts":"2026-05-24T00:00:00Z","severity":"warning","source":"hardn-monitor","message":"hardn.service down","key":"svc-down:hardn.service"}"#;
+        let a = parse_alert_line(line).expect("parse ok");
+        assert_eq!(a.severity, "warning");
+        assert_eq!(a.source, "hardn-monitor");
+        assert_eq!(a.key, "svc-down:hardn.service");
+    }
+
+    #[test]
+    fn parse_alert_line_rejects_garbage() {
+        assert!(parse_alert_line("not json").is_none());
+        assert!(parse_alert_line("{}").is_none()); // missing required ts/message
+    }
 }

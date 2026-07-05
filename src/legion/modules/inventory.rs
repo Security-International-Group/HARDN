@@ -22,24 +22,24 @@ pub mod inventory {
         }
 
         // Kernel version
-        if let Ok(output) = Command::new("uname").arg("-r").output() {
-            if let Ok(version) = String::from_utf8(output.stdout) {
-                eprintln!("    Kernel: {}", version.trim());
-            }
+        if let Ok(output) = Command::new("uname").arg("-r").output()
+            && let Ok(version) = String::from_utf8(output.stdout)
+        {
+            eprintln!("    Kernel: {}", version.trim());
         }
 
         // Architecture
-        if let Ok(output) = Command::new("uname").arg("-m").output() {
-            if let Ok(arch) = String::from_utf8(output.stdout) {
-                eprintln!("     Architecture: {}", arch.trim());
-            }
+        if let Ok(output) = Command::new("uname").arg("-m").output()
+            && let Ok(arch) = String::from_utf8(output.stdout)
+        {
+            eprintln!("     Architecture: {}", arch.trim());
         }
 
         // Hostname
-        if let Ok(output) = Command::new("hostname").output() {
-            if let Ok(hostname) = String::from_utf8(output.stdout) {
-                eprintln!("      Hostname: {}", hostname.trim());
-            }
+        if let Ok(output) = Command::new("hostname").output()
+            && let Ok(hostname) = String::from_utf8(output.stdout)
+        {
+            eprintln!("      Hostname: {}", hostname.trim());
         }
 
         Ok(())
@@ -55,10 +55,10 @@ pub mod inventory {
             let mut cpu_count = 0;
 
             for line in content.lines() {
-                if line.starts_with("model name") {
-                    if let Some(name) = line.split_once(':').map(|(_, n)| n.trim()) {
-                        model_name = name.to_string();
-                    }
+                if line.starts_with("model name")
+                    && let Some(name) = line.split_once(':').map(|(_, n)| n.trim())
+                {
+                    model_name = name.to_string();
                 }
                 if line.starts_with("processor") {
                     cpu_count += 1;
@@ -89,12 +89,12 @@ pub mod inventory {
         }
 
         // Virtualization check
-        if let Ok(output) = Command::new("systemd-detect-virt").output() {
-            if let Ok(virt) = String::from_utf8(output.stdout) {
-                let virt = virt.trim();
-                if virt != "none" {
-                    eprintln!("    Virtualization: {}", virt);
-                }
+        if let Ok(output) = Command::new("systemd-detect-virt").output()
+            && let Ok(virt) = String::from_utf8(output.stdout)
+        {
+            let virt = virt.trim();
+            if virt != "none" {
+                eprintln!("    Virtualization: {}", virt);
             }
         }
 

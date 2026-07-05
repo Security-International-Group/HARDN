@@ -19,13 +19,12 @@ pub mod processes {
 
             for line in output_str.lines() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 3 {
-                    if let Ok(ppid) = parts[1].parse::<u32>() {
-                        if ppid == 1 {
-                            // This is normal for most processes
-                            // Could add logic to detect suspicious orphans
-                        }
-                    }
+                if parts.len() >= 3
+                    && let Ok(ppid) = parts[1].parse::<u32>()
+                    && ppid == 1
+                {
+                    // This is normal for most processes
+                    // Could add logic to detect suspicious orphans
                 }
             }
 

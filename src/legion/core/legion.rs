@@ -12,7 +12,6 @@ use super::framework_pipeline;
 use crate::core::config::{DEFAULT_LIB_DIR, DEFAULT_LOG_DIR};
 use crate::core::cron::CronOrchestrator;
 use crate::legion::functions;
-use crate::utils::emit_alert;
 use crate::legion::modules::auth::auth as auth_mod;
 use crate::legion::modules::behavioral::{
     BehaviorClassification, BehavioralAnalyzer, ProcessBehavior,
@@ -38,9 +37,10 @@ use crate::legion::modules::services as services_mod;
 use crate::legion::modules::threat_intel::{SecurityIndicator, Severity, ThreatIntelManager};
 use crate::legion::modules::usb as usb_mod;
 use crate::legion::modules::vulnerabilities as vulnerabilities_mod;
+use crate::utils::emit_alert;
 use chrono::{DateTime, Utc};
 use clap::{Arg, Command as ClapCommand};
-use comfy_table::{presets::UTF8_FULL_CONDENSED, Attribute, Cell, Color, Table};
+use comfy_table::{Attribute, Cell, Color, Table, presets::UTF8_FULL_CONDENSED};
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -51,7 +51,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 
 /// Security event types for active monitoring
 #[derive(Debug, Clone)]
@@ -287,11 +287,7 @@ impl LegionMonitorMetrics {
 }
 
 fn sanitize_metric(value: f64) -> f64 {
-    if value.is_finite() {
-        value
-    } else {
-        0.0
-    }
+    if value.is_finite() { value } else { 0.0 }
 }
 
 fn normalize_key(text: &str) -> String {
@@ -436,14 +432,13 @@ fn collect_current_process_commands() -> io::Result<HashMap<String, String>> {
 
         if descriptor.is_empty() {
             let status_path = format!("/proc/{}/status", pid);
-            if let Ok(status) = fs::read_to_string(&status_path) {
-                if let Some(name) = status
+            if let Ok(status) = fs::read_to_string(&status_path)
+                && let Some(name) = status
                     .lines()
                     .find(|line| line.starts_with("Name:"))
                     .and_then(|line| line.split_whitespace().nth(1))
-                {
-                    descriptor = name.to_string();
-                }
+            {
+                descriptor = name.to_string();
             }
         }
 
@@ -760,7 +755,7 @@ impl Legion {
         response_enabled: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let config = Config::load()?;
-    let baseline = BaselineManager::new(&config)?;
+        let baseline = BaselineManager::new(&config)?;
 
         // Initialize threat intelligence
         let threat_intel_path = std::path::PathBuf::from("/var/lib/hardn/legion/threat_intel.json");
@@ -850,14 +845,14 @@ impl Legion {
             let cron_state_path = Path::new(DEFAULT_LIB_DIR)
                 .join("monitor")
                 .join(CRON_SUMMARY_FILENAME);
-            if let Some(parent) = cron_state_path.parent() {
-                if let Err(err) = fs::create_dir_all(parent) {
-                    functions::warn(format!(
-                        "Unable to prepare maintenance state directory {}: {}",
-                        parent.display(),
-                        err
-                    ));
-                }
+            if let Some(parent) = cron_state_path.parent()
+                && let Err(err) = fs::create_dir_all(parent)
+            {
+                functions::warn(format!(
+                    "Unable to prepare maintenance state directory {}: {}",
+                    parent.display(),
+                    err
+                ));
             }
 
             let _cron_handle =
@@ -868,18 +863,17 @@ impl Legion {
                 cron_log_root.display(),
                 cron_state_path.display()
             ));
-            
+
             // Enhanced daemon mode: run checks in a loop with adjustable intensity
             loop {
-               let profile = if self
+                let profile = if self
                     .loop_iteration
-                    .is_multiple_of(FULL_SCAN_INTERVAL_CYCLES) 
+                    .is_multiple_of(FULL_SCAN_INTERVAL_CYCLES)
                 {
-                   ScanProfile::Full
+                    ScanProfile::Full
                 } else {
-                   ScanProfile::Quick
+                    ScanProfile::Quick
                 };
-            
 
                 if self.verbose {
                     functions::blank_line();
@@ -1710,8 +1704,8 @@ impl Legion {
         if total_diff == 0 {
             return Ok(0.0);
         }
-    let usage = (total_diff - idle_diff) as f64 / total_diff as f64;
-    Ok(usage.clamp(0.0, 1.0))
+        let usage = (total_diff - idle_diff) as f64 / total_diff as f64;
+        Ok(usage.clamp(0.0, 1.0))
     }
 
     /// Get current memory usage as a percentage (0.0 to 1.0)
@@ -1726,10 +1720,10 @@ impl Legion {
                 if let Some(val) = line.split_whitespace().nth(1) {
                     total = val.parse()?;
                 }
-            } else if line.starts_with("MemAvailable:") {
-                if let Some(val) = line.split_whitespace().nth(1) {
-                    available = val.parse()?;
-                }
+            } else if line.starts_with("MemAvailable:")
+                && let Some(val) = line.split_whitespace().nth(1)
+            {
+                available = val.parse()?;
             }
         }
 
@@ -2470,19 +2464,16 @@ impl Legion {
         for line in output_str.lines().skip(1) {
             // Skip header
             let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 3 {
-                if let Ok(pid) = parts[0].parse::<u32>() {
-                    let cmd = parts[2..].join(" ");
-                    let behavior = ProcessBehavior::new(
-                        pid,
-                        parts.get(2).unwrap_or(&"unknown").to_string(),
-                        cmd,
-                    );
-                    let classification = self.behavioral_analyzer.analyze_process(pid, behavior);
+            if parts.len() >= 3
+                && let Ok(pid) = parts[0].parse::<u32>()
+            {
+                let cmd = parts[2..].join(" ");
+                let behavior =
+                    ProcessBehavior::new(pid, parts.get(2).unwrap_or(&"unknown").to_string(), cmd);
+                let classification = self.behavioral_analyzer.analyze_process(pid, behavior);
 
-                    if self.verbose && classification != BehaviorClassification::Normal {
-                        safe_println!("Process {} classified as {:?}", pid, classification);
-                    }
+                if self.verbose && classification != BehaviorClassification::Normal {
+                    safe_println!("Process {} classified as {:?}", pid, classification);
                 }
             }
         }
@@ -2601,13 +2592,13 @@ impl Legion {
 
     fn parse_address(&self, addr: &str) -> Option<(std::net::IpAddr, u16)> {
         let parts: Vec<&str> = addr.split(':').collect();
-        if parts.len() == 2 {
-            if let (Ok(ip), Ok(port)) = (
+        if parts.len() == 2
+            && let (Ok(ip), Ok(port)) = (
                 parts[0].parse::<std::net::IpAddr>(),
                 parts[1].parse::<u16>(),
-            ) {
-                return Some((ip, port));
-            }
+            )
+        {
+            return Some((ip, port));
         }
         None
     }
@@ -3226,10 +3217,10 @@ impl Legion {
                     if Self::is_bogon_address(remote_host) {
                         reasons.push("bogon remote address".to_string());
                     }
-                } else if state == "LISTEN" {
-                    if let Some((_, local_port)) = local {
-                        connection_key = format!("*:{}", local_port);
-                    }
+                } else if state == "LISTEN"
+                    && let Some((_, local_port)) = local
+                {
+                    connection_key = format!("*:{}", local_port);
                 }
 
                 if state == "SYN-SENT" || state == "SYN-RECV" {
@@ -3292,18 +3283,18 @@ impl Legion {
             let output_str = String::from_utf8(output.stdout)?;
             for line in output_str.lines().skip(1) {
                 let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 3 {
-                    if let Ok(pid) = parts[0].parse::<u32>() {
-                        // Check against known suspicious patterns
-                        let cmd = parts[2..].join(" ");
-                        if Self::is_suspicious_process(&cmd) {
-                            let event = SecurityEvent::ProcessEvent {
-                                pid,
-                                action: "detected".to_string(),
-                                details: format!("Suspicious process: {}", cmd),
-                            };
-                            let _ = sender.send(event);
-                        }
+                if parts.len() >= 3
+                    && let Ok(pid) = parts[0].parse::<u32>()
+                {
+                    // Check against known suspicious patterns
+                    let cmd = parts[2..].join(" ");
+                    if Self::is_suspicious_process(&cmd) {
+                        let event = SecurityEvent::ProcessEvent {
+                            pid,
+                            action: "detected".to_string(),
+                            details: format!("Suspicious process: {}", cmd),
+                        };
+                        let _ = sender.send(event);
                     }
                 }
             }
@@ -3373,15 +3364,14 @@ impl Legion {
                     entry.last_seen = now;
                     entry.occurrences = entry.occurrences.saturating_add(1);
                 } else {
-                    if alerts.len() >= MAX_PROCESS_ALERTS {
-                        if let Some(oldest_index) = alerts
+                    if alerts.len() >= MAX_PROCESS_ALERTS
+                        && let Some(oldest_index) = alerts
                             .iter()
                             .enumerate()
                             .min_by_key(|(_, entry)| entry.last_seen)
                             .map(|(idx, _)| idx)
-                        {
-                            alerts.remove(oldest_index);
-                        }
+                    {
+                        alerts.remove(oldest_index);
                     }
 
                     alerts.push(ProcessAlertRecord {

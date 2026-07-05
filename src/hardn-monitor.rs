@@ -74,7 +74,10 @@ fn restart_service(service: &str) -> Result<(), std::io::Error> {
         emit_alert(
             "error",
             "hardn-monitor",
-            &format!("Failed to restart {} (manual intervention required)", service),
+            &format!(
+                "Failed to restart {} (manual intervention required)",
+                service
+            ),
             &format!("svc-restart-failed:{}", service),
         );
     }
@@ -393,7 +396,9 @@ fn should_attempt_restart(service: &str, last_attempt_succeeded: bool) -> bool {
             "hardn-monitor",
             &format!(
                 "{} has failed to start {} times in a row; auto-restart suspended for {}s. Manual intervention required.",
-                service, entry.consecutive_failures, BACKOFF_WINDOW.as_secs()
+                service,
+                entry.consecutive_failures,
+                BACKOFF_WINDOW.as_secs()
             ),
             &format!("svc-backoff:{}", service),
         );
@@ -635,47 +640,45 @@ fn log_metrics_from_api() {
 
     let mut logged = false;
 
-    if let Ok(result) = output {
-        if result.status.success() {
-            if let Ok(text) = String::from_utf8(result.stdout) {
-                if let Ok(json) = serde_json::from_str::<Value>(&text) {
-                    let cpu = json
-                        .get("system_health")
-                        .and_then(|h| h.get("cpu_percent"))
-                        .and_then(|v| v.as_f64());
-                    let mem = json
-                        .get("system_health")
-                        .and_then(|h| h.get("memory"))
-                        .and_then(|m| m.get("percent"))
-                        .and_then(|v| v.as_f64());
-                    let load = json
-                        .get("system_health")
-                        .and_then(|h| h.get("load_average"))
-                        .and_then(|v| v.as_array())
-                        .map(|arr| {
-                            let l1 = arr.first().and_then(|v| v.as_f64()).unwrap_or(0.0);
-                            let l5 = arr.get(1).and_then(|v| v.as_f64()).unwrap_or(0.0);
-                            let l15 = arr.get(2).and_then(|v| v.as_f64()).unwrap_or(0.0);
-                            (l1, l5, l15)
-                        });
+    if let Ok(result) = output
+        && result.status.success()
+        && let Ok(text) = String::from_utf8(result.stdout)
+        && let Ok(json) = serde_json::from_str::<Value>(&text)
+    {
+        let cpu = json
+            .get("system_health")
+            .and_then(|h| h.get("cpu_percent"))
+            .and_then(|v| v.as_f64());
+        let mem = json
+            .get("system_health")
+            .and_then(|h| h.get("memory"))
+            .and_then(|m| m.get("percent"))
+            .and_then(|v| v.as_f64());
+        let load = json
+            .get("system_health")
+            .and_then(|h| h.get("load_average"))
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                let l1 = arr.first().and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let l5 = arr.get(1).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let l15 = arr.get(2).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                (l1, l5, l15)
+            });
 
-                    if cpu.is_some() || mem.is_some() || load.is_some() {
-                        let (l1, l5, l15) = load.unwrap_or((0.0, 0.0, 0.0));
-                        log_message(
-                            "INFO",
-                            &format!(
-                                "Metrics - cpu={:.1}% mem={:.1}% load={:.2},{:.2},{:.2}",
-                                cpu.unwrap_or(0.0),
-                                mem.unwrap_or(0.0),
-                                l1,
-                                l5,
-                                l15
-                            ),
-                        );
-                        logged = true;
-                    }
-                }
-            }
+        if cpu.is_some() || mem.is_some() || load.is_some() {
+            let (l1, l5, l15) = load.unwrap_or((0.0, 0.0, 0.0));
+            log_message(
+                "INFO",
+                &format!(
+                    "Metrics - cpu={:.1}% mem={:.1}% load={:.2},{:.2},{:.2}",
+                    cpu.unwrap_or(0.0),
+                    mem.unwrap_or(0.0),
+                    l1,
+                    l5,
+                    l15
+                ),
+            );
+            logged = true;
         }
     }
 
@@ -708,54 +711,56 @@ fn log_database_metrics() {
             if let Ok(logs) = String::from_utf8(result.stdout) {
                 // Look for the most recent LEGION SUMMARY line
                 for line in logs.lines().rev() {
-                    if line.contains("LEGION SUMMARY:") && line.contains(" db=[") {
-                        if let Some(db_part) = line.split(" db=[").nth(1) {
-                            if let Some(db_info) = db_part.split(']').next() {
-                                if db_info == "not_initialized" {
-                                    log_message("INFO", "Database - status=not_initialized (waiting for first baseline)");
-                                } else {
-                                    // Parse database info: baselines=X,anomalies=Y,latest_age=Z,size=W
-                                    let mut baselines = 0i64;
-                                    let mut anomalies = 0i64;
-                                    let mut db_size_mb = 0.0f64;
+                    if line.contains("LEGION SUMMARY:")
+                        && line.contains(" db=[")
+                        && let Some(db_part) = line.split(" db=[").nth(1)
+                        && let Some(db_info) = db_part.split(']').next()
+                    {
+                        if db_info == "not_initialized" {
+                            log_message(
+                                "INFO",
+                                "Database - status=not_initialized (waiting for first baseline)",
+                            );
+                        } else {
+                            // Parse database info: baselines=X,anomalies=Y,latest_age=Z,size=W
+                            let mut baselines = 0i64;
+                            let mut anomalies = 0i64;
+                            let mut db_size_mb = 0.0f64;
 
-                                    for part in db_info.split(',') {
-                                        if let Some((key, value)) = part.split_once('=') {
-                                            match key {
-                                                "baselines" => {
-                                                    if let Ok(val) = value.parse::<i64>() {
-                                                        baselines = val;
-                                                    }
-                                                }
-                                                "anomalies" => {
-                                                    if let Ok(val) = value.parse::<i64>() {
-                                                        anomalies = val;
-                                                    }
-                                                }
-                                                "size" => {
-                                                    if let Some(size_str) = value.strip_suffix("MB")
-                                                    {
-                                                        if let Ok(val) = size_str.parse::<f64>() {
-                                                            db_size_mb = val;
-                                                        }
-                                                    }
-                                                }
-                                                _ => {}
+                            for part in db_info.split(',') {
+                                if let Some((key, value)) = part.split_once('=') {
+                                    match key {
+                                        "baselines" => {
+                                            if let Ok(val) = value.parse::<i64>() {
+                                                baselines = val;
                                             }
                                         }
+                                        "anomalies" => {
+                                            if let Ok(val) = value.parse::<i64>() {
+                                                anomalies = val;
+                                            }
+                                        }
+                                        "size" => {
+                                            if let Some(size_str) = value.strip_suffix("MB")
+                                                && let Ok(val) = size_str.parse::<f64>()
+                                            {
+                                                db_size_mb = val;
+                                            }
+                                        }
+                                        _ => {}
                                     }
-
-                                    log_message(
-                                        "INFO",
-                                        &format!(
-                                            "Database - status=healthy baselines={} anomalies={} size={:.1}MB",
-                                            baselines, anomalies, db_size_mb
-                                        ),
-                                    );
                                 }
-                                return; // Found and processed the most recent summary
                             }
+
+                            log_message(
+                                "INFO",
+                                &format!(
+                                    "Database - status=healthy baselines={} anomalies={} size={:.1}MB",
+                                    baselines, anomalies, db_size_mb
+                                ),
+                            );
                         }
+                        return; // Found and processed the most recent summary
                     }
                 }
                 // If we get here, no database info was found in recent logs
@@ -778,7 +783,6 @@ fn log_database_metrics() {
 fn main() {
     log_message("INFO", "HARDN Centralized Monitor starting");
 
-
     let _ = fs::create_dir_all("/var/log/hardn");
     let _ = fs::create_dir_all("/var/run");
     if let Ok(pid) = std::process::id().to_string().parse::<u32>() {
@@ -793,7 +797,7 @@ fn main() {
         // Check services every 30 seconds
         monitor_services();
 
-        // Core 
+        // Core
         log_core_services();
         log_systemd_metrics();
         log_journal_metrics();
@@ -802,7 +806,6 @@ fn main() {
         log_metrics_from_api();
         log_database_metrics();
         log_message("DEBUG", "Monitoring inter-service communication channels");
-
 
         thread::sleep(Duration::from_secs(30));
     }

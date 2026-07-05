@@ -33,22 +33,22 @@ impl HeuristicModule for CpuSaturationHeuristic {
         let usage = extract_metric(context, "cpu_usage");
         let mut findings = Vec::new();
 
-        if let Some(value) = usage {
-            if value > self.threshold {
-                let severity = compute_severity(value, self.threshold);
-                findings.push(HeuristicFinding {
-                    module: self.id(),
-                    code: "CPU_HIGH".to_string(),
-                    summary: format!(
-                        "CPU usage {:.1}% exceeds {:.0}% threshold",
-                        value * 100.0,
-                        self.threshold * 100.0
-                    ),
-                    detail: Some(format!("cpu_usage={:.3}", value)),
-                    severity,
-                    tags: vec!["resource".to_string(), "cpu".to_string()],
-                });
-            }
+        if let Some(value) = usage
+            && value > self.threshold
+        {
+            let severity = compute_severity(value, self.threshold);
+            findings.push(HeuristicFinding {
+                module: self.id(),
+                code: "CPU_HIGH".to_string(),
+                summary: format!(
+                    "CPU usage {:.1}% exceeds {:.0}% threshold",
+                    value * 100.0,
+                    self.threshold * 100.0
+                ),
+                detail: Some(format!("cpu_usage={:.3}", value)),
+                severity,
+                tags: vec!["resource".to_string(), "cpu".to_string()],
+            });
         }
 
         Ok(findings)
@@ -85,22 +85,22 @@ impl HeuristicModule for MemoryPressureHeuristic {
         let usage = extract_metric(context, "memory_usage");
         let mut findings = Vec::new();
 
-        if let Some(value) = usage {
-            if value > self.threshold {
-                let severity = compute_severity(value, self.threshold);
-                findings.push(HeuristicFinding {
-                    module: self.id(),
-                    code: "MEMORY_PRESSURE".to_string(),
-                    summary: format!(
-                        "Memory usage {:.1}% exceeds {:.0}% threshold",
-                        value * 100.0,
-                        self.threshold * 100.0
-                    ),
-                    detail: Some(format!("memory_usage={:.3}", value)),
-                    severity,
-                    tags: vec!["resource".to_string(), "memory".to_string()],
-                });
-            }
+        if let Some(value) = usage
+            && value > self.threshold
+        {
+            let severity = compute_severity(value, self.threshold);
+            findings.push(HeuristicFinding {
+                module: self.id(),
+                code: "MEMORY_PRESSURE".to_string(),
+                summary: format!(
+                    "Memory usage {:.1}% exceeds {:.0}% threshold",
+                    value * 100.0,
+                    self.threshold * 100.0
+                ),
+                detail: Some(format!("memory_usage={:.3}", value)),
+                severity,
+                tags: vec!["resource".to_string(), "memory".to_string()],
+            });
         }
 
         Ok(findings)

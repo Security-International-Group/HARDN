@@ -150,11 +150,10 @@ impl ProcessBehavior {
             .next_back()
             .unwrap_or("")
             .parse::<u16>()
+            && suspicious_ports.contains(&port)
         {
-            if suspicious_ports.contains(&port) {
-                // Additional check for unusual connection patterns
-                return self.has_unusual_connection_pattern();
-            }
+            // Additional check for unusual connection patterns
+            return self.has_unusual_connection_pattern();
         }
 
         // Check for connections to private IP ranges from unexpected processes
@@ -304,10 +303,10 @@ impl ProcessBehavior {
         ];
 
         for pattern in &malicious_patterns {
-            if let Ok(regex) = Regex::new(pattern) {
-                if regex.is_match(&self.command_line) {
-                    return true;
-                }
+            if let Ok(regex) = Regex::new(pattern)
+                && regex.is_match(&self.command_line)
+            {
+                return true;
             }
         }
 

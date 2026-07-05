@@ -77,30 +77,30 @@ impl Config {
         if let Ok(val) = env::var("LEGION_LOG_FILE") {
             self.log_file = val;
         }
-        if let Ok(val) = env::var("LEGION_TIMEOUT") {
-            if let Ok(timeout) = val.parse() {
-                self.timeout = timeout;
-            }
+        if let Ok(val) = env::var("LEGION_TIMEOUT")
+            && let Ok(timeout) = val.parse()
+        {
+            self.timeout = timeout;
         }
-        if let Ok(val) = env::var("LEGION_RATE_LIMIT") {
-            if let Ok(rate_limit) = val.parse() {
-                self.rate_limit = rate_limit;
-            }
+        if let Ok(val) = env::var("LEGION_RATE_LIMIT")
+            && let Ok(rate_limit) = val.parse()
+        {
+            self.rate_limit = rate_limit;
         }
-        if let Ok(val) = env::var("LEGION_VERBOSE") {
-            if let Ok(verbose) = val.parse() {
-                self.verbose = verbose;
-            }
+        if let Ok(val) = env::var("LEGION_VERBOSE")
+            && let Ok(verbose) = val.parse()
+        {
+            self.verbose = verbose;
         }
-        if let Ok(val) = env::var("LEGION_JSON_OUTPUT") {
-            if let Ok(json_output) = val.parse() {
-                self.json_output = json_output;
-            }
+        if let Ok(val) = env::var("LEGION_JSON_OUTPUT")
+            && let Ok(json_output) = val.parse()
+        {
+            self.json_output = json_output;
         }
-        if let Ok(val) = env::var("LEGION_CREATE_BASELINE") {
-            if let Ok(create_baseline) = val.parse() {
-                self.create_baseline = create_baseline;
-            }
+        if let Ok(val) = env::var("LEGION_CREATE_BASELINE")
+            && let Ok(create_baseline) = val.parse()
+        {
+            self.create_baseline = create_baseline;
         }
     }
 

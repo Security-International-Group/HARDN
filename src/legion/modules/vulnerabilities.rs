@@ -53,10 +53,10 @@ pub fn check_cve_database() -> Result<(), Box<dyn std::error::Error>> {
     let vuln_tools = vec!["debsecan", "cve-check-tool", "vulscan"];
 
     for tool in vuln_tools {
-        if let Ok(output) = Command::new("which").arg(tool).output() {
-            if output.status.success() {
-                safe_println!("    {} available for vulnerability scanning", tool);
-            }
+        if let Ok(output) = Command::new("which").arg(tool).output()
+            && output.status.success()
+        {
+            safe_println!("    {} available for vulnerability scanning", tool);
         }
     }
 
@@ -102,7 +102,10 @@ pub fn check_security_policies() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Check for security modules
-    if let Ok(output) = Command::new("lsmod").args(["|", "grep", "security"]).output() {
+    if let Ok(output) = Command::new("lsmod")
+        .args(["|", "grep", "security"])
+        .output()
+    {
         let output_str = String::from_utf8_lossy(&output.stdout);
         let security_modules: Vec<&str> = output_str.lines().collect();
 
@@ -171,9 +174,7 @@ pub fn check_file_integrity() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     } else {
-        safe_println!(
-            "    AIDE not installed - consider installing for file integrity monitoring",
-        );
+        safe_println!("    AIDE not installed - consider installing for file integrity monitoring",);
     }
 
     Ok(())

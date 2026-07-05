@@ -299,7 +299,7 @@ impl IncidentCorrelator {
         let mut sequence_matched = true;
         let mut matched_events = Vec::new();
 
-    for condition in rule.conditions.iter() {
+        for condition in rule.conditions.iter() {
             let mut found = false;
             for event in events {
                 if self.condition_matches(condition, event) {

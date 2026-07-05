@@ -12,10 +12,10 @@ use crate::core::config::*;
 use crate::core::types::*;
 use crate::display::banner::print_banner;
 use crate::execution::run_script;
-use crate::utils::{detect_debian_version, log_message, LogLevel};
+use crate::utils::{LogLevel, detect_debian_version, log_message};
 use crate::utils::{env_or_defaults, find_script, join_paths, list_modules};
 use chrono::{DateTime, Utc};
-use comfy_table::{presets::UTF8_FULL, Table};
+use comfy_table::{Table, presets::UTF8_FULL};
 use glob::glob;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
@@ -549,11 +549,7 @@ struct HardnSnapshotContext {
 }
 
 fn sanitize_score(value: f64) -> f64 {
-    if value.is_finite() {
-        value
-    } else {
-        0.0
-    }
+    if value.is_finite() { value } else { 0.0 }
 }
 
 fn persist_hardn_monitor_snapshot(
@@ -798,10 +794,10 @@ fn generate_security_report() {
                 println!("  Report saved to: {}", path);
             }
 
-            if let Some(stderr) = summary.stderr.as_ref() {
-                if !stderr.is_empty() {
-                    println!("  \x1b[33m⚠ hardn-audit warnings:\x1b[0m {}", stderr);
-                }
+            if let Some(stderr) = summary.stderr.as_ref()
+                && !stderr.is_empty()
+            {
+                println!("  \x1b[33m⚠ hardn-audit warnings:\x1b[0m {}", stderr);
             }
 
             let mut weighted_sum = 0.0;
@@ -1051,15 +1047,14 @@ fn generate_security_report() {
         audit: audit_summary.clone(),
     };
 
-    let snapshot = HardnMonitorSnapshot::new(
-        component_scores,
-        total_score,
-        grade,
-        snapshot_context,
-    );
+    let snapshot =
+        HardnMonitorSnapshot::new(component_scores, total_score, grade, snapshot_context);
 
     if let Err(e) = persist_hardn_monitor_snapshot(&snapshot) {
-        log_message(LogLevel::Warning, &format!("Could not save monitor snapshot: {}", e));
+        log_message(
+            LogLevel::Warning,
+            &format!("Could not save monitor snapshot: {}", e),
+        );
     }
 
     // Add interactive menu if there are recommendations
@@ -1087,17 +1082,23 @@ fn generate_security_report() {
 
         match choice.as_str() {
             "a" if tool_score < 30.0 => {
-                println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+                println!(
+                    "\n═══════════════════════════════════════════════════════════════════════════════\n"
+                );
                 // Run tool selection menu
                 select_and_run_tool();
             }
             "b" if module_score < 15.0 => {
-                println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+                println!(
+                    "\n═══════════════════════════════════════════════════════════════════════════════\n"
+                );
                 // Run module selection menu
                 select_and_run_module();
             }
             "c" if audit_score < 30.0 => {
-                println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+                println!(
+                    "\n═══════════════════════════════════════════════════════════════════════════════\n"
+                );
                 // Display HARDN audit report
                 display_hardn_audit_report(
                     audit_summary
@@ -1106,12 +1107,16 @@ fn generate_security_report() {
                 );
             }
             "d" => {
-                println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+                println!(
+                    "\n═══════════════════════════════════════════════════════════════════════════════\n"
+                );
                 // Return to main menu
             }
             _ => {
                 println!("\nInvalid selection. Returning to main menu.");
-                println!("\n═══════════════════════════════════════════════════════════════════════════════\n");
+                println!(
+                    "\n═══════════════════════════════════════════════════════════════════════════════\n"
+                );
             }
         }
     } else {
@@ -1391,10 +1396,7 @@ fn run_all_tools() -> i32 {
                     // the older "completed successfully" wording here
                     // because a zero exit code does not imply the tool
                     // ran without warnings; see runner.rs.
-                    log_message(
-                        LogLevel::Info,
-                        &format!("Tool {} finished", tool_name),
-                    );
+                    log_message(LogLevel::Info, &format!("Tool {} finished", tool_name));
                     succeeded += 1;
                 }
                 Ok(_) => {
@@ -1441,10 +1443,7 @@ fn run_everything() -> i32 {
         LogLevel::Warning,
         "WARNING: Sandbox mode is NOT included in batch operations",
     );
-    log_message(
-        LogLevel::Info,
-        "Starting comprehensive system hardening...",
-    );
+    log_message(LogLevel::Info, "Starting comprehensive system hardening...");
 
     // Check if comprehensive hardening script exists
     let comprehensive_script_paths = vec![
@@ -2154,7 +2153,7 @@ fn check_service_status(service_name: &str) -> ServiceStatus {
                 active: false,
                 enabled: false,
                 pid: None,
-            }
+            };
         }
     };
 
@@ -2171,7 +2170,7 @@ fn check_service_status(service_name: &str) -> ServiceStatus {
                 active,
                 enabled: false,
                 pid: None,
-            }
+            };
         }
     };
 
@@ -2526,8 +2525,8 @@ fn restart_systemd_service(service_name: &str, optional: bool) {
 /// Interactive service monitor with log viewing capabilities
 fn interactive_service_monitor() -> i32 {
     use std::io::{self, Write};
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
     use std::time::Duration;
 
@@ -2695,13 +2694,7 @@ fn interactive_service_monitor() -> i32 {
 
                         thread::spawn(move || {
                             let mut child = Command::new("journalctl")
-                                .args([
-                                    "-f",
-                                    "-u",
-                                    service_name.as_str(),
-                                    "--since",
-                                    "today",
-                                ])
+                                .args(["-f", "-u", service_name.as_str(), "--since", "today"])
                                 .stdout(Stdio::piped())
                                 .spawn()
                                 .expect("Failed to start journalctl");
@@ -2804,17 +2797,16 @@ fn format_log_entry(entry: &str) -> String {
     let mut formatted = String::new();
 
     // Extract timestamp (looking for ISO format: YYYY-MM-DDTHH:MM:SS)
-    if let Some(t_start) = entry.find("202") {
-        if let Some(t_end) = entry[t_start..]
+    if let Some(t_start) = entry.find("202")
+        && let Some(t_end) = entry[t_start..]
             .find(' ')
             .or_else(|| entry[t_start..].find('.'))
             .or_else(|| entry[t_start..].find('-'))
-        {
-            let timestamp = &entry[t_start..t_start + t_end];
-            if let Some(t_idx) = timestamp.find('T') {
-                let time = &timestamp[t_idx + 1..timestamp.len().min(t_idx + 9)];
-                formatted.push_str(&format!("[{}] ", time));
-            }
+    {
+        let timestamp = &entry[t_start..t_start + t_end];
+        if let Some(t_idx) = timestamp.find('T') {
+            let time = &timestamp[t_idx + 1..timestamp.len().min(t_idx + 9)];
+            formatted.push_str(&format!("[{}] ", time));
         }
     }
 
@@ -2840,11 +2832,11 @@ fn format_log_entry(entry: &str) -> String {
             // Try to extract event type
             if let Some(et_idx) = entry.find("\"event_type\":") {
                 let after_et = &entry[et_idx + 14..];
-                if let Some(quote_idx) = after_et.find('\"') {
-                    if let Some(end_quote) = after_et[quote_idx + 1..].find('\"') {
-                        let event_type = &after_et[quote_idx + 1..quote_idx + 1 + end_quote];
-                        formatted.push_str(&format!("Event: {}", event_type));
-                    }
+                if let Some(quote_idx) = after_et.find('\"')
+                    && let Some(end_quote) = after_et[quote_idx + 1..].find('\"')
+                {
+                    let event_type = &after_et[quote_idx + 1..quote_idx + 1 + end_quote];
+                    formatted.push_str(&format!("Event: {}", event_type));
                 }
             } else {
                 formatted.push_str("System event logged");

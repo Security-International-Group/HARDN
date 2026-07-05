@@ -111,11 +111,7 @@ impl ThreatIntelligence {
         #[cfg(feature = "demo")]
         {
             // Fixture data, not real intel. Demo builds only.
-            let malicious_ips = vec![
-                "185.220.101.1",
-                "91.240.118.222",
-                "45.155.205.233",
-            ];
+            let malicious_ips = vec!["185.220.101.1", "91.240.118.222", "45.155.205.233"];
             for ip_str in malicious_ips {
                 if let Ok(ip) = ip_str.parse::<IpAddr>() {
                     let entry = ThreatEntry {
@@ -165,7 +161,9 @@ impl ThreatIntelligence {
         }
         #[cfg(not(feature = "demo"))]
         {
-            eprintln!("threat_intel: AlienVault OTX integration not implemented; no indicators loaded");
+            eprintln!(
+                "threat_intel: AlienVault OTX integration not implemented; no indicators loaded"
+            );
         }
         Ok(())
     }

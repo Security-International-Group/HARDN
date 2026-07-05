@@ -10,7 +10,7 @@ pub mod network {
         eprintln!("  Checking listening network sockets...");
 
         // Check listening ports
-    if let Ok(output) = Command::new("ss").args(["-lntup", "--no-header"]).output() {
+        if let Ok(output) = Command::new("ss").args(["-lntup", "--no-header"]).output() {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let listening_count = output_str.lines().count();
 
@@ -22,14 +22,12 @@ pub mod network {
 
             for line in output_str.lines() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 5 {
-                    if let Some(port_part) = parts[4].split(':').next_back() {
-                        if let Ok(port) = port_part.parse::<u16>() {
-                            if suspicious_ports.contains(&port) {
-                                found_suspicious.push(format!("Port {} ({})", port, parts[0]));
-                            }
-                        }
-                    }
+                if parts.len() >= 5
+                    && let Some(port_part) = parts[4].split(':').next_back()
+                    && let Ok(port) = port_part.parse::<u16>()
+                    && suspicious_ports.contains(&port)
+                {
+                    found_suspicious.push(format!("Port {} ({})", port, parts[0]));
                 }
             }
 
@@ -61,7 +59,7 @@ pub mod network {
         }
 
         // Check iptables rules
-    if let Ok(output) = Command::new("iptables").args(["-L", "-n"]).output() {
+        if let Ok(output) = Command::new("iptables").args(["-L", "-n"]).output() {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let rule_count = output_str
                 .lines()

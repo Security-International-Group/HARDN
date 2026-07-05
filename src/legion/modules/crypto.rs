@@ -14,16 +14,16 @@ pub mod crypto {
         let cert_paths = vec!["/etc/ssl/certs", "/usr/local/share/ca-certificates"];
 
         for cert_path in cert_paths {
-            if Path::new(cert_path).exists() {
-                if let Ok(entries) = std::fs::read_dir(cert_path) {
-                    let cert_count = entries.count();
-                    safe_println!("    {} certificates in {}", cert_count, cert_path);
-                }
+            if Path::new(cert_path).exists()
+                && let Ok(entries) = std::fs::read_dir(cert_path)
+            {
+                let cert_count = entries.count();
+                safe_println!("    {} certificates in {}", cert_count, cert_path);
             }
         }
 
         // Check for expiring certificates
-    if let Ok(_output) = Command::new("openssl").arg("version").output() {
+        if let Ok(_output) = Command::new("openssl").arg("version").output() {
             safe_println!("    OpenSSL available for certificate validation");
         }
 
@@ -94,7 +94,7 @@ pub mod crypto {
         }
 
         // Check GPG agent status
-    if let Ok(_output) = Command::new("gpg-agent").arg("--version").output() {
+        if let Ok(_output) = Command::new("gpg-agent").arg("--version").output() {
             safe_println!("    GPG agent available");
         }
 
