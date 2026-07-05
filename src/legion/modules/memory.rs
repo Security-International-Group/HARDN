@@ -99,14 +99,14 @@ pub mod memory {
 
             for line in output_str.lines() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 4 {
-                    if let Ok(rss_kb) = parts[2].parse::<u64>() {
-                        let rss_mb = rss_kb / 1024;
-                        if rss_mb > 500 {
-                            // Processes using more than 500MB
-                            let cmd = parts[1..].join(" ");
-                            high_memory_processes.push((rss_mb, cmd));
-                        }
+                if parts.len() >= 4
+                    && let Ok(rss_kb) = parts[2].parse::<u64>()
+                {
+                    let rss_mb = rss_kb / 1024;
+                    if rss_mb > 500 {
+                        // Processes using more than 500MB
+                        let cmd = parts[1..].join(" ");
+                        high_memory_processes.push((rss_mb, cmd));
                     }
                 }
             }

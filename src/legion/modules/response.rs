@@ -200,17 +200,17 @@ impl ResponseEngine {
         }
 
         // Check threat level if specified
-        if let Some(ref required_level) = condition.threat_level {
-            if &anomaly.severity != required_level {
-                return false;
-            }
+        if let Some(ref required_level) = condition.threat_level
+            && &anomaly.severity != required_level
+        {
+            return false;
         }
 
         // Check patterns (simplified - in real implementation, use regex)
-        if let Some(ref pattern) = condition.process_name_pattern {
-            if !anomaly.description.contains(pattern) {
-                return false;
-            }
+        if let Some(ref pattern) = condition.process_name_pattern
+            && !anomaly.description.contains(pattern)
+        {
+            return false;
         }
 
         if let Some(ref pattern) = condition.network_pattern {

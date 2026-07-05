@@ -22,14 +22,12 @@ pub mod network {
 
             for line in output_str.lines() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 5 {
-                    if let Some(port_part) = parts[4].split(':').next_back() {
-                        if let Ok(port) = port_part.parse::<u16>() {
-                            if suspicious_ports.contains(&port) {
-                                found_suspicious.push(format!("Port {} ({})", port, parts[0]));
-                            }
-                        }
-                    }
+                if parts.len() >= 5
+                    && let Some(port_part) = parts[4].split(':').next_back()
+                    && let Ok(port) = port_part.parse::<u16>()
+                    && suspicious_ports.contains(&port)
+                {
+                    found_suspicious.push(format!("Port {} ({})", port, parts[0]));
                 }
             }
 

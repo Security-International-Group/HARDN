@@ -191,13 +191,13 @@ impl CronJob {
     }
 
     fn ensure_log_directory(&self) {
-        if let Some(parent) = self.log_file.parent() {
-            if let Err(err) = fs::create_dir_all(parent) {
-                error!(
-                    "Unable to create cron log directory for {}: {}",
-                    self.name, err
-                );
-            }
+        if let Some(parent) = self.log_file.parent()
+            && let Err(err) = fs::create_dir_all(parent)
+        {
+            error!(
+                "Unable to create cron log directory for {}: {}",
+                self.name, err
+            );
         }
     }
 
@@ -400,10 +400,10 @@ impl ScheduledJob {
 
         {
             let state = self.state.lock().unwrap();
-            if let Some(last_run) = state.last_run {
-                if last_run >= latest_slot {
-                    return;
-                }
+            if let Some(last_run) = state.last_run
+                && last_run >= latest_slot
+            {
+                return;
             }
         }
 
@@ -665,15 +665,15 @@ impl CronOrchestrator {
     }
 
     fn persist_summary(&self, snapshot: Vec<CronSummaryEntry>) {
-        if let Some(parent) = self.state_path.parent() {
-            if let Err(err) = fs::create_dir_all(parent) {
-                error!(
-                    "Unable to create cron summary directory {}: {}",
-                    parent.display(),
-                    err
-                );
-                return;
-            }
+        if let Some(parent) = self.state_path.parent()
+            && let Err(err) = fs::create_dir_all(parent)
+        {
+            error!(
+                "Unable to create cron summary directory {}: {}",
+                parent.display(),
+                err
+            );
+            return;
         }
 
         let doc = CronSummaryFile {

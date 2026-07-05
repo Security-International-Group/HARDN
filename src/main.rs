@@ -794,10 +794,10 @@ fn generate_security_report() {
                 println!("  Report saved to: {}", path);
             }
 
-            if let Some(stderr) = summary.stderr.as_ref() {
-                if !stderr.is_empty() {
-                    println!("  \x1b[33m⚠ hardn-audit warnings:\x1b[0m {}", stderr);
-                }
+            if let Some(stderr) = summary.stderr.as_ref()
+                && !stderr.is_empty()
+            {
+                println!("  \x1b[33m⚠ hardn-audit warnings:\x1b[0m {}", stderr);
             }
 
             let mut weighted_sum = 0.0;
@@ -2797,17 +2797,16 @@ fn format_log_entry(entry: &str) -> String {
     let mut formatted = String::new();
 
     // Extract timestamp (looking for ISO format: YYYY-MM-DDTHH:MM:SS)
-    if let Some(t_start) = entry.find("202") {
-        if let Some(t_end) = entry[t_start..]
+    if let Some(t_start) = entry.find("202")
+        && let Some(t_end) = entry[t_start..]
             .find(' ')
             .or_else(|| entry[t_start..].find('.'))
             .or_else(|| entry[t_start..].find('-'))
-        {
-            let timestamp = &entry[t_start..t_start + t_end];
-            if let Some(t_idx) = timestamp.find('T') {
-                let time = &timestamp[t_idx + 1..timestamp.len().min(t_idx + 9)];
-                formatted.push_str(&format!("[{}] ", time));
-            }
+    {
+        let timestamp = &entry[t_start..t_start + t_end];
+        if let Some(t_idx) = timestamp.find('T') {
+            let time = &timestamp[t_idx + 1..timestamp.len().min(t_idx + 9)];
+            formatted.push_str(&format!("[{}] ", time));
         }
     }
 
@@ -2833,11 +2832,11 @@ fn format_log_entry(entry: &str) -> String {
             // Try to extract event type
             if let Some(et_idx) = entry.find("\"event_type\":") {
                 let after_et = &entry[et_idx + 14..];
-                if let Some(quote_idx) = after_et.find('\"') {
-                    if let Some(end_quote) = after_et[quote_idx + 1..].find('\"') {
-                        let event_type = &after_et[quote_idx + 1..quote_idx + 1 + end_quote];
-                        formatted.push_str(&format!("Event: {}", event_type));
-                    }
+                if let Some(quote_idx) = after_et.find('\"')
+                    && let Some(end_quote) = after_et[quote_idx + 1..].find('\"')
+                {
+                    let event_type = &after_et[quote_idx + 1..quote_idx + 1 + end_quote];
+                    formatted.push_str(&format!("Event: {}", event_type));
                 }
             } else {
                 formatted.push_str("System event logged");

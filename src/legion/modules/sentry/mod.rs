@@ -7,7 +7,7 @@
 //! * `/etc/sudoers`, `/etc/sudoers.d/*` — privilege grants
 //! * `/root/.ssh/authorized_keys`, `/home/*/.ssh/authorized_keys` — SSH backdoor
 //! * `/etc/cron.{d,daily,hourly,weekly,monthly}/*`, `/var/spool/cron/*`
-//!     — scheduled task persistence
+//!   — scheduled task persistence
 //! * `/etc/systemd/system/*.{service,timer}`,
 //!   `/etc/systemd/system/*.{service,timer}.d/*.conf` — service persistence
 //!
@@ -190,16 +190,16 @@ pub fn snapshot(watches: &[WatchSpec]) -> BTreeMap<String, BaselineEntry> {
                 Err(_) => continue,
             };
             for entry in iter.flatten() {
-                if entry.is_file() {
-                    if let Some(hex) = sha256_of(&entry) {
-                        out.insert(
-                            entry.display().to_string(),
-                            BaselineEntry {
-                                category: spec.category.label().to_string(),
-                                sha256: hex,
-                            },
-                        );
-                    }
+                if entry.is_file()
+                    && let Some(hex) = sha256_of(&entry)
+                {
+                    out.insert(
+                        entry.display().to_string(),
+                        BaselineEntry {
+                            category: spec.category.label().to_string(),
+                            sha256: hex,
+                        },
+                    );
                 }
             }
         }
@@ -217,8 +217,7 @@ fn save_baseline(path: &Path, baseline: &Baseline) -> io::Result<()> {
         fs::create_dir_all(parent)?;
     }
     let tmp = path.with_extension("tmp");
-    let s = serde_json::to_string_pretty(baseline)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    let s = serde_json::to_string_pretty(baseline).map_err(io::Error::other)?;
     fs::write(&tmp, s)?;
     fs::rename(&tmp, path)
 }

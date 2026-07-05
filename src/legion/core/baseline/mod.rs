@@ -142,10 +142,10 @@ impl BaselineManager {
     /// Clean up baseline files older than 30 days
     fn cleanup_old_baselines(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Clean up database baselines
-        if let Some(ref db) = self.database {
-            if let Err(e) = db.cleanup_old_baselines(30) {
-                eprintln!("Warning: Failed to cleanup old database baselines: {}", e);
-            }
+        if let Some(ref db) = self.database
+            && let Err(e) = db.cleanup_old_baselines(30)
+        {
+            eprintln!("Warning: Failed to cleanup old database baselines: {}", e);
         }
 
         // Clean up file baselines
@@ -156,24 +156,18 @@ impl BaselineManager {
         let thirty_days_ago = now - Duration::from_secs(30 * 24 * 60 * 60);
 
         for path in paths.filter_map(Result::ok) {
-            if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                if let Some(timestamp_str) = filename
+            if let Some(filename) = path.file_name().and_then(|n| n.to_str())
+                && let Some(timestamp_str) = filename
                     .strip_prefix("baseline_")
                     .and_then(|s| s.strip_suffix(".json"))
-                {
-                    if let Ok(timestamp) = timestamp_str.parse::<u64>() {
-                        let file_time = UNIX_EPOCH + Duration::from_secs(timestamp);
-                        if file_time < thirty_days_ago {
-                            if let Err(e) = fs::remove_file(&path) {
-                                eprintln!(
-                                    "Failed to remove old baseline {}: {}",
-                                    path.display(),
-                                    e
-                                );
-                            } else {
-                                eprintln!("Removed old baseline: {}", path.display());
-                            }
-                        }
+                && let Ok(timestamp) = timestamp_str.parse::<u64>()
+            {
+                let file_time = UNIX_EPOCH + Duration::from_secs(timestamp);
+                if file_time < thirty_days_ago {
+                    if let Err(e) = fs::remove_file(&path) {
+                        eprintln!("Failed to remove old baseline {}: {}", path.display(), e);
+                    } else {
+                        eprintln!("Removed old baseline: {}", path.display());
                     }
                 }
             }
@@ -404,29 +398,29 @@ impl Baseline {
                 let cmdline_path = format!("/proc/{}/cmdline", pid);
                 let status_path = format!("/proc/{}/status", pid);
 
-                if let Ok(cmdline) = fs::read_to_string(&cmdline_path) {
-                    if let Ok(status) = fs::read_to_string(&status_path) {
-                        let name = status
-                            .lines()
-                            .find(|line| line.starts_with("Name:"))
-                            .and_then(|line| line.split_whitespace().nth(1))
-                            .unwrap_or("")
-                            .to_string();
+                if let Ok(cmdline) = fs::read_to_string(&cmdline_path)
+                    && let Ok(status) = fs::read_to_string(&status_path)
+                {
+                    let name = status
+                        .lines()
+                        .find(|line| line.starts_with("Name:"))
+                        .and_then(|line| line.split_whitespace().nth(1))
+                        .unwrap_or("")
+                        .to_string();
 
-                        let parent_pid = status
-                            .lines()
-                            .find(|line| line.starts_with("PPid:"))
-                            .and_then(|line| line.split_whitespace().nth(1))
-                            .and_then(|s| s.parse::<u32>().ok())
-                            .unwrap_or(0);
+                    let parent_pid = status
+                        .lines()
+                        .find(|line| line.starts_with("PPid:"))
+                        .and_then(|line| line.split_whitespace().nth(1))
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .unwrap_or(0);
 
-                        processes.push(ProcessInfo {
-                            pid,
-                            name,
-                            cmdline: cmdline.replace('\0', " "),
-                            parent_pid,
-                        });
-                    }
+                    processes.push(ProcessInfo {
+                        pid,
+                        name,
+                        cmdline: cmdline.replace('\0', " "),
+                        parent_pid,
+                    });
                 }
             }
         }
@@ -453,16 +447,16 @@ impl Baseline {
                     .args(["addr", "show", &name])
                     .output();
 
-                if let Ok(output) = output {
-                    if output.status.success() {
-                        let stdout = String::from_utf8_lossy(&output.stdout);
-                        for line in stdout.lines() {
-                            let line = line.trim();
-                            if line.starts_with("inet ") || line.starts_with("inet6 ") {
-                                if let Some(addr) = line.split_whitespace().nth(1) {
-                                    addresses.push(addr.to_string());
-                                }
-                            }
+                if let Ok(output) = output
+                    && output.status.success()
+                {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    for line in stdout.lines() {
+                        let line = line.trim();
+                        if (line.starts_with("inet ") || line.starts_with("inet6 "))
+                            && let Some(addr) = line.split_whitespace().nth(1)
+                        {
+                            addresses.push(addr.to_string());
                         }
                     }
                 }
@@ -487,38 +481,38 @@ impl Baseline {
                     .output()
             });
 
-        if let Ok(output) = output {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    // Skip header lines
-                    if line.starts_with("Netid") || line.starts_with("Proto") {
-                        continue;
-                    }
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    if parts.len() < 5 {
-                        continue;
-                    }
-                    // For ss: Netid State Recv-Q Send-Q Local Address:Port Peer Address:Port Process
-                    // For netstat: Proto Recv-Q Send-Q Local Address Foreign Address State PID/Program name
-                    let (proto, local_addr, process) = if line.contains("Netid") {
-                        // ss format
-                        (parts[0], parts[4], parts.get(6).unwrap_or(&""))
-                    } else {
-                        // netstat format
-                        (parts[0], parts[3], parts.get(6).unwrap_or(&""))
-                    };
+        if let Ok(output) = output
+            && output.status.success()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                // Skip header lines
+                if line.starts_with("Netid") || line.starts_with("Proto") {
+                    continue;
+                }
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() < 5 {
+                    continue;
+                }
+                // For ss: Netid State Recv-Q Send-Q Local Address:Port Peer Address:Port Process
+                // For netstat: Proto Recv-Q Send-Q Local Address Foreign Address State PID/Program name
+                let (proto, local_addr, process) = if line.contains("Netid") {
+                    // ss format
+                    (parts[0], parts[4], parts.get(6).unwrap_or(&""))
+                } else {
+                    // netstat format
+                    (parts[0], parts[3], parts.get(6).unwrap_or(&""))
+                };
 
-                    // Extract port
-                    if let Some(pos) = local_addr.rfind(':') {
-                        if let Ok(port) = local_addr[pos + 1..].parse::<u16>() {
-                            listening_ports.push(PortInfo {
-                                port,
-                                protocol: proto.to_string(),
-                                process: process.to_string(),
-                            });
-                        }
-                    }
+                // Extract port
+                if let Some(pos) = local_addr.rfind(':')
+                    && let Ok(port) = local_addr[pos + 1..].parse::<u16>()
+                {
+                    listening_ports.push(PortInfo {
+                        port,
+                        protocol: proto.to_string(),
+                        process: process.to_string(),
+                    });
                 }
             }
         }
@@ -564,11 +558,11 @@ impl Baseline {
                 .arg(key)
                 .output();
 
-            if let Ok(output) = output {
-                if output.status.success() {
-                    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    sysctl.insert(key.to_string(), value);
-                }
+            if let Ok(output) = output
+                && output.status.success()
+            {
+                let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                sysctl.insert(key.to_string(), value);
             }
         }
 

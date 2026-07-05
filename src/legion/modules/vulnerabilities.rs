@@ -53,10 +53,10 @@ pub fn check_cve_database() -> Result<(), Box<dyn std::error::Error>> {
     let vuln_tools = vec!["debsecan", "cve-check-tool", "vulscan"];
 
     for tool in vuln_tools {
-        if let Ok(output) = Command::new("which").arg(tool).output() {
-            if output.status.success() {
-                safe_println!("    {} available for vulnerability scanning", tool);
-            }
+        if let Ok(output) = Command::new("which").arg(tool).output()
+            && output.status.success()
+        {
+            safe_println!("    {} available for vulnerability scanning", tool);
         }
     }
 
