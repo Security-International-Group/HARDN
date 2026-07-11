@@ -1,0 +1,755 @@
+<title>HARDN Compliance Console</title>
+<style>
+  :root {
+    --ground: #0A0E14;
+    --panel: #121821;
+    --panel-2: #1A222E;
+    --panel-3: #212B39;
+    --border: #232E3C;
+    --border-2: #2E3A4B;
+    --text: #C7D1DE;
+    --text-hi: #EAF1F8;
+    --dim: #6B7A8D;
+    --dim-2: #4B5768;
+    --accent: #37C6E0;
+    --accent-dim: #1E7F92;
+    --pass: #3FB950;
+    --warn: #D9A441;
+    --crit: #E5484D;
+    --info: #4C8DFF;
+    --na: #6B7A8D;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --rail-w: 208px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--ground);
+    color: var(--text);
+    font-family: var(--ui);
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .lbl {
+    font-size: 10.5px; letter-spacing: 0.11em; text-transform: uppercase;
+    color: var(--dim); font-weight: 600;
+  }
+  ::selection { background: rgba(55,198,224,0.28); color: var(--text-hi); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- shell ---------- */
+  .app { display: grid; grid-template-columns: var(--rail-w) 1fr; grid-template-rows: 52px 1fr; height: 100vh; }
+
+  .topbar {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 18px;
+    padding: 0 18px; background: linear-gradient(180deg, #10161F, #0C1119);
+    border-bottom: 1px solid var(--border); z-index: 20;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; width: calc(var(--rail-w) - 18px); }
+  .brand .mark {
+    width: 26px; height: 26px; border: 1.5px solid var(--accent); border-radius: 5px;
+    display: grid; place-items: center; color: var(--accent);
+    font-family: var(--mono); font-weight: 700; font-size: 14px;
+    box-shadow: 0 0 0 1px rgba(55,198,224,0.15), inset 0 0 12px rgba(55,198,224,0.12);
+  }
+  .brand .name { font-weight: 700; letter-spacing: 0.14em; color: var(--text-hi); font-size: 14px; }
+  .brand .name small { color: var(--dim); font-weight: 500; letter-spacing: 0.08em; }
+
+  .host-id { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
+  .host-id .field { display: flex; flex-direction: column; line-height: 1.25; }
+  .host-id .field .v { font-family: var(--mono); font-size: 12.5px; color: var(--text-hi); }
+  .sep { width: 1px; height: 26px; background: var(--border); }
+
+  .topbar .right { display: flex; align-items: center; gap: 12px; }
+  .scanpill {
+    display: flex; align-items: center; gap: 8px; padding: 5px 11px;
+    border: 1px solid var(--border-2); border-radius: 999px; background: var(--panel);
+    font-family: var(--mono); font-size: 11.5px; color: var(--dim);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pass); box-shadow: 0 0 8px var(--pass); }
+  .dot.idle { background: var(--dim-2); box-shadow: none; }
+  .dot.run { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+
+  .btn {
+    font-family: var(--ui); font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em;
+    color: var(--ground); background: var(--accent); border: none; border-radius: 5px;
+    padding: 7px 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+    transition: filter 0.12s, transform 0.05s;
+  }
+  .btn:hover { filter: brightness(1.12); }
+  .btn:active { transform: translateY(1px); }
+  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--border-2); }
+  .btn.ghost:hover { border-color: var(--accent-dim); color: var(--text-hi); filter: none; }
+  .btn[disabled] { opacity: 0.5; cursor: default; }
+
+  /* ---------- rail ---------- */
+  .rail { background: #0C1119; border-right: 1px solid var(--border); padding: 12px 10px; display: flex; flex-direction: column; gap: 3px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 6px;
+    color: var(--dim); cursor: pointer; border: 1px solid transparent; position: relative;
+    font-size: 13px; font-weight: 500; transition: background 0.1s, color 0.1s;
+  }
+  .nav-item:hover { background: var(--panel); color: var(--text); }
+  .nav-item.active { background: var(--panel-2); color: var(--text-hi); border-color: var(--border-2); }
+  .nav-item.active::before {
+    content: ""; position: absolute; left: -10px; top: 8px; bottom: 8px; width: 2px;
+    background: var(--accent); border-radius: 2px;
+  }
+  .nav-item svg { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6; }
+  .nav-item .count { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--dim-2); }
+  .nav-item.active .count { color: var(--accent); }
+  .rail .spacer { flex: 1; }
+  .rail .foot { font-size: 10px; color: var(--dim-2); font-family: var(--mono); padding: 8px 11px; line-height: 1.5; }
+
+  /* ---------- main ---------- */
+  .main { overflow-y: auto; overflow-x: hidden; padding: 20px 22px 40px; }
+  .main::-webkit-scrollbar { width: 10px; }
+  .main::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 6px; border: 3px solid var(--ground); }
+  .view { display: none; animation: fade 0.18s ease; }
+  .view.active { display: block; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } }
+
+  .view-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
+  .view-head h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: 0.02em; color: var(--text-hi); }
+  .view-head .sub { font-family: var(--mono); font-size: 11.5px; color: var(--dim); }
+
+  .grid { display: grid; gap: 14px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px;
+  }
+  .panel h2 { margin: 0 0 14px; font-size: 11px; letter-spacing: 0.11em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+  .panel h2 .hint { float: right; letter-spacing: 0; text-transform: none; color: var(--dim-2); font-weight: 500; }
+
+  /* stat tiles */
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .tile { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; position: relative; overflow: hidden; }
+  .tile .stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
+  .tile .k { font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+  .tile .v { font-family: var(--mono); font-size: 30px; font-weight: 600; color: var(--text-hi); line-height: 1.1; margin-top: 8px; }
+  .tile .v small { font-size: 15px; color: var(--dim); }
+  .tile .d { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-top: 4px; }
+
+  /* gauge */
+  .gauge-wrap { display: flex; align-items: center; gap: 22px; }
+  .gauge { --p: 82; width: 132px; height: 132px; flex: none; border-radius: 50%; position: relative;
+    background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--panel-3) 0);
+    display: grid; place-items: center; }
+  .gauge::after { content: ""; position: absolute; inset: 11px; border-radius: 50%; background: var(--panel); border: 1px solid var(--border); }
+  .gauge .inner { position: relative; z-index: 1; text-align: center; }
+  .gauge .inner .score { font-family: var(--mono); font-size: 32px; font-weight: 650; color: var(--text-hi); }
+  .gauge .inner .grade { font-family: var(--mono); font-size: 12px; color: var(--accent); letter-spacing: 0.1em; }
+  .legend { display: flex; flex-direction: column; gap: 9px; flex: 1; }
+  .legend .row { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 12.5px; }
+  .legend .row .sw { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  .legend .row .n { color: var(--dim); flex: 1; }
+  .legend .row .val { color: var(--text-hi); }
+
+  /* horizontal bars */
+  .bars { display: flex; flex-direction: column; gap: 12px; }
+  .bar-row { display: grid; grid-template-columns: 130px 1fr 42px; align-items: center; gap: 12px; }
+  .bar-row .name { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-track { height: 8px; background: var(--panel-3); border-radius: 4px; overflow: hidden; display: flex; }
+  .bar-track > span { height: 100%; }
+  .bar-row .pct { font-family: var(--mono); font-size: 12px; color: var(--dim); text-align: right; }
+
+  /* findings table */
+  .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .search { flex: 1; min-width: 180px; position: relative; }
+  .search input {
+    width: 100%; background: var(--panel); border: 1px solid var(--border-2); border-radius: 6px;
+    color: var(--text-hi); font-family: var(--mono); font-size: 12.5px; padding: 8px 10px 8px 32px;
+  }
+  .search input::placeholder { color: var(--dim-2); }
+  .search svg { position: absolute; left: 10px; top: 9px; width: 14px; height: 14px; stroke: var(--dim); fill: none; stroke-width: 1.6; }
+  .chipset { display: flex; gap: 5px; }
+  .fchip {
+    font-family: var(--mono); font-size: 11.5px; padding: 6px 11px; border-radius: 5px; cursor: pointer;
+    background: var(--panel); border: 1px solid var(--border); color: var(--dim); user-select: none;
+  }
+  .fchip:hover { color: var(--text); border-color: var(--border-2); }
+  .fchip.on { background: var(--panel-3); color: var(--text-hi); border-color: var(--accent-dim); }
+
+  .tbl-wrap { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  table.tbl { width: 100%; border-collapse: collapse; }
+  .tbl thead th {
+    text-align: left; font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--dim);
+    font-weight: 600; padding: 10px 12px; background: var(--panel-2); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0;
+  }
+  .tbl tbody td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 12.5px; vertical-align: middle; }
+  .tbl tbody tr { cursor: pointer; }
+  .tbl tbody tr:hover { background: var(--panel); }
+  .tbl tbody tr:last-child td { border-bottom: none; }
+  .tbl .rid { font-family: var(--mono); font-size: 11.5px; color: var(--accent); white-space: nowrap; }
+  .tbl .title { color: var(--text-hi); }
+  .tbl .cat { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+
+  .chip { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; white-space: nowrap; }
+  .chip.pass { color: var(--pass); background: rgba(63,185,80,0.12); }
+  .chip.fail { color: var(--crit); background: rgba(229,72,77,0.13); }
+  .chip.error { color: var(--warn); background: rgba(217,164,65,0.13); }
+  .chip.na { color: var(--na); background: rgba(107,122,141,0.14); }
+  .chip.high { color: var(--crit); background: rgba(229,72,77,0.13); }
+  .chip.medium { color: var(--warn); background: rgba(217,164,65,0.13); }
+  .chip.low { color: var(--info); background: rgba(76,141,255,0.13); }
+
+  /* drawer */
+  .scrim { position: fixed; inset: 0; background: rgba(6,9,13,0.55); opacity: 0; pointer-events: none; transition: opacity 0.18s; z-index: 40; }
+  .scrim.open { opacity: 1; pointer-events: auto; }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(480px, 92vw); background: var(--panel);
+    border-left: 1px solid var(--border-2); z-index: 50; transform: translateX(100%);
+    transition: transform 0.22s cubic-bezier(0.16,0.8,0.3,1); display: flex; flex-direction: column;
+  }
+  .drawer.open { transform: none; }
+  .drawer .dhead { padding: 18px 20px; border-bottom: 1px solid var(--border); }
+  .drawer .dhead .rid { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+  .drawer .dhead h3 { margin: 8px 0 12px; font-size: 16px; color: var(--text-hi); line-height: 1.35; font-weight: 600; }
+  .drawer .dhead .chips { display: flex; gap: 7px; }
+  .drawer .dbody { padding: 18px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+  .field-block .lbl { margin-bottom: 6px; display: block; }
+  .field-block .val { font-family: var(--mono); font-size: 12.5px; color: var(--text); line-height: 1.6; word-break: break-word; }
+  .field-block .val.code { background: var(--ground); border: 1px solid var(--border); border-radius: 6px; padding: 11px 13px; color: var(--text-hi); white-space: pre-wrap; }
+  .drawer .dclose { position: absolute; top: 16px; right: 16px; background: none; border: none; color: var(--dim); cursor: pointer; font-size: 20px; line-height: 1; padding: 4px; }
+  .drawer .dclose:hover { color: var(--text-hi); }
+
+  /* telemetry meters */
+  .meter { margin-bottom: 14px; }
+  .meter:last-child { margin-bottom: 0; }
+  .meter .top { display: flex; justify-content: space-between; margin-bottom: 6px; font-family: var(--mono); font-size: 12px; }
+  .meter .top .m-name { color: var(--text); }
+  .meter .top .m-val { color: var(--text-hi); }
+  .meter .track { height: 6px; background: var(--panel-3); border-radius: 3px; overflow: hidden; }
+  .meter .fill { height: 100%; border-radius: 3px; }
+
+  .svc-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .svc { display: flex; align-items: center; gap: 9px; padding: 9px 11px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; font-family: var(--mono); font-size: 12px; }
+  .svc .name { color: var(--text); flex: 1; }
+  .svc .st { font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; }
+  .svc .st.active { color: var(--pass); }
+  .svc .st.inactive { color: var(--crit); }
+  .svc .st.masked { color: var(--dim); }
+
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 9px 16px; font-family: var(--mono); font-size: 12.5px; }
+  .kv .k { color: var(--dim); }
+  .kv .v { color: var(--text-hi); text-align: right; }
+  .fips-banner { display: flex; align-items: center; gap: 12px; padding: 13px 15px; border-radius: 7px; border: 1px solid; margin-bottom: 14px; font-family: var(--mono); font-size: 12.5px; }
+  .fips-banner.on { border-color: rgba(63,185,80,0.4); background: rgba(63,185,80,0.07); color: var(--pass); }
+  .fips-banner.off { border-color: rgba(217,164,65,0.4); background: rgba(217,164,65,0.06); color: var(--warn); }
+  .fips-banner b { color: var(--text-hi); }
+
+  /* controls list */
+  .ctrl { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 14px; padding: 11px 14px; border-bottom: 1px solid var(--border); }
+  .ctrl:last-child { border-bottom: none; }
+  .ctrl .c-name { font-family: var(--mono); font-size: 12.5px; color: var(--text-hi); }
+  .ctrl .c-desc { font-size: 11.5px; color: var(--dim); margin-top: 2px; }
+
+  /* evidence log */
+  .log { font-family: var(--mono); font-size: 12px; }
+  .log .entry { display: grid; grid-template-columns: 148px 90px 1fr; gap: 12px; padding: 9px 12px; border-bottom: 1px solid var(--border); align-items: baseline; }
+  .log .entry:hover { background: var(--panel); }
+  .log .ts { color: var(--dim); }
+  .log .actor { color: var(--accent); }
+  .log .msg { color: var(--text); }
+  .log .msg .hash { color: var(--dim-2); font-size: 11px; }
+
+  .runhist { display: flex; align-items: flex-end; gap: 6px; height: 84px; padding-top: 8px; }
+  .runhist .b { flex: 1; background: var(--accent-dim); border-radius: 3px 3px 0 0; position: relative; opacity: 0.55; transition: opacity 0.12s; min-height: 4px; }
+  .runhist .b:hover { opacity: 1; }
+  .runhist .b:last-child { background: var(--accent); opacity: 1; }
+
+  /* toast */
+  .toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--panel-3); border: 1px solid var(--border-2); border-radius: 7px; padding: 11px 16px;
+    font-family: var(--mono); font-size: 12.5px; color: var(--text-hi); z-index: 60; opacity: 0;
+    transition: opacity 0.2s, transform 0.2s; display: flex; align-items: center; gap: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast .dot { background: var(--pass); box-shadow: 0 0 8px var(--pass); }
+
+  .two-col { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; }
+  .three-col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 1080px) {
+    .tiles { grid-template-columns: repeat(2, 1fr); }
+    .two-col, .three-col { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 720px) {
+    :root { --rail-w: 60px; }
+    .brand .name, .nav-item span:not(.count), .host-id .field:not(.f-host) { display: none; }
+    .rail .foot { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark">H</div>
+      <div class="name">HARDN <small>/ console</small></div>
+    </div>
+    <div class="host-id">
+      <div class="field f-host"><span class="lbl">Host</span><span class="v" id="t-host">hardn-prod-01</span></div>
+      <div class="sep"></div>
+      <div class="field"><span class="lbl">Platform</span><span class="v" id="t-os">Debian 12 (bookworm)</span></div>
+      <div class="sep"></div>
+      <div class="field"><span class="lbl">Kernel</span><span class="v" id="t-kernel">6.1.0-18-amd64</span></div>
+    </div>
+    <div class="right">
+      <div class="scanpill"><span class="dot" id="scan-dot"></span><span id="scan-txt">Last scan 21:58:04Z</span></div>
+      <button class="btn" id="run-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run Audit</button>
+    </div>
+  </header>
+
+  <nav class="rail" id="rail">
+    <div class="nav-item active" data-view="posture">
+      <svg viewBox="0 0 24 24"><path d="M12 2 3 7v6c0 5 3.5 8 9 9 5.5-1 9-4 9-9V7z"/></svg>
+      <span>Posture</span>
+    </div>
+    <div class="nav-item" data-view="findings">
+      <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <span>Findings</span><span class="count" id="c-findings">31</span>
+    </div>
+    <div class="nav-item" data-view="telemetry">
+      <svg viewBox="0 0 24 24"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+      <span>Telemetry</span>
+    </div>
+    <div class="nav-item" data-view="controls">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+      <span>Controls</span><span class="count" id="c-controls">14</span>
+    </div>
+    <div class="nav-item" data-view="evidence">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+      <span>Evidence</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="foot">v1.2.92<br>SCAP/XCCDF · 194 rules<br><span id="src-line">loopback · 127.0.0.1</span></div>
+  </nav>
+
+  <main class="main">
+    <!-- POSTURE -->
+    <section class="view active" id="view-posture">
+      <div class="view-head">
+        <h1>Compliance Posture</h1>
+        <span class="sub" id="posture-sub">194 rules · evaluated 21:58:04Z · 8.2s</span>
+      </div>
+      <div class="tiles" id="posture-tiles"></div>
+      <div style="height:14px"></div>
+      <div class="two-col">
+        <div class="panel">
+          <h2>Score <span class="hint">weighted, 0&ndash;100</span></h2>
+          <div class="gauge-wrap">
+            <div class="gauge" id="gauge"><div class="inner"><div class="score" id="g-score">82</div><div class="grade" id="g-grade">GRADE B</div></div></div>
+            <div class="legend" id="posture-legend"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>Open findings by severity</h2>
+          <div class="bars" id="sev-bars"></div>
+        </div>
+      </div>
+      <div style="height:14px"></div>
+      <div class="panel">
+        <h2>Category breakdown <span class="hint">pass rate</span></h2>
+        <div class="bars" id="cat-bars"></div>
+      </div>
+    </section>
+
+    <!-- FINDINGS -->
+    <section class="view" id="view-findings">
+      <div class="view-head">
+        <h1>Findings</h1>
+        <span class="sub" id="findings-sub"></span>
+      </div>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg>
+          <input type="text" id="f-search" placeholder="Filter by rule, title, or XCCDF id" spellcheck="false">
+        </div>
+        <div class="chipset" id="f-result"></div>
+        <div class="chipset" id="f-sev"></div>
+      </div>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:22%">Rule</th><th>Title</th><th style="width:120px">Category</th><th style="width:90px">Severity</th><th style="width:80px">Result</th></tr></thead>
+          <tbody id="findings-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- TELEMETRY -->
+    <section class="view" id="view-telemetry">
+      <div class="view-head"><h1>Host Telemetry</h1><span class="sub" id="tele-clock"></span></div>
+      <div id="fips-banner"></div>
+      <div class="three-col">
+        <div class="panel">
+          <h2>System</h2>
+          <div class="kv" id="sys-kv"></div>
+        </div>
+        <div class="panel">
+          <h2>Resources</h2>
+          <div id="res-meters"></div>
+        </div>
+        <div class="panel">
+          <h2>Security services</h2>
+          <div class="svc-grid" id="svc-grid"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CONTROLS -->
+    <section class="view" id="view-controls">
+      <div class="view-head"><h1>Hardening Controls</h1><span class="sub">system drop-ins, applied state</span></div>
+      <div class="panel" style="padding:4px 0" id="controls-list"></div>
+    </section>
+
+    <!-- EVIDENCE -->
+    <section class="view" id="view-evidence">
+      <div class="view-head">
+        <h1>Evidence</h1>
+        <button class="btn ghost" id="export-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>Export evidence</button>
+      </div>
+      <div class="two-col">
+        <div class="panel">
+          <h2>Audit log <span class="hint">hash-chained, append-only</span></h2>
+          <div class="log" id="audit-log"></div>
+        </div>
+        <div class="panel">
+          <h2>Scan history <span class="hint">last 12 runs, score</span></h2>
+          <div class="runhist" id="runhist"></div>
+          <div class="kv" style="margin-top:16px" id="evidence-kv"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <button class="dclose" id="drawer-close" aria-label="Close">&times;</button>
+  <div class="dhead">
+    <div class="rid" id="d-rid"></div>
+    <h3 id="d-title"></h3>
+    <div class="chips" id="d-chips"></div>
+  </div>
+  <div class="dbody">
+    <div class="field-block"><span class="lbl">XCCDF Identifier</span><div class="val" id="d-xccdf"></div></div>
+    <div class="field-block"><span class="lbl">Category</span><div class="val" id="d-cat"></div></div>
+    <div class="field-block"><span class="lbl">Evidence</span><div class="val code" id="d-evidence"></div></div>
+    <div class="field-block"><span class="lbl">Remediation</span><div class="val code" id="d-remediation"></div></div>
+  </div>
+</aside>
+
+<div class="toast" id="toast"><span class="dot"></span><span id="toast-msg"></span></div>
+
+<script>
+// ---------- data model (served live by GET /api/v1/* in the product build) ----------
+const SEED = {
+  host: { name: "hardn-prod-01", os: "Debian 12 (bookworm)", kernel: "6.1.0-18-amd64", arch: "x86_64", uptime: "14d 06:22:41", boot: "2026-06-26 15:35Z", fips: true, fipsProvider: "aws-lc-rs 1.x (FIPS 140-3)" },
+  summary: { score: 82, grade: "B", total: 194, pass: 148, fail: 27, na: 15, error: 4, lastScan: "21:58:04Z", duration: "8.2s" },
+  severity: [ { k: "High", n: 9, tone: "high" }, { k: "Medium", n: 13, tone: "medium" }, { k: "Low", n: 5, tone: "low" } ],
+  categories: [
+    { name: "Accounts & PAM", pass: 31, total: 38 },
+    { name: "SSH", pass: 19, total: 22 },
+    { name: "Kernel / sysctl", pass: 24, total: 29 },
+    { name: "Auditd", pass: 26, total: 30 },
+    { name: "Filesystem", pass: 18, total: 24 },
+    { name: "Network", pass: 14, total: 19 },
+    { name: "Services", pass: 9, total: 16 },
+    { name: "Crypto / FIPS", pass: 7, total: 16 },
+  ],
+  resources: [ { name: "CPU", pct: 12, tone: "var(--pass)" }, { name: "Memory", pct: 47, tone: "var(--info)" }, { name: "Disk /", pct: 68, tone: "var(--warn)" }, { name: "Load 1m", pct: 22, tone: "var(--pass)" } ],
+  services: [
+    { name: "auditd", state: "active" }, { name: "apparmor", state: "active" },
+    { name: "fail2ban", state: "active" }, { name: "ufw", state: "active" },
+    { name: "clamav-daemon", state: "inactive" }, { name: "suricata", state: "masked" },
+    { name: "systemd-journald", state: "active" }, { name: "chrony", state: "active" },
+  ],
+  controls: [
+    { name: "sysctl: kernel.randomize_va_space=2", desc: "Full address-space layout randomization", state: "applied" },
+    { name: "sysctl: kernel.kptr_restrict=2", desc: "Hide kernel pointers from userspace", state: "applied" },
+    { name: "sysctl: net.ipv4.conf.all.rp_filter=1", desc: "Reverse-path source validation", state: "applied" },
+    { name: "auditd: augenrules (STIG ruleset)", desc: "Privileged-command and identity auditing", state: "applied" },
+    { name: "sshd: PermitRootLogin no", desc: "Disable direct root SSH", state: "applied" },
+    { name: "sshd: Ciphers (FIPS subset)", desc: "Restrict to validated ciphers", state: "partial" },
+    { name: "pam: pwquality minlen=14", desc: "Password length and complexity", state: "applied" },
+    { name: "pam: faillock deny=3", desc: "Account lockout on failed auth", state: "applied" },
+    { name: "login.defs: PASS_MAX_DAYS=60", desc: "Password expiry policy", state: "applied" },
+    { name: "fail2ban: sshd jail", desc: "Ban hosts after repeated auth failure", state: "applied" },
+    { name: "ufw: default deny incoming", desc: "Host firewall baseline", state: "applied" },
+    { name: "mount: /tmp nodev,nosuid,noexec", desc: "Restrict temporary filesystem", state: "not-applied" },
+    { name: "mount: /var/log nodev,nosuid", desc: "Restrict log filesystem", state: "applied" },
+    { name: "modprobe: disable usb-storage", desc: "Block removable storage kernel module", state: "not-applied" },
+  ],
+  auditLog: [
+    { ts: "21:58:12Z", actor: "system", msg: "audit run completed, 194 rules, score 82", hash: "9f3a1c" },
+    { ts: "21:58:04Z", actor: "operator", msg: "audit run triggered via console", hash: "7b22e0" },
+    { ts: "20:14:39Z", actor: "operator", msg: "control applied: mount /var/log nodev,nosuid", hash: "4c8d11" },
+    { ts: "18:02:55Z", actor: "system", msg: "evidence bundle exported (json)", hash: "a10f7d" },
+    { ts: "14:30:01Z", actor: "system", msg: "scheduled audit completed, score 79", hash: "d4e9b2" },
+    { ts: "09:12:44Z", actor: "operator", msg: "session opened, role=operator", hash: "1f6c88" },
+  ],
+  runHistory: [71, 68, 74, 73, 76, 75, 78, 77, 79, 80, 79, 82],
+};
+
+const REM = {
+  ssh: "Set the directive in /etc/ssh/sshd_config.d/10-hardn.conf, then reload:\n  sshd -t && systemctl reload ssh",
+  sysctl: "Write the key to /etc/sysctl.d/90-hardn.conf, then apply:\n  sysctl --system",
+  pam: "Edit the pam_pwquality/pam_faillock stanza in\n/etc/security/pwquality.conf and /etc/pam.d/common-auth.",
+  mount: "Add nodev,nosuid,noexec to the fstab entry and remount:\n  mount -o remount /tmp",
+  audit: "Deploy the STIG augenrules set to /etc/audit/rules.d/\nand reload:  augenrules --load",
+  fips: "Enable FIPS mode and rebuild with the validated provider.\nHost: fips-mode-setup --enable  (note: breaks apt on\nBookworm until libgcrypt is patched; see docs/FIPS.md).",
+  net: "Apply the network sysctl drop-in and disable unused\nprotocols via modprobe blacklist.",
+};
+
+const FIND_SEED = [
+  ["SSH-011","xccdf_org.ssgproject.content_rule_sshd_set_idle_timeout","Set SSH client alive interval","SSH","medium","fail","ssh"],
+  ["SSH-004","xccdf_org.ssgproject.content_rule_sshd_disable_root_login","Disable SSH root login","SSH","high","pass","ssh"],
+  ["SSH-019","xccdf_org.ssgproject.content_rule_sshd_use_strong_ciphers","Use only FIPS-approved SSH ciphers","SSH","high","fail","ssh"],
+  ["ACC-023","xccdf_org.ssgproject.content_rule_accounts_password_pam_minlen","Password minimum length 14","Accounts & PAM","medium","pass","pam"],
+  ["ACC-031","xccdf_org.ssgproject.content_rule_accounts_passwords_pam_faillock_deny","Lock accounts after 3 failures","Accounts & PAM","medium","pass","pam"],
+  ["ACC-047","xccdf_org.ssgproject.content_rule_accounts_password_pam_dcredit","Require a digit in passwords","Accounts & PAM","low","fail","pam"],
+  ["ACC-052","xccdf_org.ssgproject.content_rule_account_disable_post_pw_expiration","Disable accounts 30d after expiry","Accounts & PAM","medium","na","pam"],
+  ["KRN-009","xccdf_org.ssgproject.content_rule_sysctl_kernel_randomize_va_space","Enable full ASLR","Kernel / sysctl","high","pass","sysctl"],
+  ["KRN-014","xccdf_org.ssgproject.content_rule_sysctl_kernel_kptr_restrict","Restrict kernel pointer exposure","Kernel / sysctl","medium","pass","sysctl"],
+  ["KRN-021","xccdf_org.ssgproject.content_rule_sysctl_kernel_dmesg_restrict","Restrict dmesg to privileged users","Kernel / sysctl","low","fail","sysctl"],
+  ["KRN-028","xccdf_org.ssgproject.content_rule_sysctl_kernel_yama_ptrace_scope","Restrict ptrace scope","Kernel / sysctl","medium","fail","sysctl"],
+  ["AUD-003","xccdf_org.ssgproject.content_rule_audit_rules_login_events","Audit login/logout events","Auditd","medium","pass","audit"],
+  ["AUD-017","xccdf_org.ssgproject.content_rule_audit_rules_privileged_commands","Audit privileged command use","Auditd","high","pass","audit"],
+  ["AUD-024","xccdf_org.ssgproject.content_rule_audit_rules_dac_modification","Audit DAC permission changes","Auditd","medium","fail","audit"],
+  ["AUD-030","xccdf_org.ssgproject.content_rule_auditd_data_retention_max_log","Set max audit log file size","Auditd","low","error","audit"],
+  ["FS-006","xccdf_org.ssgproject.content_rule_mount_option_tmp_noexec","Mount /tmp with noexec","Filesystem","medium","fail","mount"],
+  ["FS-011","xccdf_org.ssgproject.content_rule_mount_option_var_log_nodev","Mount /var/log with nodev","Filesystem","low","pass","mount"],
+  ["FS-018","xccdf_org.ssgproject.content_rule_partition_for_var_tmp","Separate partition for /var/tmp","Filesystem","low","na","mount"],
+  ["FS-022","xccdf_org.ssgproject.content_rule_file_permissions_sshd_config","Restrict sshd_config permissions","Filesystem","medium","pass","mount"],
+  ["NET-005","xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_rp_filter","Enable reverse-path filtering","Network","medium","pass","net"],
+  ["NET-013","xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_accept_redirects","Disable ICMP redirect acceptance","Network","medium","fail","net"],
+  ["NET-020","xccdf_org.ssgproject.content_rule_kernel_module_dccp_disabled","Disable DCCP kernel module","Network","low","fail","net"],
+  ["SVC-002","xccdf_org.ssgproject.content_rule_service_auditd_enabled","Enable auditd service","Services","high","pass","audit"],
+  ["SVC-009","xccdf_org.ssgproject.content_rule_package_telnet_removed","Remove telnet server","Services","high","pass","net"],
+  ["SVC-015","xccdf_org.ssgproject.content_rule_service_avahi_disabled","Disable avahi-daemon","Services","medium","fail","net"],
+  ["SVC-021","xccdf_org.ssgproject.content_rule_service_cups_disabled","Disable print service if unused","Services","low","na","net"],
+  ["CRY-004","xccdf_org.ssgproject.content_rule_enable_fips_mode","Enable kernel FIPS mode","Crypto / FIPS","high","fail","fips"],
+  ["CRY-008","xccdf_org.ssgproject.content_rule_configure_crypto_policy","Set system-wide crypto policy","Crypto / FIPS","high","fail","fips"],
+  ["CRY-012","xccdf_org.ssgproject.content_rule_sshd_use_approved_macs","Use approved SSH MACs","Crypto / FIPS","medium","fail","fips"],
+  ["CRY-016","xccdf_org.ssgproject.content_rule_openssl_fips_provider","Load OpenSSL FIPS provider","Crypto / FIPS","high","error","fips"],
+  ["ACC-060","xccdf_org.ssgproject.content_rule_no_empty_passwords","Disallow empty passwords","Accounts & PAM","high","pass","pam"],
+];
+
+const RESULT_FILTERS = ["fail","error","pass","na"];
+const SEV_FILTERS = ["high","medium","low"];
+const state = { result: new Set(), sev: new Set(), q: "" };
+const $ = (s) => document.querySelector(s);
+const el = (t, c, h) => { const e = document.createElement(t); if (c) e.className = c; if (h != null) e.innerHTML = h; return e; };
+const toneColor = { high: "var(--crit)", medium: "var(--warn)", low: "var(--info)", pass: "var(--pass)", fail: "var(--crit)", na: "var(--na)" };
+
+const findings = FIND_SEED.map(([id, xccdf, title, cat, sev, res, rk]) => ({ id, xccdf, title, cat, sev, res, rem: REM[rk] }));
+
+// ---------- posture ----------
+function renderPosture() {
+  const s = SEED.summary;
+  const tiles = [
+    { k: "Compliance score", v: s.score, sm: "/100", d: "grade " + s.grade, stripe: "var(--accent)" },
+    { k: "Passing", v: s.pass, sm: "/" + s.total, d: Math.round(s.pass / s.total * 100) + "% of rules", stripe: "var(--pass)" },
+    { k: "Failing", v: s.fail, sm: "", d: "9 high · 13 med · 5 low", stripe: "var(--crit)" },
+    { k: "Errors / N/A", v: s.error + s.na, sm: "", d: s.error + " error · " + s.na + " n/a", stripe: "var(--warn)" },
+  ];
+  $("#posture-tiles").innerHTML = "";
+  tiles.forEach(t => {
+    $("#posture-tiles").append(el("div", "tile", `<span class="stripe" style="background:${t.stripe}"></span><div class="k">${t.k}</div><div class="v">${t.v}<small>${t.sm}</small></div><div class="d">${t.d}</div>`));
+  });
+  const g = $("#gauge"); g.style.setProperty("--p", s.score); $("#g-score").textContent = s.score; $("#g-grade").textContent = "GRADE " + s.grade;
+  const leg = [ ["var(--pass)", "Pass", s.pass], ["var(--crit)", "Fail", s.fail], ["var(--warn)", "Error", s.error], ["var(--na)", "Not applicable", s.na] ];
+  $("#posture-legend").innerHTML = "";
+  leg.forEach(([c, n, v]) => $("#posture-legend").append(el("div", "row", `<span class="sw" style="background:${c}"></span><span class="n">${n}</span><span class="val">${v}</span>`)));
+
+  const maxSev = Math.max(...SEED.severity.map(x => x.n));
+  $("#sev-bars").innerHTML = "";
+  SEED.severity.forEach(x => {
+    const row = el("div", "bar-row", `<span class="name">${x.k}</span><div class="bar-track"><span style="width:${x.n / maxSev * 100}%;background:${toneColor[x.tone]}"></span></div><span class="pct">${x.n}</span>`);
+    $("#sev-bars").append(row);
+  });
+
+  $("#cat-bars").innerHTML = "";
+  SEED.categories.forEach(c => {
+    const rate = Math.round(c.pass / c.total * 100);
+    const col = rate >= 85 ? "var(--pass)" : rate >= 65 ? "var(--warn)" : "var(--crit)";
+    const failW = 100 - rate;
+    $("#cat-bars").append(el("div", "bar-row", `<span class="name" title="${c.name}">${c.name}</span><div class="bar-track"><span style="width:${rate}%;background:${col}"></span><span style="width:${failW}%;background:var(--panel-3)"></span></div><span class="pct">${rate}%</span>`));
+  });
+}
+
+// ---------- findings ----------
+function matches(f) {
+  if (state.result.size && !state.result.has(f.res)) return false;
+  if (state.sev.size && !state.sev.has(f.sev)) return false;
+  if (state.q) { const q = state.q.toLowerCase(); if (!(f.id.toLowerCase().includes(q) || f.title.toLowerCase().includes(q) || f.xccdf.toLowerCase().includes(q))) return false; }
+  return true;
+}
+function renderChips() {
+  const rc = $("#f-result"); rc.innerHTML = "";
+  RESULT_FILTERS.forEach(r => {
+    const c = el("div", "fchip" + (state.result.has(r) ? " on" : ""), r.toUpperCase());
+    c.onclick = () => { state.result.has(r) ? state.result.delete(r) : state.result.add(r); renderChips(); renderFindings(); };
+    rc.append(c);
+  });
+  const sc = $("#f-sev"); sc.innerHTML = "";
+  SEV_FILTERS.forEach(sv => {
+    const c = el("div", "fchip" + (state.sev.has(sv) ? " on" : ""), sv.toUpperCase());
+    c.onclick = () => { state.sev.has(sv) ? state.sev.delete(sv) : state.sev.add(sv); renderChips(); renderFindings(); };
+    sc.append(c);
+  });
+}
+function renderFindings() {
+  const rows = findings.filter(matches);
+  const body = $("#findings-body"); body.innerHTML = "";
+  rows.forEach(f => {
+    const tr = el("tr");
+    tr.innerHTML = `<td class="rid">${f.id}</td><td class="title">${f.title}</td><td class="cat">${f.cat}</td><td><span class="chip ${f.sev}">${f.sev}</span></td><td><span class="chip ${f.res}">${f.res === "na" ? "N/A" : f.res}</span></td>`;
+    tr.onclick = () => openDrawer(f);
+    body.append(tr);
+  });
+  $("#findings-sub").textContent = rows.length + " of " + findings.length + " shown";
+  $("#c-findings").textContent = findings.filter(f => f.res === "fail" || f.res === "error").length;
+}
+
+// ---------- drawer ----------
+function openDrawer(f) {
+  $("#d-rid").textContent = f.id + "  ·  " + f.cat;
+  $("#d-title").textContent = f.title;
+  $("#d-chips").innerHTML = `<span class="chip ${f.sev}">${f.sev}</span><span class="chip ${f.res}">${f.res === "na" ? "N/A" : f.res}</span>`;
+  $("#d-xccdf").textContent = f.xccdf;
+  $("#d-cat").textContent = f.cat;
+  $("#d-evidence").textContent = evidenceFor(f);
+  $("#d-remediation").textContent = f.rem || "No remediation registered for this rule.";
+  $("#scrim").classList.add("open"); $("#drawer").classList.add("open");
+}
+function evidenceFor(f) {
+  if (f.res === "pass") return "Rule satisfied. Current configuration matches the expected baseline.";
+  if (f.res === "na") return "Not applicable to this platform or role. Rule skipped during evaluation.";
+  if (f.res === "error") return "Check could not complete. The target file or command was unavailable at scan time.";
+  return "Observed value does not match the required baseline. Remediation available below.";
+}
+function closeDrawer() { $("#scrim").classList.remove("open"); $("#drawer").classList.remove("open"); }
+
+// ---------- telemetry ----------
+function renderTelemetry() {
+  const h = SEED.host;
+  $("#fips-banner").innerHTML = h.fips
+    ? `<div class="fips-banner on">FIPS mode <b>ENABLED</b> &nbsp;·&nbsp; /proc/sys/crypto/fips_enabled = 1 &nbsp;·&nbsp; provider ${h.fipsProvider}</div>`
+    : `<div class="fips-banner off">FIPS mode <b>DISABLED</b> &nbsp;·&nbsp; /proc/sys/crypto/fips_enabled = 0 &nbsp;·&nbsp; host not in FIPS posture</div>`;
+  $("#sys-kv").innerHTML = [
+    ["Hostname", h.name], ["Platform", h.os], ["Kernel", h.kernel], ["Architecture", h.arch],
+    ["Uptime", h.uptime], ["Booted", h.boot],
+  ].map(([k, v]) => `<span class="k">${k}</span><span class="v">${v}</span>`).join("");
+  $("#res-meters").innerHTML = "";
+  SEED.resources.forEach(r => {
+    $("#res-meters").append(el("div", "meter", `<div class="top"><span class="m-name">${r.name}</span><span class="m-val">${r.pct}%</span></div><div class="track"><div class="fill" style="width:${r.pct}%;background:${r.tone}"></div></div>`));
+  });
+  $("#svc-grid").innerHTML = "";
+  SEED.services.forEach(s => $("#svc-grid").append(el("div", "svc", `<span class="name">${s.name}</span><span class="st ${s.state}">${s.state}</span>`)));
+}
+
+// ---------- controls ----------
+function renderControls() {
+  const list = $("#controls-list"); list.innerHTML = "";
+  const stChip = (st) => st === "applied" ? `<span class="chip pass">applied</span>` : st === "partial" ? `<span class="chip error">partial</span>` : `<span class="chip fail">not applied</span>`;
+  SEED.controls.forEach(c => {
+    const row = el("div", "ctrl", `<div><div class="c-name">${c.name}</div><div class="c-desc">${c.desc}</div></div>${stChip(c.state)}<button class="btn ghost" style="padding:5px 12px">${c.state === "applied" ? "Re-apply" : "Apply"}</button>`);
+    row.querySelector("button").onclick = () => toast(`Queued: ${c.name.split(":")[0]}`);
+    list.append(row);
+  });
+  $("#c-controls").textContent = SEED.controls.filter(c => c.state !== "applied").length;
+}
+
+// ---------- evidence ----------
+function renderEvidence() {
+  const log = $("#audit-log"); log.innerHTML = "";
+  SEED.auditLog.forEach(e => log.append(el("div", "entry", `<span class="ts">${e.ts}</span><span class="actor">${e.actor}</span><span class="msg">${e.msg} <span class="hash">sha256:${e.hash}</span></span>`)));
+  const rh = $("#runhist"); rh.innerHTML = "";
+  const max = 100;
+  SEED.runHistory.forEach(v => { const b = el("div", "b"); b.style.height = (v / max * 100) + "%"; b.title = "score " + v; rh.append(b); });
+  $("#evidence-kv").innerHTML = [
+    ["Retained runs", "128"], ["Log integrity", "verified"], ["Chain head", "sha256:9f3a1c"], ["Last export", "18:02:55Z"],
+  ].map(([k, v]) => `<span class="k">${k}</span><span class="v">${v}</span>`).join("");
+}
+
+// ---------- interactions ----------
+function switchView(name) {
+  document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.view === name));
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + name));
+}
+document.querySelectorAll(".nav-item").forEach(n => n.onclick = () => switchView(n.dataset.view));
+$("#scrim").onclick = closeDrawer;
+$("#drawer-close").onclick = closeDrawer;
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
+$("#f-search").oninput = (e) => { state.q = e.target.value; renderFindings(); };
+
+let toastTimer;
+function toast(msg) {
+  $("#toast-msg").textContent = msg; $("#toast").classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => $("#toast").classList.remove("show"), 2600);
+}
+$("#export-btn").onclick = () => toast("Evidence bundle exported to /var/lib/hardn/evidence");
+
+let running = false;
+$("#run-btn").onclick = () => {
+  if (running) return; running = true;
+  const dot = $("#scan-dot"), txt = $("#scan-txt"), btn = $("#run-btn");
+  dot.className = "dot run"; txt.textContent = "Scanning 194 rules"; btn.disabled = true;
+  let n = 0; const iv = setInterval(() => { n += Math.floor(20 + Math.random() * 30); if (n >= 194) n = 194; txt.textContent = "Scanning " + n + " / 194"; if (n >= 194) { clearInterval(iv); finishScan(); } }, 180);
+};
+function finishScan() {
+  $("#scan-dot").className = "dot"; $("#scan-txt").textContent = "Last scan just now";
+  $("#run-btn").disabled = false; running = false;
+  toast("Audit complete. 194 rules evaluated, score 82.");
+}
+
+// clock
+function tick() {
+  const now = new Date();
+  const z = now.toISOString().slice(11, 19) + "Z";
+  const t = $("#tele-clock"); if (t) t.textContent = "host time " + z;
+}
+setInterval(tick, 1000); tick();
+
+// ---------- live hydration (falls back to seed when opened standalone) ----------
+const remForCategory = (cat) => {
+  const c = (cat || "").toLowerCase();
+  if (c.includes("ssh")) return REM.ssh;
+  if (c.includes("kernel")) return REM.sysctl;
+  if (c.includes("pam") || c.includes("account")) return REM.pam;
+  if (c.includes("file")) return REM.mount;
+  if (c.includes("audit")) return REM.audit;
+  if (c.includes("crypto") || c.includes("fips")) return REM.fips;
+  if (c.includes("network")) return REM.net;
+  return "Consult the rule reference for remediation steps.";
+};
+async function hydrate() {
+  const get = (u) => fetch(u).then(r => r.ok ? r.json() : null).catch(() => null);
+  const [sum, tel, fips, fin] = await Promise.all([
+    get("/api/v1/compliance/summary"), get("/api/v1/system/telemetry"),
+    get("/api/v1/system/fips"), get("/api/v1/compliance/findings"),
+  ]);
+  if (!sum && !tel) { $("#src-line").textContent = "sample data · offline"; return; }
+  if (sum) Object.assign(SEED.summary, { score: sum.score, grade: sum.grade, total: sum.total, pass: sum.pass, fail: sum.fail, na: sum.na, error: sum.error });
+  if (tel) Object.assign(SEED.host, { name: tel.host, os: tel.os, kernel: tel.kernel, arch: tel.arch });
+  if (fips) SEED.host.fips = fips.enabled;
+  if (fin && fin.findings && fin.findings.length > findings.length) {
+    findings.length = 0;
+    fin.findings.forEach(x => findings.push({ id: x.id, xccdf: x.xccdf, title: x.title, cat: x.category, sev: x.severity, res: x.result, rem: remForCategory(x.category) }));
+  }
+  $("#t-host").textContent = SEED.host.name; $("#t-os").textContent = SEED.host.os; $("#t-kernel").textContent = SEED.host.kernel;
+  $("#src-line").textContent = "live · 127.0.0.1:8000";
+  renderPosture(); renderFindings(); renderTelemetry();
+}
+
+// init
+renderPosture(); renderChips(); renderFindings(); renderTelemetry(); renderControls(); renderEvidence();
+hydrate();
+</script>

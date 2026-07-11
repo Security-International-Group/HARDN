@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Refactored main.rs - now using modular architecture
 
+mod api;
 mod cli;
 mod core;
 mod display;
@@ -3053,6 +3054,7 @@ AVAILABLE COMMANDS:
   service <action>         Manage services (enable/disable/start/stop/restart)
   run-module <name>        Run specific hardening module
   run-tool <name>          Run specific security tool
+  serve [port]             Launch the local compliance console (loopback, default 8000)
   --security-report        Generate comprehensive security assessment
   --enable-selinux         ⚠️  Enable SELinux (DISABLES AppArmor, REQUIRES REBOOT)
   --uninstall [flags]      Uninstall HARDN (see --uninstall --help for flags)
@@ -3202,6 +3204,7 @@ fn main() {
                     generate_security_report();
                     EXIT_SUCCESS
                 }
+                "serve" => crate::api::serve(8000),
                 "services" => interactive_service_monitor(),
                 "--run-all-modules" | "run-all-modules" => run_all_modules(),
                 "--run-all-tools" | "run-all-tools" => run_all_tools(),
@@ -3222,6 +3225,13 @@ fn main() {
                 }
             },
             3 => match args[1].as_str() {
+                "serve" => match args[2].parse::<u16>() {
+                    Ok(port) => crate::api::serve(port),
+                    Err(_) => {
+                        log_message(LogLevel::Error, &format!("Invalid port: {}", args[2]));
+                        EXIT_USAGE
+                    }
+                },
                 "service" => manage_service(&args[2]),
                 "run-module" => handle_run_module(&module_dirs, &args[2]),
                 "run-tool" => handle_run_tool(&tool_dirs, &args[2], &module_dirs),

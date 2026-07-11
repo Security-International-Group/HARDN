@@ -27,12 +27,14 @@ comfy-table = "7.2"
 # runtime helpers
 tempfile = "3.27"
 ctrlc = "3.5"
+# compliance API (loopback dashboard backend, Sprint 1). Bound to 127.0.0.1
+# only; see the no-0.0.0.0-bind gate in .github/workflows/security.yml.
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
 #
-# NOTE: the LEGION runtime engine was removed in the strip-legion refactor,
-# which orphaned ~16 dependencies (tokio, axum, rusqlite, dashmap, regex,
-# sha2, uuid, futures, ...). They are intentionally NOT carried here. The
-# Sprint 1 compliance API re-adds axum + tokio when it uses them; any crypto
-# lands via a FIPS-validated module (aws-lc-rs) in Sprint 5.
+# NOTE: the wider LEGION dependency set (rusqlite, dashmap, regex, sha2, uuid,
+# futures, ...) stays removed. Crypto for evidence signing lands via a
+# FIPS-validated module (aws-lc-rs) in Sprint 5, not the old hand-rolled path.
 
 [profile.release]
 opt-level = "z"    # Optimize for size
