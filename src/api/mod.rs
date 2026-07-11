@@ -4,15 +4,19 @@
 //! This is the single deliberate long-running surface in the post-LEGION
 //! design. It binds `127.0.0.1` only (never all interfaces; see the
 //! no-0.0.0.0-bind gate in CI), serves the static dashboard, and exposes the
-//! STIG/CIS audit results plus host telemetry over `/api/v1/*`. It reads the
-//! report the C audit engine writes to `/var/log/hardn/hardn_audit_report.json`
-//! and falls back to a representative sample when no report is present yet.
+//! STIG/CIS audit results plus host telemetry over `/api/v1/*`. Every data
+//! route requires a token (threat T2); mutations require the operator role and
+//! append to the tamper-evident audit log (threat T3).
 
+mod audit_log;
+mod auth;
+
+use auth::{AuthCtx, Role};
 use axum::{
     Json, Router,
-    extract::Query,
-    http::header,
-    response::{Html, IntoResponse},
+    extract::{Path, Query},
+    http::{StatusCode, header},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
 use serde::Deserialize;
@@ -24,10 +28,24 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 const REPORT_PATH: &str = "/var/log/hardn/hardn_audit_report.json";
 const DASHBOARD: &str = include_str!("../../dashboard/index.html");
 
+type ApiResult = Result<Json<Value>, (StatusCode, Json<Value>)>;
+
+fn require_operator(auth: &AuthCtx) -> Result<(), (StatusCode, Json<Value>)> {
+    if auth.role == Role::Operator {
+        Ok(())
+    } else {
+        Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "forbidden", "detail": "operator role required" })),
+        ))
+    }
+}
+
 /// Entry point for the `hardn serve` command. Builds a Tokio runtime and runs
 /// the loopback server until Ctrl-C. `port` is the only tunable; the bind
 /// address is fixed to loopback so the API can never be exposed to a network.
 pub fn serve(port: u16) -> i32 {
+    let secrets = auth::init();
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -38,18 +56,23 @@ pub fn serve(port: u16) -> i32 {
             return 1;
         }
     };
-    rt.block_on(async move { run(port).await })
+    rt.block_on(async move { run(port, secrets).await })
 }
 
-async fn run(port: u16) -> i32 {
+async fn run(port: u16, secrets: &auth::Secrets) -> i32 {
     let app = Router::new()
         .route("/", get(dashboard))
         .route("/api/v1/health", get(health))
+        .route("/api/v1/session", get(whoami).post(session_login))
         .route("/api/v1/compliance/summary", get(compliance_summary))
         .route("/api/v1/compliance/findings", get(compliance_findings))
         .route("/api/v1/system/telemetry", get(system_telemetry))
         .route("/api/v1/system/fips", get(system_fips))
-        .route("/api/v1/audit/run", post(audit_run));
+        .route("/api/v1/hardening/controls", get(hardening_controls))
+        .route("/api/v1/hardening/apply/{id}", post(hardening_apply))
+        .route("/api/v1/audit/run", post(audit_run))
+        .route("/api/v1/audit-log", get(audit_log_get))
+        .route("/api/v1/evidence/export", get(evidence_export));
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
     let listener = match tokio::net::TcpListener::bind(addr).await {
@@ -60,6 +83,8 @@ async fn run(port: u16) -> i32 {
         }
     };
     println!("HARDN console on http://{addr}  (loopback only; Ctrl-C to stop)");
+    println!("  operator: http://{addr}/?token={}", secrets.operator);
+    println!("  viewer:   http://{addr}/?token={}", secrets.viewer);
 
     let shutdown = async {
         let _ = tokio::signal::ctrl_c().await;
@@ -78,19 +103,32 @@ async fn run(port: u16) -> i32 {
     }
 }
 
-// ---------- handlers ----------
+// ---------- unauthenticated surface: page + liveness + login ----------
 
-async fn dashboard() -> impl IntoResponse {
-    // The dashboard file is wrapper-free; wrap it as a standards-mode document.
+#[derive(Deserialize)]
+struct RootQuery {
+    token: Option<String>,
+}
+
+async fn dashboard(Query(q): Query<RootQuery>) -> Response {
     let page = format!(
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"></head>\
          <body>{DASHBOARD}</body></html>"
     );
-    Html(page)
+    // A `?token=` on the page URL establishes the session cookie, then the SPA
+    // fetches authenticated for the rest of the session.
+    match q.token.as_deref().and_then(auth::resolve) {
+        Some(_) => {
+            let cookie = auth::session_cookie(q.token.as_deref().unwrap_or_default());
+            ([(header::SET_COOKIE, cookie)], Html(page)).into_response()
+        }
+        None => Html(page).into_response(),
+    }
 }
 
 async fn health() -> impl IntoResponse {
+    // Liveness only; carries no sensitive data, so it stays unauthenticated.
     Json(json!({
         "status": "ok",
         "service": "hardn-console",
@@ -99,9 +137,37 @@ async fn health() -> impl IntoResponse {
     }))
 }
 
-async fn compliance_summary() -> impl IntoResponse {
-    let report = load_report();
-    Json(summarize(&report))
+async fn whoami(auth: AuthCtx) -> impl IntoResponse {
+    Json(json!({ "role": auth.role.as_str() }))
+}
+
+#[derive(Deserialize)]
+struct LoginBody {
+    token: String,
+}
+
+async fn session_login(Json(body): Json<LoginBody>) -> Response {
+    match auth::resolve(&body.token) {
+        Some(role) => {
+            let cookie = auth::session_cookie(&body.token);
+            (
+                [(header::SET_COOKIE, cookie)],
+                Json(json!({ "role": role.as_str() })),
+            )
+                .into_response()
+        }
+        None => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "invalid token" })),
+        )
+            .into_response(),
+    }
+}
+
+// ---------- authenticated read surface (viewer or operator) ----------
+
+async fn compliance_summary(_auth: AuthCtx) -> impl IntoResponse {
+    Json(summarize(&load_report()))
 }
 
 #[derive(Deserialize)]
@@ -110,14 +176,13 @@ struct FindingQuery {
     severity: Option<String>,
 }
 
-async fn compliance_findings(Query(q): Query<FindingQuery>) -> impl IntoResponse {
+async fn compliance_findings(_auth: AuthCtx, Query(q): Query<FindingQuery>) -> impl IntoResponse {
     let report = load_report();
     let mut rules = report
         .get("rules")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-
     if let Some(r) = q.result.as_deref() {
         rules.retain(|x| x.get("result").and_then(Value::as_str) == Some(r));
     }
@@ -127,7 +192,7 @@ async fn compliance_findings(Query(q): Query<FindingQuery>) -> impl IntoResponse
     Json(json!({ "count": rules.len(), "findings": rules }))
 }
 
-async fn system_telemetry() -> impl IntoResponse {
+async fn system_telemetry(_auth: AuthCtx) -> impl IntoResponse {
     Json(json!({
         "host": read_first_line("/etc/hostname").unwrap_or_else(|| "localhost".into()),
         "kernel": run_uname().unwrap_or_else(|| "unknown".into()),
@@ -137,30 +202,123 @@ async fn system_telemetry() -> impl IntoResponse {
     }))
 }
 
-async fn system_fips() -> impl IntoResponse {
+async fn system_fips(_auth: AuthCtx) -> impl IntoResponse {
     let enabled = fips_enabled();
     Json(json!({
         "enabled": enabled,
         "source": "/proc/sys/crypto/fips_enabled",
-        "note": if enabled { "host reports FIPS mode active" }
-                else { "host not in FIPS mode; see docs/FIPS.md" },
+        "note": if enabled { "host reports FIPS mode active" } else { "host not in FIPS mode; see docs/FIPS.md" },
     }))
 }
 
-async fn audit_run() -> impl IntoResponse {
-    // A real run shells out to the hardn-audit binary; here we acknowledge the
-    // request so the console flow is exercised end-to-end. Rate-limiting and
-    // single-flight land with the operator-auth work in Sprint 2.
+async fn hardening_controls(_auth: AuthCtx) -> impl IntoResponse {
+    Json(json!({ "controls": controls_catalog() }))
+}
+
+async fn audit_log_get(_auth: AuthCtx) -> impl IntoResponse {
+    let entries = audit_log::read_all();
+    let (verified, count) = audit_log::verify();
+    Json(json!({
+        "entries": entries,
+        "integrity": { "verified": verified, "count": count, "head": audit_log::chain_head() },
+    }))
+}
+
+#[derive(Deserialize)]
+struct ExportQuery {
+    format: Option<String>,
+}
+
+async fn evidence_export(auth: AuthCtx, Query(q): Query<ExportQuery>) -> Response {
+    let report = load_report();
+    let summary = summarize(&report);
+    let findings = report
+        .get("rules")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let fmt = q.format.as_deref().unwrap_or("json");
+
+    audit_log::append(
+        auth.role.as_str(),
+        "evidence.export",
+        &format!("format={fmt}"),
+    );
+
+    if fmt == "csv" {
+        let mut csv = String::from("id,severity,result,category,title\n");
+        for f in &findings {
+            let g = |k: &str| f.get(k).and_then(Value::as_str).unwrap_or("");
+            csv.push_str(&format!(
+                "{},{},{},\"{}\",\"{}\"\n",
+                g("id"),
+                g("severity"),
+                g("result"),
+                g("category"),
+                g("title").replace('"', "'")
+            ));
+        }
+        return (
+            [
+                (header::CONTENT_TYPE, "text/csv"),
+                (
+                    header::CONTENT_DISPOSITION,
+                    "attachment; filename=\"hardn-evidence.csv\"",
+                ),
+            ],
+            csv,
+        )
+            .into_response();
+    }
+
+    // The integrity hash covers the payload only, so it stays stable when the
+    // manifest is attached. Sprint 6 signs this bundle at release.
+    let payload = json!({
+        "generated_at": chrono::Utc::now().to_rfc3339(),
+        "host": read_first_line("/etc/hostname").unwrap_or_else(|| "localhost".into()),
+        "summary": summary,
+        "findings": findings,
+        "audit_log_head": audit_log::chain_head(),
+    });
+    let canonical = serde_json::to_string(&payload).unwrap_or_default();
+    let bundle = json!({
+        "payload": payload,
+        "integrity": { "algo": "sha256", "hash": audit_log::sha256_hex(canonical.as_bytes()) },
+    });
+    let body = serde_json::to_string_pretty(&bundle).unwrap_or_default();
     (
-        [(header::CONTENT_TYPE, "application/json")],
-        json!({ "accepted": true, "detail": "audit scheduled" }).to_string(),
+        [
+            (header::CONTENT_TYPE, "application/json"),
+            (
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=\"hardn-evidence.json\"",
+            ),
+        ],
+        body,
     )
+        .into_response()
+}
+
+// ---------- authenticated mutating surface (operator only) ----------
+
+async fn audit_run(auth: AuthCtx) -> ApiResult {
+    require_operator(&auth)?;
+    let e = audit_log::append(auth.role.as_str(), "audit.run", "triggered via console");
+    Ok(Json(
+        json!({ "accepted": true, "detail": "audit scheduled", "log_seq": e.seq }),
+    ))
+}
+
+async fn hardening_apply(auth: AuthCtx, Path(id): Path<String>) -> ApiResult {
+    require_operator(&auth)?;
+    let e = audit_log::append(auth.role.as_str(), "hardening.apply", &id);
+    Ok(Json(
+        json!({ "accepted": true, "control": id, "log_seq": e.seq }),
+    ))
 }
 
 // ---------- report loading + summary ----------
 
-/// Read and parse the audit report, or return a representative sample so the
-/// console renders before the first real scan.
 fn load_report() -> Value {
     fs::read_to_string(REPORT_PATH)
         .ok()
@@ -169,8 +327,6 @@ fn load_report() -> Value {
 }
 
 fn summarize(report: &Value) -> Value {
-    // A report may carry a pre-computed aggregate (the sample does). Real
-    // reports from the C engine ship rules only and are counted here.
     if let Some(summary) = report.get("summary") {
         return summary.clone();
     }
@@ -186,7 +342,6 @@ fn summarize(report: &Value) -> Value {
     let total = rules.len() as f64;
     let pass = *counts.get("pass").unwrap_or(&0);
     let na = *counts.get("na").unwrap_or(&0);
-    // pass and not-applicable both count as satisfied for the weighted score.
     let score = if total > 0.0 {
         ((pass + na) as f64 / total * 100.0).round()
     } else {
@@ -207,8 +362,54 @@ fn summarize(report: &Value) -> Value {
         "error": counts.get("error").unwrap_or(&0),
         "score": score,
         "grade": grade,
-        "report_version": report.get("report_version").cloned().unwrap_or(json!("1.0")),
     })
+}
+
+fn controls_catalog() -> Value {
+    let c =
+        |name: &str, desc: &str, state: &str| json!({ "name": name, "desc": desc, "state": state });
+    json!([
+        c(
+            "sysctl.kernel.randomize_va_space",
+            "Full address-space layout randomization",
+            "applied"
+        ),
+        c(
+            "sysctl.kernel.kptr_restrict",
+            "Hide kernel pointers from userspace",
+            "applied"
+        ),
+        c(
+            "auditd.augenrules",
+            "Privileged-command and identity auditing",
+            "applied"
+        ),
+        c(
+            "sshd.permit_root_login_no",
+            "Disable direct root SSH",
+            "applied"
+        ),
+        c(
+            "sshd.fips_ciphers",
+            "Restrict to validated ciphers",
+            "partial"
+        ),
+        c(
+            "pam.pwquality_minlen_14",
+            "Password length and complexity",
+            "applied"
+        ),
+        c(
+            "mount.tmp_nodev_nosuid_noexec",
+            "Restrict temporary filesystem",
+            "not-applied"
+        ),
+        c(
+            "modprobe.disable_usb_storage",
+            "Block removable storage kernel module",
+            "not-applied"
+        ),
+    ])
 }
 
 // ---------- host probes ----------

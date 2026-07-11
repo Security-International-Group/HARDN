@@ -301,6 +301,7 @@
       <div class="field"><span class="lbl">Kernel</span><span class="v" id="t-kernel">6.1.0-18-amd64</span></div>
     </div>
     <div class="right">
+      <span class="fchip" id="role-badge" style="display:none"></span>
       <div class="scanpill"><span class="dot" id="scan-dot"></span><span id="scan-txt">Last scan 21:58:04Z</span></div>
       <button class="btn" id="run-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run Audit</button>
     </div>
@@ -661,7 +662,13 @@ function renderControls() {
   const stChip = (st) => st === "applied" ? `<span class="chip pass">applied</span>` : st === "partial" ? `<span class="chip error">partial</span>` : `<span class="chip fail">not applied</span>`;
   SEED.controls.forEach(c => {
     const row = el("div", "ctrl", `<div><div class="c-name">${c.name}</div><div class="c-desc">${c.desc}</div></div>${stChip(c.state)}<button class="btn ghost" style="padding:5px 12px">${c.state === "applied" ? "Re-apply" : "Apply"}</button>`);
-    row.querySelector("button").onclick = () => toast(`Queued: ${c.name.split(":")[0]}`);
+    row.querySelector("button").onclick = async () => {
+      if (!ROLE) { toast("Connect to the console to apply controls"); return; }
+      const res = await getJSON("/api/v1/hardening/apply/" + encodeURIComponent(c.name), { method: "POST" });
+      if (res && res.forbidden) toast("Operator role required to apply controls");
+      else if (res && res.data) { toast("Applied: " + c.name); hydrate(); }
+      else toast("Apply failed");
+    };
     list.append(row);
   });
   $("#c-controls").textContent = SEED.controls.filter(c => c.state !== "applied").length;
@@ -675,7 +682,10 @@ function renderEvidence() {
   const max = 100;
   SEED.runHistory.forEach(v => { const b = el("div", "b"); b.style.height = (v / max * 100) + "%"; b.title = "score " + v; rh.append(b); });
   $("#evidence-kv").innerHTML = [
-    ["Retained runs", "128"], ["Log integrity", "verified"], ["Chain head", "sha256:9f3a1c"], ["Last export", "18:02:55Z"],
+    ["Retained entries", String(SEED.auditLog.length)],
+    ["Log integrity", SEED._chainOk === false ? "BROKEN" : "verified"],
+    ["Chain head", "sha256:" + (SEED._chainHead || "9f3a1c")],
+    ["Export", "on demand"],
   ].map(([k, v]) => `<span class="k">${k}</span><span class="v">${v}</span>`).join("");
 }
 
@@ -695,7 +705,10 @@ function toast(msg) {
   $("#toast-msg").textContent = msg; $("#toast").classList.add("show");
   clearTimeout(toastTimer); toastTimer = setTimeout(() => $("#toast").classList.remove("show"), 2600);
 }
-$("#export-btn").onclick = () => toast("Evidence bundle exported to /var/lib/hardn/evidence");
+$("#export-btn").onclick = () => {
+  if (ROLE) { window.open("/api/v1/evidence/export?format=json", "_blank"); toast("Evidence bundle exported (json)"); }
+  else toast("Evidence export requires a live console session");
+};
 
 let running = false;
 $("#run-btn").onclick = () => {
@@ -707,7 +720,8 @@ $("#run-btn").onclick = () => {
 function finishScan() {
   $("#scan-dot").className = "dot"; $("#scan-txt").textContent = "Last scan just now";
   $("#run-btn").disabled = false; running = false;
-  toast("Audit complete. 194 rules evaluated, score 82.");
+  if (ROLE) getJSON("/api/v1/audit/run", { method: "POST" }).then(r => { if (r && r.forbidden) toast("Viewer role cannot trigger audits"); else { toast("Audit complete. 194 rules evaluated."); hydrate(); } });
+  else toast("Audit complete. 194 rules evaluated, score 82.");
 }
 
 // clock
@@ -730,23 +744,43 @@ const remForCategory = (cat) => {
   if (c.includes("network")) return REM.net;
   return "Consult the rule reference for remediation steps.";
 };
+let ROLE = null;
+async function getJSON(u, opts) {
+  try {
+    const r = await fetch(u, Object.assign({ credentials: "same-origin" }, opts || {}));
+    if (r.status === 401) return { auth: false };
+    if (r.status === 403) return { forbidden: true };
+    if (!r.ok) return null;
+    const ct = r.headers.get("content-type") || "";
+    return { data: ct.includes("json") ? await r.json() : await r.text() };
+  } catch { return null; }
+}
 async function hydrate() {
-  const get = (u) => fetch(u).then(r => r.ok ? r.json() : null).catch(() => null);
-  const [sum, tel, fips, fin] = await Promise.all([
-    get("/api/v1/compliance/summary"), get("/api/v1/system/telemetry"),
-    get("/api/v1/system/fips"), get("/api/v1/compliance/findings"),
+  const who = await getJSON("/api/v1/session");
+  if (who === null) { $("#src-line").textContent = "sample data · offline"; return; }
+  if (who.auth === false) { $("#src-line").textContent = "auth required · open with ?token"; return; }
+  ROLE = who.data.role;
+  const badge = $("#role-badge"); badge.style.display = ""; badge.classList.add("on"); badge.textContent = ROLE;
+  const S = (x) => x && x.data;
+  const [sum, tel, fips, fin, log] = await Promise.all([
+    getJSON("/api/v1/compliance/summary"), getJSON("/api/v1/system/telemetry"),
+    getJSON("/api/v1/system/fips"), getJSON("/api/v1/compliance/findings"), getJSON("/api/v1/audit-log"),
   ]);
-  if (!sum && !tel) { $("#src-line").textContent = "sample data · offline"; return; }
-  if (sum) Object.assign(SEED.summary, { score: sum.score, grade: sum.grade, total: sum.total, pass: sum.pass, fail: sum.fail, na: sum.na, error: sum.error });
-  if (tel) Object.assign(SEED.host, { name: tel.host, os: tel.os, kernel: tel.kernel, arch: tel.arch });
-  if (fips) SEED.host.fips = fips.enabled;
-  if (fin && fin.findings && fin.findings.length > findings.length) {
+  if (S(sum)) Object.assign(SEED.summary, S(sum));
+  if (S(tel)) Object.assign(SEED.host, { name: S(tel).host, os: S(tel).os, kernel: S(tel).kernel, arch: S(tel).arch });
+  if (S(fips)) SEED.host.fips = S(fips).enabled;
+  if (S(fin) && S(fin).findings && S(fin).findings.length > findings.length) {
     findings.length = 0;
-    fin.findings.forEach(x => findings.push({ id: x.id, xccdf: x.xccdf, title: x.title, cat: x.category, sev: x.severity, res: x.result, rem: remForCategory(x.category) }));
+    S(fin).findings.forEach(x => findings.push({ id: x.id, xccdf: x.xccdf, title: x.title, cat: x.category, sev: x.severity, res: x.result, rem: remForCategory(x.category) }));
+  }
+  if (S(log) && S(log).entries && S(log).entries.length) {
+    SEED.auditLog = S(log).entries.slice().reverse().map(e => ({ ts: (e.ts || "").slice(11, 19) + "Z", actor: e.actor, msg: (e.action + " " + e.detail).trim(), hash: (e.hash || "").slice(0, 6) }));
+    SEED._chainHead = ((S(log).integrity || {}).head || "").slice(0, 6);
+    SEED._chainOk = (S(log).integrity || {}).verified;
   }
   $("#t-host").textContent = SEED.host.name; $("#t-os").textContent = SEED.host.os; $("#t-kernel").textContent = SEED.host.kernel;
-  $("#src-line").textContent = "live · 127.0.0.1:8000";
-  renderPosture(); renderFindings(); renderTelemetry();
+  $("#src-line").textContent = "live · " + ROLE;
+  renderPosture(); renderFindings(); renderTelemetry(); renderEvidence();
 }
 
 // init

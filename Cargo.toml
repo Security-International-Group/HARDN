@@ -31,10 +31,13 @@ ctrlc = "3.5"
 # only; see the no-0.0.0.0-bind gate in .github/workflows/security.yml.
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+# SHA-256 for the tamper-evident audit-log hash chain and evidence integrity
+# (RustCrypto, pure Rust). Sprint 5 moves this behind the FIPS-validated
+# provider (aws-lc-rs); the chain format is unchanged by that swap.
+sha2 = "0.10"
 #
-# NOTE: the wider LEGION dependency set (rusqlite, dashmap, regex, sha2, uuid,
-# futures, ...) stays removed. Crypto for evidence signing lands via a
-# FIPS-validated module (aws-lc-rs) in Sprint 5, not the old hand-rolled path.
+# NOTE: the wider LEGION dependency set (rusqlite, dashmap, regex, uuid,
+# futures, ...) stays removed.
 
 [profile.release]
 opt-level = "z"    # Optimize for size
