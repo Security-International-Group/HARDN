@@ -33,7 +33,6 @@ if command -v firejail >/dev/null 2>&1; then
 
     # Create or update Firejail profiles for HARDN applications
     declare -A FIREJAIL_PROFILES=(
-        ["hardn-gui"]="hardn-gui.profile"
         ["hardn-service-manager"]="hardn-service-manager.profile"
         # Add more HARDN applications and their corresponding profile names here
     )

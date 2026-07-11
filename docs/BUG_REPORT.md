@@ -17,7 +17,7 @@ Important
 
 3. Preconditions
 - Installed from: .deb / source / other
-- Services enabled (hardn.service, legion-daemon.service, hardn-api.service, hardn-monitor.service):
+- Services enabled (hardn.service, hardn-api.service):
 - Any non-default settings:
 
 4. Steps to Reproduce
@@ -35,9 +35,7 @@ Important
 7. Logs and Artifacts
 - Relevant journal logs:
   - journalctl -u hardn.service --since "<time>"
-  - journalctl -u legion-daemon.service --since "<time>"
   - journalctl -u hardn-api.service --since "<time>"
-  - journalctl -u hardn-monitor.service --since "<time>"
 - Attach snippets or files if possible
 
 8. Severity

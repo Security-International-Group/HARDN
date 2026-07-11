@@ -3,10 +3,10 @@
 
 ## Overview
 
-HARDN is an open-source security hardening and threat-detection toolkit for
-Debian-based Linux. It automates the security-configuration process, runs
-continuous background monitoring through the LEGION daemon, and gives
-operators a single place to manage it all.
+HARDN is an open-source security hardening and compliance toolkit for
+Debian-based Linux. It automates the security-configuration process, runs a
+STIG/CIS-aligned SCAP/XCCDF audit, and gives operators a single place to
+manage it all from the CLI.
 
 ## What HARDN Is
 
@@ -28,19 +28,19 @@ operators a single place to manage it all.
   `HARDN_ALERT_WEBHOOK_URL`). Shared TTL dedupe stops repeat alerts from
   paging the on-call.
 - **Cron safety**: every scheduled job runs under `flock` so a manual run
-  and the daemon cannot collide. Suricata rule updates stage, validate,
+  and a scheduled run cannot collide. Suricata rule updates stage, validate,
   then atomically swap into place.
 - **Service management**: systemd service orchestration and monitoring.
-- **REST API**: optional HTTP endpoint for remote monitoring and management.
+- **REST API**: optional HTTP endpoint for remote reporting and management.
 - **Interactive interface**: service manager with live status display.
 
-### Monitoring features
+### Audit & reporting features
 
-- **LEGION daemon**: continuous monitoring across syslog, the systemd
-  journal, network metrics, and process telemetry.
-- **IOC processing**: indicator-of-compromise detection and automated
-  response.
-- **Service health monitoring**: live status of every HARDN service.
+- **Compliance audit**: a SCAP/XCCDF engine evaluates STIG/CIS rules and
+  emits a JSON report (rule id, title, status, evidence, severity).
+- **SENTRY drift detection**: a daily sha256 baseline diff of high-value
+  files, wired into the unified alert channel.
+- **Service health**: live status of every HARDN service.
 - **Log aggregation**: alerts.jsonl plus journald is the single channel.
 
 ### Management tools
@@ -50,8 +50,6 @@ operators a single place to manage it all.
 - **Command-line interface**: full CLI for automation and scripting.
 - **REST API**: programmatic access for integration with other security
   tools.
-- **GTK4 GUI**: first-run welcome wizard, tab tooltips, tool inventory,
-  read-only log and alert view.
 
 ## Architecture
 
@@ -60,15 +58,15 @@ operators a single place to manage it all.
 |                    HARDN Security Framework               |
 +-----------------------------------------------------------+
 |   +-------------+  +-------------+  +-------------+       |
-|   | Service     |  | LEGION      |  | REST API    |       |
-|   | Manager     |  | Daemon      |  | Service     |       |
-|   | (Interactive|  | (Monitoring)|  | (Remote     |       |
+|   | Service     |  | Compliance  |  | REST API    |       |
+|   | Manager     |  | Audit       |  | Service     |       |
+|   | (Interactive|  | (SCAP/XCCDF)|  | (Remote     |       |
 |   | Interface)  |  |             |  | Access)     |       |
 |   +-------------+  +-------------+  +-------------+       |
 +-----------------------------------------------------------+
 |  +-------------+  +-------------+  +-------------+        |
-|  | Hardening   |  | Threat      |  | System      |        |
-|  | Scripts     |  | Intelligence|  | Monitoring  |        |
+|  | Hardening   |  | SENTRY      |  | System      |        |
+|  | Scripts     |  | Drift Diff  |  | Reporting   |        |
 |  +-------------+  +-------------+  +-------------+        |
 +-----------------------------------------------------------+
 |                 Debian Linux System                       |
@@ -86,26 +84,22 @@ operators a single place to manage it all.
 - Filesystem and mount hygiene: `fs.protected_*`, world-writable audit,
   file-permission table for `/etc/{passwd,shadow,sudoers,*}`.
 
-### Detection and response
+### Audit and drift detection
 
-- Live monitoring of system and network state.
-- Behavioural analysis against a stored baseline (SQLite-backed under
-  `/var/lib/hardn/legion/`).
-- Indicator-of-compromise processing from threat-intelligence feeds.
-- Automated response gated behind `response_enabled`.
-- SENTRY daily file-drift diff, fed into the unified alert channel.
+- SCAP/XCCDF compliance audit against STIG/CIS rules, emitted as JSON.
+- SENTRY daily file-drift diff of high-value persistence files, fed into
+  the unified alert channel.
+- File and system integrity checks (AIDE).
 
 ### Service management
 
 - Full lifecycle through `systemctl` and `hardn-service-manager`.
 - Service dependencies handled by `systemd`.
-- Service health monitoring through `hardn-monitor.service`.
 - Service restart and recovery via `Restart=on-failure` in unit files.
 
 ### Interfaces
 
 - Interactive console (`hardn-service-manager`).
-- GTK4 desktop GUI (`hardn-gui`).
 - REST API on port 8000 (key-based bearer auth).
 - CLI subcommands (`hardn --help`).
 
@@ -121,7 +115,7 @@ sudo make hardn
 ```
 
 `make build` produces the Debian package; `make hardn` installs it and
-opens the service manager and the GUI.
+opens the interactive service manager.
 
 ### Basic usage
 
@@ -129,10 +123,8 @@ opens the service manager and the GUI.
 sudo hardn --help              # full command list
 sudo hardn --status            # current service state
 sudo hardn --security-report   # one-shot security assessment
-sudo hardn --sentry-check      # SENTRY file-drift diff
 sudo hardn run-module hardening
 sudo hardn run-tool   fail2ban
-sudo hardn legion --create-baseline
 ```
 
 `run-module` and `run-tool` return exit 127 when the script does not exist
@@ -150,15 +142,13 @@ Primary interactive interface. Provides:
 - Log viewing and analysis
 - Configuration management
 
-### LEGION security daemon
+### Compliance audit engine
 
-Continuous monitoring with:
+A C-based SCAP/XCCDF engine (`src/audit/`) that:
 
-- System log analysis
-- Network traffic monitoring
-- Threat-intelligence processing
-- Automated incident response
-- SENTRY file-baseline drift detection
+- Evaluates STIG/CIS rules against the live system
+- Emits a JSON report (rule id, title, status, evidence, severity)
+- Feeds SENTRY file-baseline drift into the unified alert channel
 
 ### HARDN API service
 
@@ -205,9 +195,8 @@ per rule file.
 
 ### Proactive protection
 
-- 24/7 system surveillance through `hardn.service`.
-- Threat-intelligence feed integration.
-- Automated response to detected threats.
+- STIG/CIS hardening applied at install and re-applied on demand.
+- Daily compliance audit and SENTRY baseline diff.
 - SENTRY baseline-diff catches persistence-vector tampering between
   scheduled scans.
 
@@ -243,9 +232,7 @@ open-source solutions.
 ### Resources
 
 - [Service manager guide](hardn-service-manager.md)
-- [LEGION daemon](legion-daemon.md)
 - [HARDN API](hardn-api.md)
-- [Monitor and alert fanout](hardn-monitor.md)
 - [Audit engine internals](hardn-audit.md)
 - [Security posture summary](security-posture.md)
 
@@ -260,7 +247,7 @@ developers, and system administrators are welcome.
 ### Current
 
 - Interactive service manager
-- LEGION security daemon
+- SCAP/XCCDF compliance audit engine
 - REST API service
 - Automated hardening scripts
 - SENTRY file-baseline drift detection
@@ -270,7 +257,7 @@ developers, and system administrators are welcome.
 ### Upcoming
 
 - Web-based dashboard
-- Expanded threat intelligence
+- Expanded compliance rule coverage
 - Multi-system management
 - Additional SENTRY watch sources (AIDE results, package lists)
 

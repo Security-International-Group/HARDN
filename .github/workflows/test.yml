@@ -6,8 +6,8 @@ name: test
 # gating is enforced by branch protection, not by workflow chaining.
 #
 # What this workflow does:
-#   1. Installs the prereqs the harness needs (shellcheck, systemd,
-#      python yaml/fastapi/httpx/psutil, Rust toolchain).
+#   1. Installs the prereqs the harness needs (shellcheck, python3-yaml,
+#      Rust toolchain).
 #   2. Runs bash tests/run-all.sh.
 #   3. Inlines the Markdown report into the GitHub Actions job summary.
 #   4. Uploads the report as an artifact regardless of pass/fail.
@@ -70,42 +70,25 @@ jobs:
 
       - name: Install harness + build dependencies
         # Two groups in one apt invocation:
-        # 1. Harness prereqs (shellcheck, systemd-analyze via the systemd
-        #    package, python3-yaml). Without these the suites would
-        #    SKIP rather than run.
-        # 2. Build prereqs for the hardn + hardn-monitor binaries. The
-        #    workspace Cargo.toml has GTK4/glib/gio/vte4 as top-level
-        #    deps (only hardn-gui uses them, but they sit in the
-        #    workspace graph so `cargo build --bin hardn` still needs
-        #    them to resolve). libvte-2.91-gtk4-dev transitively
-        #    installs every glib/gobject/gio/gtk4-dev that cargo needs.
-        #    Same set ci.yml uses.
+        # 1. Harness prereqs (shellcheck, python3-yaml). Without these the
+        #    suites would SKIP rather than run.
+        # 2. Build prereqs for the hardn binary (pkg-config + libssl/
+        #    libsqlite3 dev headers cargo links against).
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
               shellcheck \
-              systemd \
               python3 \
               python3-yaml \
-              python3-pip \
               pkg-config \
               libssl-dev \
-              libsqlite3-dev \
-              libvte-2.91-gtk4-dev
-          # FastAPI testclient + its httpx dep + psutil for hardn-api.
-          # Use --break-system-packages because Ubuntu 24+ blocks pip
-          # writes into /usr without it.
-          python3 -m pip install --quiet --break-system-packages \
-              fastapi 'httpx<1' psutil
+              libsqlite3-dev
 
-      - name: Pre-build hardn binaries
-        # Only the two binaries the harness actually exercises:
-        # cargo/cargo-test runs `cargo test` on each, and
-        # integration/cli-help spawns `target/debug/hardn`.
-        # `--bins` would also pull in hardn-gui, which drags in GTK4
-        # system libraries (glib-sys, gobject-sys, gio-sys, gtk4-sys,
-        # vte4) that aren't installed in this workflow's environment.
-        run: cargo build --bin hardn --bin hardn-monitor --quiet
+      - name: Pre-build hardn binary
+        # The only binary the harness exercises: cargo/cargo-test runs
+        # `cargo test` on it and integration/cli-help spawns
+        # `target/debug/hardn`.
+        run: cargo build --bin hardn --quiet
 
       - name: Run test harness
         id: harness

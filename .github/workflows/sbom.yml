@@ -1,0 +1,63 @@
+# Software Bill of Materials (CycloneDX) for HARDN.
+# Produces a signed-off dependency inventory for every build and attaches it
+# to releases — a SOC2 supply-chain control (see docs/SPRINT-PLAN.md S0-7/E4).
+name: sbom
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+    branches: ['main']
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  cyclonedx:
+    name: Generate CycloneDX SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+      - name: Install cargo-cyclonedx
+        run: cargo install --locked cargo-cyclonedx
+      - name: Generate SBOM (JSON, all features)
+        run: cargo cyclonedx --format json --all --override-filename sbom
+      - name: Show component count
+        run: |
+          count=$(grep -o '"bom-ref"' sbom.json | wc -l || echo 0)
+          echo "SBOM components: ${count}"
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: hardn-sbom-cyclonedx
+          path: sbom.json
+          if-no-files-found: error
+
+  attach-to-release:
+    name: Attach SBOM to release
+    if: github.event_name == 'release'
+    needs: cyclonedx
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+      - name: Install cargo-cyclonedx
+        run: cargo install --locked cargo-cyclonedx
+      - name: Generate SBOM
+        run: cargo cyclonedx --format json --all --override-filename sbom
+      - name: Attach SBOM to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" sbom.json --clobber

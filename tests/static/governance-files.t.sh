@@ -9,9 +9,8 @@
 # Invariants:
 #
 #   G1  .github/CODEOWNERS assigns an owner to each first-party
-#       subsystem: src/legion, the Python API, the tool scripts,
-#       debian packaging, and the CI workflows. A single catch-all
-#       line is not enough.
+#       subsystem: the tool scripts, debian packaging, and the CI
+#       workflows. A single catch-all line is not enough.
 #
 #   G2  A PR template exists at one of the standard locations and
 #       carries the sections a reviewer needs (Summary, testing).
@@ -29,7 +28,7 @@ CODEOWNERS="$REPO_ROOT/.github/CODEOWNERS"
 
 assert_file_exists "$CODEOWNERS" ".github/CODEOWNERS ships"
 
-tap_plan 8
+tap_plan 6
 
 # G1: each subsystem path must appear as a CODEOWNERS pattern with an
 # @owner on the same line. We match the leading path token, then require
@@ -40,8 +39,6 @@ owner_for() {
 }
 
 for entry in \
-    "src/legion/:src/legion subsystem" \
-    "src/hardn-api.py:Python API" \
     "usr/share/hardn/tools/:tool scripts" \
     "debian/:packaging" \
     ".github/:CI workflows" \

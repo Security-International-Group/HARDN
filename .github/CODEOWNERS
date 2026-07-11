@@ -11,10 +11,6 @@
 # Catch-all default: anything not matched by a rule below.
 *                               @OpenSource-For-Freedom
 
-# LEGION engine and its modules (sentry drift, risk scoring, threat
-# intel, behavioral, correlation, heuristics).
-src/legion/                     @OpenSource-For-Freedom
-
 # CLI, setup, execution, and display layers of the hardn binary.
 src/cli/                        @OpenSource-For-Freedom
 src/core/                       @OpenSource-For-Freedom
@@ -27,21 +23,10 @@ src/utils/                      @OpenSource-For-Freedom
 # The compliance auditor (C).
 src/audit/                      @OpenSource-For-Freedom
 
-# GTK4 desktop viewer and the service monitor.
-src/hardn-gui.rs                @OpenSource-For-Freedom
-src/hardn-monitor.rs            @OpenSource-For-Freedom
-
-# Python REST API. Slated for replacement by a Rust axum service; until
-# then changes here need review because it is the one non-Rust runtime.
-src/hardn-api.py                @OpenSource-For-Freedom
-
 # Shell tool integrations run as root during hardening.
 usr/share/hardn/tools/          @OpenSource-For-Freedom
 usr/share/hardn/modules/        @OpenSource-For-Freedom
 usr/share/hardn/scripts/        @OpenSource-For-Freedom
-
-# systemd units.
-systemd/                        @OpenSource-For-Freedom
 
 # Debian packaging.
 debian/                         @OpenSource-For-Freedom

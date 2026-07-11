@@ -5,7 +5,6 @@
 # this file; we only handle the things debhelper doesn't know about:
 #
 #   * remove /etc/profile.d/hardn-paths.sh (created by postinst)
-#   * remove the system-wide desktop launcher (shipped by the package)
 #   * on `purge`, also drop the data dirs HARDN populated at runtime
 #     (/var/log/hardn, /var/lib/hardn, /etc/hardn, /run/hardn)
 #
@@ -27,15 +26,6 @@ case "$1" in
 
     purge)
         [ -f "$PROFILE_D_FILE" ] && rm -f "$PROFILE_D_FILE" || true
-
-        # System-wide desktop file. Per-user copies live in $HOME/.local and
-        # are left for the uninstall script (or the user) to clean up — dpkg
-        # has no business in another user's home.
-        [ -f /usr/share/applications/hardn-gui.desktop ] && \
-            rm -f /usr/share/applications/hardn-gui.desktop || true
-        if command -v update-desktop-database >/dev/null 2>&1; then
-            update-desktop-database -q /usr/share/applications 2>/dev/null || true
-        fi
 
         # Runtime data dirs. Match what `apt purge` users expect.
         rm -rf /var/log/hardn 2>/dev/null || true

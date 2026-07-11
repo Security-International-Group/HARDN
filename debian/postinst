@@ -37,19 +37,6 @@ ensure_hardn_paths() {
     chown root:hardn /usr/share/hardn/src 2>/dev/null || true
     chmod 2755 /usr/share/hardn/src 2>/dev/null || true
 }
-        if [ -d "systemd" ]; then
-            for service_file in systemd/*.service; do
-                if [ -f "$service_file" ]; then
-                    install -m 644 "$service_file" /lib/systemd/system/ || true
-                fi
-            done
-        fi
-        
-        # Reload systemd if any services were installed + group add
-        if [ -d "systemd" ] && command -v systemctl >/dev/null; then
-            systemctl daemon-reload || true
-        fi
-
 RUNTIME_ROOT="/usr/share/hardn"
 MODULE_DIR="${RUNTIME_ROOT}/modules"
 TOOL_DIR="${RUNTIME_ROOT}/tools"
@@ -86,11 +73,6 @@ case "$1" in
         mkdir -p /var/log/hardn /var/lib/hardn /var/lib/hardn/backups 2>/dev/null || true
         chown root:hardn /var/log/hardn /var/lib/hardn /var/lib/hardn/backups 2>/dev/null || true
         chmod 2770 /var/log/hardn /var/lib/hardn /var/lib/hardn/backups 2>/dev/null || true
-
-        # Initialize Legion baseline database directory
-        mkdir -p /var/lib/hardn/baselines 2>/dev/null || true
-        chown root:hardn /var/lib/hardn/baselines 2>/dev/null || true
-        chmod 2770 /var/lib/hardn/baselines 2>/dev/null || true
 
         # Config directory: readable by group but writable only by root (maintain security)
         if [ -d /etc/hardn ]; then
@@ -145,84 +127,6 @@ export HARDN_MODULE_PATH=\"${MODULE_DIR}:${LEGACY_MODULE_DIR}\"
 export HARDN_TOOL_PATH=\"${TOOL_DIR}:${LEGACY_TOOL_DIR}\"
 " > "${PROFILE_D_FILE}"
         chmod 644 "${PROFILE_D_FILE}"
-
-        # Install systemd service files if they exist
-        if [ -d "systemd" ]; then
-            for service_file in systemd/*.service; do
-                if [ -f "$service_file" ]; then
-                    install -m 644 "$service_file" /lib/systemd/system/ || true
-                fi
-            done
-        fi
-        
-        # Reload and enable systemd services updated 
-        if command -v systemctl >/dev/null 2>&1 && systemctl is-system-running >/dev/null 2>&1 || [ "${container:-}" != "docker" ]; then
-            systemctl daemon-reload || true
-            # On upgrades from prior HARDN versions that enabled both
-            # hardn.service AND legion-daemon.service, the two would race on
-            # the baseline SQLite DB. Migrate any such install to the single
-            # hardn.service entry.
-            if systemctl is-enabled legion-daemon.service >/dev/null 2>&1; then
-                systemctl disable --now legion-daemon.service || true
-            fi
-            # Enable services in dependency order. legion-daemon.service is
-            # intentionally NOT enabled — hardn.service runs the same legion
-            # daemon, and the two conflict on the baseline SQLite DB. Operators
-            # who want to swap to the response-disabled variant can:
-            #   systemctl disable hardn.service
-            #   systemctl enable --now legion-daemon.service
-            systemctl enable hardn.service || true
-            systemctl enable hardn-api.service || true
-            systemctl enable hardn-monitor.service || true
-        else
-            echo "systemd not available or not running, skipping service enablement."
-        fi
-
-        ICON_SRC="/usr/share/pixmaps/hardn-gui.jpeg"
-        if [ -f "${ICON_SRC}" ]; then
-            # Determine a non-root invoking user safely
-            TARGET_USER="${SUDO_USER:-}"
-            if [ -z "${TARGET_USER}" ] || [ "${TARGET_USER}" = "root" ]; then
-                # logname may fail in some contexts; ensure it's valid
-                _LOGNAME=$(logname 2>/dev/null || true)
-                if [ -n "${_LOGNAME}" ] && getent passwd "${_LOGNAME}" >/dev/null; then
-                    TARGET_USER="${_LOGNAME}"
-                fi
-            fi
-
-            # Only deploy per-user files when we have a resolvable, non-root user
-            if [ -n "${TARGET_USER}" ] && [ "${TARGET_USER}" != "root" ] && getent passwd "${TARGET_USER}" >/dev/null; then
-                TARGET_HOME=$(getent passwd "${TARGET_USER}" | cut -d: -f6)
-                if [ -n "${TARGET_HOME}" ] && [ -d "${TARGET_HOME}" ]; then
-                    DESKTOP_DIR="${TARGET_HOME}/.local/share/applications"
-                    ICON_DIR="${TARGET_HOME}/.local/share/icons"
-                    DESKTOP_PATH="${DESKTOP_DIR}/hardn-gui.desktop"
-                    ICON_DEST="${ICON_DIR}/hardn-gui.jpeg"
-
-                    # Create directories as root, then copy files then chown carefully
-                    install -d -m 755 "${DESKTOP_DIR}" "${ICON_DIR}" || true
-                    install -m 644 "${ICON_SRC}" "${ICON_DEST}" || cp -f "${ICON_SRC}" "${ICON_DEST}" 2>/dev/null || true
-                    cat <<EOF > "${DESKTOP_PATH}"
-[Desktop Entry]
-Type=Application
-Name=HARDN Control Center
-Comment=Launch the HARDN monitoring console
-Exec=/usr/bin/hardn-gui
-Icon=${ICON_DEST}
-Terminal=false
-Categories=Security;System;
-StartupNotify=true
-EOF
-                    # Change ownership only if user exists and home directory matches
-                    chown "${TARGET_USER}:${TARGET_USER}" "${DESKTOP_PATH}" "${ICON_DEST}" 2>/dev/null || true
-                    echo "HARDN desktop launcher deployed for ${TARGET_USER}."
-                else
-                    echo "HARDN desktop launcher skipped: unable to resolve home for ${TARGET_USER}."
-                fi
-            else
-                echo "HARDN desktop launcher skipped: no non-root sudo user detected."
-            fi
-        fi
 
         echo "HARDN installed successfully."
         echo "Run 'sudo hardn' to execute modules, or 'sudo hardn run-module <name>' for one module."

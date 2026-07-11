@@ -13,9 +13,9 @@
 </p>
 
 HARDN is a security hardening toolkit for Debian-based Linux. It automates the
-lockdown of a fresh install, watches for drift on the files attackers care
-about, and keeps the operator in the loop through a GUI, an API, and a service
-manager.
+lockdown of a fresh install, runs a STIG/CIS-aligned compliance audit, and
+watches for drift on the files attackers care about — all from the CLI and an
+optional REST API. A local web dashboard is planned for a later release.
 
 **Demo Version.** This release demonstrates the core features of HARDN-XDR. For
 production use and advanced features, contact Security International Group.
@@ -40,13 +40,12 @@ production use and advanced features, contact Security International Group.
   (`HARDN_ALERT_WEBHOOK_URL`). A TTL-based dedupe cache stops a noisy condition
   from paging the on-call repeatedly.
 - **Cron safety.** Every scheduled job runs under `flock` so a manual run and
-  the daemon cannot collide. Suricata rule updates land in a staging dir,
+  a scheduled run cannot collide. Suricata rule updates land in a staging dir,
   pass `suricata -T -S` validation, and atomically swap into place via
   `rename(2)`.
-- **GUI.** GTK4 monitoring dashboard with a first-run welcome wizard, tab
-  tooltips, and an auto-generated inventory of every tool under
-  `usr/share/hardn/tools`. Read-only; never runs privileged commands without
-  a sudo prompt.
+- **Compliance audit.** A SCAP/XCCDF audit engine evaluates STIG/CIS rules and
+  emits a JSON report (rule id, title, status, evidence, severity) for review
+  or ingestion.
 - **API.** Optional REST endpoint on port 8000 with SSH-key bearer auth.
   Unauthenticated `/metrics` endpoint exposes Prometheus-format telemetry
   (service health, alert counts, SENTRY drift, cron job state, baseline
@@ -67,27 +66,17 @@ sudo make build
 sudo make hardn
 ```
 
-`make build` produces the Debian package. `make hardn` installs it and starts
-the GUI service manager, which is where you trigger the actual hardening run.
-
-### First run
-
-On first launch the GUI shows a four-step Debian-style welcome wizard
-(overview, GUI tour, common actions, where to get help) with **Skip** and
-**Don't show again** options. The marker file is
-`$XDG_CONFIG_HOME/hardn/welcome-seen`; set `HARDN_NO_WELCOME=1` to suppress
-it under kiosk / CI / autostart.
+`make build` produces the Debian package. `make hardn` installs it. Trigger a
+hardening run from the CLI (see below) or the interactive service manager.
 
 ### Common commands
 
 ```bash
 sudo hardn --help              # full command list
 sudo hardn --status            # current service state
-sudo hardn --sentry-check      # diff high-value files vs baseline
 sudo hardn run-module hardening
 sudo hardn run-tool   fail2ban
-sudo hardn legion --create-baseline
-sudo hardn-service-manager     # interactive menu (also launched by the GUI)
+sudo hardn-service-manager     # interactive menu
 ```
 
 `run-tool` and `run-module` now return exit 127 (POSIX "command not found")
@@ -133,19 +122,16 @@ rotation guidance.
 
 ## Services
 
-After install, `debian/postinst` enables four systemd units:
+After install, `debian/postinst` enables these systemd units:
 
 | Unit | Purpose |
 |---|---|
-| `hardn.service` | Core hardening + LEGION monitoring loop |
+| `hardn.service` | Runs the hardening + compliance-audit pass |
 | `hardn-api.service` | REST API on port 8000 |
-| `hardn-monitor.service` | Service health + alert producer |
-| `hardn-monitor.service` companions | Cron orchestrator runs inside |
 
-`legion-daemon.service` is intentionally not enabled on new installs.
-`hardn.service` runs the same LEGION daemon code; running both at once
-contends on the baseline SQLite database. Operators who want the
-response-disabled variant can swap in `legion-daemon.service` manually.
+Scheduled jobs (the SENTRY file-drift diff, Suricata rule refresh, AIDE) run
+under `flock` via systemd timers / cron so a manual run and a scheduled run
+cannot collide.
 
 ## Environment overrides
 
@@ -171,7 +157,6 @@ The hardening modules and tools read these in addition to the defaults:
 | `HARDN_ALERT_WEBHOOK_URL` | (none) | When set, alerts POST to this URL via `curl` |
 | `HARDN_ALERT_JOURNALD_TAG` | `HARDN-ALERT` | syslog tag for journald-bound alerts |
 | `HARDN_ALERT_DEDUPE_TTL_SEC` | `21600` | Dedupe window for journald + webhook fanout |
-| `HARDN_NO_WELCOME` | `0` | `1` suppresses the GUI welcome wizard |
 | `HARDN_PROMETHEUS_PORT` | `9090` | Prometheus listen port |
 | `HARDN_PROMETHEUS_URL` | `http://localhost:9090` | URL Grafana provisions as the default data source |
 | `HARDN_PROMETHEUS_ALLOWED_CIDRS` | (none) | Allowlist for the Prometheus port |
@@ -180,8 +165,8 @@ The hardening modules and tools read these in addition to the defaults:
 ## Basic troubleshooting
 
 ```bash
-sudo systemctl status hardn.service hardn-api.service hardn-monitor.service
-sudo journalctl -u hardn.service -u hardn-monitor.service -f
+sudo systemctl status hardn.service hardn-api.service
+sudo journalctl -u hardn.service -u hardn-api.service -f
 tail -F /var/log/hardn/*.log
 tail -F /var/log/hardn/alerts.jsonl
 journalctl -t HARDN-ALERT --since today    # post-PR-C: alert fanout
@@ -194,13 +179,10 @@ HARDN logs those as INFO and continues.
 ## Documentation
 
 - [HARDN service](docs/hardn.md)
-- [LEGION daemon](docs/legion-daemon.md)
 - [HARDN API](docs/hardn-api.md)
 - [Service manager guide](docs/hardn-service-manager.md)
-- [Monitor + alert fanout](docs/hardn-monitor.md)
 - [Audit engine internals](docs/hardn-audit.md)
 - [Security posture summary](docs/security-posture.md)
-- [Architecture diagrams](docs/diagram.md)
 
 ## Support
 

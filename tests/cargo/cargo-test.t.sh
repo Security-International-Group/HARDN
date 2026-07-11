@@ -18,7 +18,7 @@ cd "$REPO_ROOT"
 
 # Run each binary's tests. cargo doesn't expose JSON output reliably
 # across versions, so we parse the human-readable summary.
-binaries=(hardn hardn-monitor)
+binaries=(hardn)
 tap_plan "${#binaries[@]}"
 
 for bin in "${binaries[@]}"; do

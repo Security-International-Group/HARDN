@@ -28,13 +28,12 @@ fi
 BIN="$REPO_ROOT/target/debug/hardn"
 assert_file_exists "$BIN" "hardn binary present after build"
 
-tap_plan 5
+tap_plan 4
 
-# --help: exits 0 and lists the new flags from PRs C / E / F / G / I.
+# --help: exits 0 and lists the current CLI flags.
 out=$("$BIN" --help 2>&1)
 ec=$?
 assert_eq "0" "$ec" "hardn --help exits 0"
-assert_contains "$out" "sentry-check" "--help advertises --sentry-check"
 assert_contains "$out" "enable-selinux" "--help advertises --enable-selinux"
 
 # Missing tool: PR-D made this return 127 (POSIX "command not found").

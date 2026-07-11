@@ -79,8 +79,8 @@ body:
     id: preconditions
     attributes:
       label: Preconditions
-      description: Describe the setup (installation method, enabled services, non-default settings)
-      placeholder: "- Installed from: .deb / source / other\n- Services enabled: hardn.service, legion-daemon.service\n- Non-default settings:"
+      description: Describe the setup (installation method, non-default settings)
+      placeholder: "- Installed from: .deb / source / other\n- Non-default settings:"
     validations:
       required: true
 
@@ -120,8 +120,8 @@ body:
       label: Logs and Artifacts
       description: Include relevant logs and files
       placeholder: |
-        - journalctl -u hardn.service --since "<time>"
-        - journalctl -u legion-daemon.service --since "<time>"
+        - hardn --version and the exact command you ran
+        - relevant output from /var/log/hardn/ or the terminal
         Attach snippets or files if possible.
     validations:
       required: false

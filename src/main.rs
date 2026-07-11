@@ -5,7 +5,6 @@ mod cli;
 mod core;
 mod display;
 mod execution;
-mod legion;
 mod services;
 mod utils;
 
@@ -340,7 +339,7 @@ fn get_tool_status_detail(tool_name: &str) -> ToolStatusDetail {
                 Err(_) => tool_detail(ToolStatusType::NotInstalled, false, false),
             }
         }
-        "AppArmor" | "Fail2Ban" | "Auditd" | "ClamAV" | "Grafana" | "Legion" | "Suricata" => {
+        "AppArmor" | "Fail2Ban" | "Auditd" | "ClamAV" | "Grafana" | "Suricata" => {
             // These are standard systemd services
             let service_name = match tool_name {
                 "AppArmor" => "apparmor",
@@ -348,7 +347,6 @@ fn get_tool_status_detail(tool_name: &str) -> ToolStatusDetail {
                 "Auditd" => "auditd",
                 "ClamAV" => "clamav-daemon",
                 "Grafana" => "grafana-server",
-                "Legion" => "legion-daemon",
                 "Suricata" => "suricata",
                 _ => return tool_detail(ToolStatusType::NotInstalled, false, false),
             };
@@ -596,7 +594,7 @@ fn generate_security_report() {
     let mut enabled_tools: u32 = 0;
     let mut installed_tools: u32 = 0;
     let mut tool_points: f64 = 0.0;
-    let total_tools: u32 = 13;
+    let total_tools: u32 = 12;
 
     // Check each tool with appropriate method
     let tool_statuses = vec![
@@ -608,7 +606,6 @@ fn generate_security_report() {
         ("ClamAV", get_tool_status_detail("ClamAV")),
         ("Firejail", get_tool_status_detail("Firejail")),
         ("Grafana", get_tool_status_detail("Grafana")),
-        ("Legion", get_tool_status_detail("Legion")),
         ("OSSEC", get_tool_status_detail("OSSEC")),
         ("SELinux", get_tool_status_detail("SELinux")),
         ("Suricata", get_tool_status_detail("Suricata")),
@@ -734,11 +731,7 @@ fn generate_security_report() {
     }
 
     // Check HARDN services
-    let hardn_services = vec![
-        "hardn.service",
-        "legion-daemon.service",
-        "hardn-monitor.service",
-    ];
+    let hardn_services = vec!["hardn.service", "hardn-monitor.service"];
     let mut active_services = 0;
     let mut service_status_entries: Vec<HardnServiceStatusEntry> = Vec::new();
     for service in &hardn_services {
@@ -1937,14 +1930,7 @@ fn get_tool_categories() -> Vec<ToolCategory> {
     vec![
         ToolCategory::new(
             "Security Scanners",
-            vec![
-                "rkhunter",
-                "aide",
-                "debsums",
-                "yara",
-                "legion",
-                "chkrootkit",
-            ],
+            vec!["rkhunter", "aide", "debsums", "yara", "chkrootkit"],
         ),
         ToolCategory::new(
             "Access Control",
@@ -1952,7 +1938,7 @@ fn get_tool_categories() -> Vec<ToolCategory> {
         ),
         ToolCategory::new(
             "Network Security",
-            vec!["ufw", "fail2ban", "legion", "openssh", "iptables"],
+            vec!["ufw", "fail2ban", "openssh", "iptables"],
         ),
         ToolCategory::new(
             "System Monitoring",
@@ -2107,11 +2093,6 @@ fn get_security_tools() -> Vec<SecurityToolInfo> {
             name: "ClamAV",
             service_name: "clamav-daemon",
             description: "Antivirus engine for detecting trojans and malware",
-        },
-        SecurityToolInfo {
-            name: "Legion",
-            service_name: "legion-daemon",
-            description: "Continuous anomaly detection and network telemetry",
         },
         SecurityToolInfo {
             name: "OSSEC",
@@ -2277,7 +2258,7 @@ fn get_service_status_detailed(service: &str) -> String {
 fn manage_service(action: &str) -> i32 {
     // List of manageable HARDN services (in dependency order)
     // Note: hardn-monitor is optional and may not be present
-    let services = vec!["hardn", "hardn-api", "legion-daemon"];
+    let services = vec!["hardn", "hardn-api"];
     let optional_services = vec!["hardn-monitor"];
 
     match action {
@@ -2547,7 +2528,6 @@ fn interactive_service_monitor() -> i32 {
     let services = vec![
         "hardn.service",
         "hardn-api.service",
-        "legion-daemon.service",
         "hardn-monitor.service",
     ];
 
@@ -2646,8 +2626,6 @@ fn interactive_service_monitor() -> i32 {
                             "hardn",
                             "-u",
                             "hardn-api",
-                            "-u",
-                            "legion-daemon",
                             "-u",
                             "hardn-monitor",
                             "--since",
@@ -2750,7 +2728,6 @@ fn display_formatted_logs(logs: &str) {
 
         // Check if this is a new log entry (starts with timestamp or contains service name with PID)
         let is_new_entry = line.contains("hardn[") ||
-                          line.contains("legion[") ||
                           line.contains("hardn-monitor[") ||
                           line.starts_with("2025-") || // Year prefix for timestamps
                           line.starts_with("2024-");
@@ -2812,7 +2789,7 @@ fn format_log_entry(entry: &str) -> String {
     }
 
     // Extract service name
-    for service in &["hardn", "legion", "hardn-monitor"] {
+    for service in &["hardn", "hardn-monitor"] {
         let needle = format!("{}[", service);
         if entry.contains(&needle) {
             formatted.push_str(&format!("{}: ", service.to_uppercase()));
@@ -2823,9 +2800,7 @@ fn format_log_entry(entry: &str) -> String {
     // Handle different types of log entries
     if entry.contains("{\"timestamp\"") || entry.contains("{\"event") {
         // JSON log entry - summarize it
-        if entry.contains("legion-network-sensor") {
-            formatted.push_str("Legion network sensor alert");
-        } else if entry.contains("\"event_type\":\"stats\"") {
+        if entry.contains("\"event_type\":\"stats\"") {
             formatted.push_str("Network statistics logged");
         } else if entry.contains("NETWORK ALERT") {
             formatted.push_str("🌐 Network monitoring alert");
@@ -2909,7 +2884,7 @@ fn show_status() {
 
     // Check HARDN Services
     println!("HARDN SERVICES:");
-    let hardn_services = vec!["hardn", "hardn-api", "legion-daemon"];
+    let hardn_services = vec!["hardn", "hardn-api"];
     let mut any_active = false;
 
     for service_name in &hardn_services {
@@ -2997,8 +2972,6 @@ fn show_status() {
                 "-u",
                 "hardn.service",
                 "-u",
-                "legion-daemon.service",
-                "-u",
                 "hardn-monitor.service",
                 "-n",
                 "10",
@@ -3080,9 +3053,7 @@ AVAILABLE COMMANDS:
   service <action>         Manage services (enable/disable/start/stop/restart)
   run-module <name>        Run specific hardening module
   run-tool <name>          Run specific security tool
-  legion <options>         LEGION security monitoring
   --security-report        Generate comprehensive security assessment
-  --sentry-check           Diff high-value files against baseline (cron-friendly)
   --enable-selinux         ⚠️  Enable SELinux (DISABLES AppArmor, REQUIRES REBOOT)
   --uninstall [flags]      Uninstall HARDN (see --uninstall --help for flags)
 
@@ -3168,73 +3139,6 @@ fn handle_run_tool(tool_dirs: &[PathBuf], tool_name: &str, module_dirs: &[PathBu
     }
 }
 
-/// Run the sentry baseline-diff check. Prints a short report and exits 0
-/// on success. Alerts are emitted via the shared alert channel.
-fn run_sentry_check() -> i32 {
-    let report = crate::legion::modules::sentry::run_check();
-    if report.first_run {
-        println!(
-            "[sentry] baseline created ({} files watched). No alerts on first run.",
-            report.watched_files
-        );
-    } else {
-        println!(
-            "[sentry] watched={} added={} removed={} changed={} (total={})",
-            report.watched_files,
-            report.added.len(),
-            report.removed.len(),
-            report.changed.len(),
-            report.total_changes()
-        );
-        for p in &report.added {
-            println!("  + {}", p);
-        }
-        for p in &report.removed {
-            println!("  - {}", p);
-        }
-        for p in &report.changed {
-            println!("  ~ {}", p);
-        }
-    }
-    EXIT_SUCCESS
-}
-
-/// Run the LEGION monitoring tool
-fn run_legion(args: &[String]) -> i32 {
-    // Pass the remaining arguments to the legion module
-    // Skip "hardn" and "legion" from the args
-    let legion_args = if args.len() > 2 {
-        args[2..].to_vec()
-    } else {
-        vec![]
-    };
-
-    // Set up environment for legion
-    // SAFETY: called once at startup before any threads are spawned
-    unsafe { std::env::set_var("RUST_BACKTRACE", "1") };
-
-    // Ensure LEGION banner and colorized output are ready before checks begin
-    crate::legion::functions::enable_color(
-        std::io::IsTerminal::is_terminal(&std::io::stdout())
-            && std::env::var_os("NO_COLOR").is_none(),
-    );
-    crate::legion::banner::display_banner();
-
-    // Create a tokio runtime for async legion execution
-    let rt = tokio::runtime::Runtime::new().unwrap();
-
-    // Call the legion module
-    rt.block_on(async {
-        match crate::legion::core::legion::run_with_args(&legion_args).await {
-            Ok(()) => EXIT_SUCCESS,
-            Err(e) => {
-                log_message(LogLevel::Error, &format!("LEGION failed: {}", e));
-                EXIT_FAILURE
-            }
-        }
-    })
-}
-
 /* ---------- Main Entry Point ---------- */
 
 /// Main entry point for HARDN
@@ -3257,9 +3161,7 @@ fn main() {
         print_banner();
     }
 
-    let exit_code = if args.len() >= 2 && (args[1] == "legion" || args[1] == "--legion") {
-        run_legion(&args)
-    } else if args.len() >= 2 && (args[1] == "--uninstall" || args[1] == "uninstall") {
+    let exit_code = if args.len() >= 2 && (args[1] == "--uninstall" || args[1] == "uninstall") {
         uninstall_hardn(&args)
     } else {
         match args.len() {
@@ -3313,7 +3215,6 @@ fn main() {
                     EXIT_SUCCESS
                 }
                 "--enable-selinux" | "enable-selinux" => enable_selinux(),
-                "--sentry-check" | "sentry-check" => run_sentry_check(),
                 _ => {
                     log_message(LogLevel::Error, &format!("Unknown option: {}", args[1]));
                     print_help();

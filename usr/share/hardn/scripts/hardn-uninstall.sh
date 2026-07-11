@@ -93,7 +93,6 @@ if [ "$ASSUME_YES" -ne 1 ] && [ "$DRY_RUN" -ne 1 ]; then
 ═══════════════════════════════════════════════════════════════════
 
 This will:
-  - Stop and disable hardn / legion-daemon / hardn-api / hardn-monitor
   - Remove HARDN-written drop-in config files
   - Remove HARDN runtime data (/var/log/hardn, /var/lib/hardn)
   - Remove the hardn system user and group
@@ -126,16 +125,7 @@ run_cmd() {
     fi
 }
 
-# ---------- Step 1: stop & disable services ----------
-HARDN_STATUS info "Stopping HARDN services"
-for svc in hardn-monitor.service hardn-api.service hardn.service legion-daemon.service; do
-    if systemctl list-unit-files 2>/dev/null | grep -q "^${svc}"; then
-        run_cmd "systemctl stop ${svc} 2>/dev/null || true"
-        run_cmd "systemctl disable ${svc} 2>/dev/null || true"
-    fi
-done
-
-# ---------- Step 2: remove HARDN-written drop-in config files ----------
+# ---------- Step 1: remove HARDN-written drop-in config files ----------
 HARDN_STATUS info "Removing HARDN drop-in config files"
 HARDN_OWNED_FILES=(
     /etc/audit/rules.d/99-hardn-hardening.rules
@@ -266,7 +256,7 @@ if [ "$KEEP_DATA" -ne 1 ]; then
     # /dev/null so the recovery-summary HARDN_STATUS calls below don't undo
     # the cleanup we're about to do.
     export HARDN_LOG_FILE=/dev/null
-    # /var/lib/hardn covers everything below it: baselines, sentry/baseline.json,
+    # /var/lib/hardn covers everything below it: baselines,
     # alerts/seen.json, suricata-rules-staging, backups, etc.
     run_cmd "rm -rf /var/log/hardn /var/lib/hardn"
     # /run is tmpfs so the cron-locks dir disappears at reboot, but clean it
