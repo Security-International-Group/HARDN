@@ -15,7 +15,7 @@ credentials).
 | `security.yml` | `gitleaks` | No secrets in the repo history | T7 |
 | `security.yml` | `dependency-review` | No new high-severity dep on PRs | T6 |
 | `sbom.yml` | `cyclonedx` | CycloneDX SBOM produced per build, attached to releases | T6 / SOC2 |
-| `ci.yml` | build/test | fmt, clippy `-D warnings`, tests, `.deb` build | — |
+| `ci.yml` | build/test | fmt, clippy `-D warnings`, tests, `.deb` build | - |
 | `codeql.yml` | analyze | SAST | T5 |
 
 ## Make them required (repo admin, one time)
@@ -45,7 +45,7 @@ Also enable, in **Settings → General / Rules**:
 
 ## Before flipping to required
 - SHA-pin `actions/dependency-review-action` (currently `@v4`, matching the repo
-  convention) — replace with the `@<sha> # v4.x` form used elsewhere.
+  convention) - replace with the `@<sha> # v4.x` form used elsewhere.
 - Confirm `GITLEAKS_VERSION` in `security.yml` is current; a stale pin fails
   loudly (by design) rather than skipping the scan.
 - First run of `cargo-audit`/`cargo-deny`/`cyclonedx` compiles the tool from

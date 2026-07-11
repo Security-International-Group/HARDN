@@ -1,8 +1,8 @@
-# HARDN Rebuild — Sprint Plan
+# HARDN Rebuild - Sprint Plan
 
 **Owner:** DevSecOps (Tim Burns)
 **Program window:** Sprint 0 + 6 delivery sprints (2 weeks each ≈ 14 weeks)
-**Status:** Draft v1 — 2026-07-10
+**Status:** Sprint 0, 1, and 2 delivered (LEGION excision + DevSecOps gates, loopback compliance API + console, auth/RBAC + hash-chained audit log + evidence export); the C audit engine and live host control detection are wired. Remaining: FIPS-ready crypto (Sprint 5) and Debian packaging + release provenance (Sprint 6).
 
 ---
 
@@ -33,7 +33,7 @@ The dashboard aesthetic is **operational, not consumer**: dense, dark, monospace
 └──────────────────────────────────────────────────────────────┘
 ```
 
-**Reconciling "no daemon" with "web dashboard":** the LEGION monitoring daemon is gone for good. What replaces it is a **read-mostly compliance API** — it serves already-computed audit JSON, exposes system telemetry, and runs audits *on demand*. It is socket-activated, binds loopback/unix-socket only, and does no continuous hunting. This is the single deliberate daemon we keep, and it exists only to back the dashboard.
+**Reconciling "no daemon" with "web dashboard":** the LEGION monitoring daemon is gone for good. What replaces it is a **read-mostly compliance API** - it serves already-computed audit JSON, exposes system telemetry, and runs audits *on demand*. It is socket-activated, binds loopback/unix-socket only, and does no continuous hunting. This is the single deliberate daemon we keep, and it exists only to back the dashboard.
 
 **Components inherited (keep):** C audit engine + SCAP rules, `src/setup` hardening, `src/core` (config/cron/types), `src/execution`, `src/utils` (paths/logging/path_security), CLI dispatch in `main.rs`.
 
@@ -56,21 +56,21 @@ Two tracks run in parallel:
   - Secrets never in code/logs; config via env/keyring.
 - **Process controls** the SDLC must enforce (these produce the SOC2 evidence):
   - Branch protection, mandatory PR review, signed commits, linear history.
-  - CI security gates: SAST (CodeQL — already present), dependency review, secrets scan, `cargo audit`/`cargo deny`, license check.
+  - CI security gates: SAST (CodeQL - already present), dependency review, secrets scan, `cargo audit`/`cargo deny`, license check.
   - SBOM (CycloneDX) generated and attached to every release; SLSA-style build provenance.
   - Change management traceable: every change ties to an issue; CHANGELOG maintained.
 
-### FIPS ("if possible" — scoped honestly, two layers)
+### FIPS ("if possible" - scoped honestly, two layers)
 Full-OS FIPS 140-3 is a *host/kernel* posture. HARDN is a compliance tool, so it **targets and verifies** a FIPS host rather than shipping one. Two layers:
 
-**Layer A — app crypto (we own this):**
+**Layer A - app crypto (we own this):**
 - **FIPS 140-3 validated module** for all crypto the app performs: replace the `sha2` crate and any hand-rolled HMAC with **`aws-lc-rs` (FIPS feature)**. Any TLS via **`rustls` + `aws-lc-rs`** FIPS mode.
 - A documented "FIPS mode" build flag + startup self-check that only validated primitives are reachable.
 - Deliverable: **"FIPS-ready crypto surface,"** with a written boundary. We do not claim host FIPS compliance for the app.
 
-**Layer B — host FIPS posture (we detect + report):**
+**Layer B - host FIPS posture (we detect + report):**
 - Debian 12 has no official FIPS 140-3 kernel module, but it supports kernel **FIPS mode** via `fips-mode-setup` (`crypto-policies` pkg → `fips=1` → `/proc/sys/crypto/fips_enabled`), plus an addable **OpenSSL 3 FIPS 140-2 provider** (community-built; note 140-2 is on the CMVP historical list).
-- HARDN reads `/proc/sys/crypto/fips_enabled` and adds a **host-FIPS compliance check** (STIG/CIS-style) surfaced on the dashboard — a natural data point for the audit engine.
+- HARDN reads `/proc/sys/crypto/fips_enabled` and adds a **host-FIPS compliance check** (STIG/CIS-style) surfaced on the dashboard - a natural data point for the audit engine.
 - `docs/FIPS.md` ships a "run HARDN on a FIPS-mode Debian 12 host" recipe **with the known caveats**: enabling `fips=1` breaks `apt`/`libgcrypt` (MD5 exception removed → `apt-get update` fatal error) and Docker install on Bookworm; 140-2 provider is sunset vs 140-3.
 
 ---
@@ -103,11 +103,11 @@ A ticket is done only when:
 
 ## 6. Sprint breakdown
 
-### Sprint 0 — Foundations & recovery (1 week)
+### Sprint 0 - Foundations & recovery (1 week)
 **Goal:** durable repo, green build, SDLC scaffolding, threat model. Nothing new is built until the base is sound.
 
 - **S0-1 (P0)** Move the excision work off `/tmp`. Fork/clone HARDN to a durable path, push the `strip-legion` branch to origin. *AC: branch exists on GitHub, CI runs on it.*
-- **S0-2 (P0)** Finish LEGION excision (E1): complete `main.rs` surgery (remove `run_legion()` + LEGION service-mgmt fns; 4 real code refs + string literals), delete orphaned `utils/alerts.rs`, drop `gtk4/glib/gio/vte4/comfy-table` from Cargo.toml, remove the dead `axum` orphan *only if* we defer the API (we do not — keep axum). *AC: `cargo build --release` succeeds with the zig toolchain; `hardn --help` shows no legion/gui/daemon subcommands.*
+- **S0-2 (P0)** Finish LEGION excision (E1): complete `main.rs` surgery (remove `run_legion()` + LEGION service-mgmt fns; 4 real code refs + string literals), delete orphaned `utils/alerts.rs`, drop `gtk4/glib/gio/vte4/comfy-table` from Cargo.toml, remove the dead `axum` orphan *only if* we defer the API (we do not - keep axum). *AC: `cargo build --release` succeeds with the zig toolchain; `hardn --help` shows no legion/gui/daemon subcommands.*
 - **S0-3 (P0)** Redo the three interrupted sweeps (packaging, docs/CI, tests) so no LEGION strings remain anywhere. *AC: `grep -ri legion` returns only historical CHANGELOG entries.*
 - **S0-4** Branch protection on `main`: required reviews, required checks, signed commits, linear history.
 - **S0-5** CI security gate baseline: add `cargo audit`, `cargo deny`, secrets scan (gitleaks), dependency-review; keep CodeQL. *AC: all gates run on PR and block on failure.*
@@ -118,10 +118,10 @@ A ticket is done only when:
 
 ---
 
-### Sprint 1 — Compliance REST API core (E2)
+### Sprint 1 - Compliance REST API core (E2)
 **Goal:** the loopback API serves real audit data. This is the "confirm data points + REST connections" backbone.
 
-- **S1-1** Revive `hardn-apid` as `src/api/` — axum on `127.0.0.1` (configurable) or unix socket, **never 0.0.0.0**. Wire `hardn serve` subcommand.
+- **S1-1** Revive `hardn-apid` as `src/api/` - axum on `127.0.0.1` (configurable) or unix socket, **never 0.0.0.0**. Wire `hardn serve` subcommand.
 - **S1-2** Report reader: parse `/var/log/hardn/hardn_audit_report.json` into typed structs (rule id, xccdf id, title, result, severity, remediation).
 - **S1-3** Endpoints (read):
   - `GET /api/v1/health`
@@ -136,25 +136,25 @@ A ticket is done only when:
 
 ---
 
-### Sprint 2 — Auth, audit log, hardening & evidence endpoints (E2 + E4)
+### Sprint 2 - Auth, audit log, hardening & evidence endpoints (E2 + E4)
 **Goal:** the API is SOC2-shaped: authenticated, every action logged, evidence exportable.
 
 - **S2-1** AuthN: local token (keyring-stored) or mTLS over loopback; session handling for the SPA. Viewer vs. operator RBAC.
 - **S2-2** Tamper-evident audit log: hash-chained append-only JSONL of every privileged/mutating call. `GET /api/v1/audit-log`.
 - **S2-3** Hardening controls endpoints: `GET /api/v1/hardening/controls` (which drop-ins applied + current state), `POST /api/v1/hardening/apply/{control}` (operator only, audit-logged).
-- **S2-4** Evidence export: `GET /api/v1/evidence/export?format=json|csv` — signed point-in-time compliance snapshot for auditors.
+- **S2-4** Evidence export: `GET /api/v1/evidence/export?format=json|csv` - signed point-in-time compliance snapshot for auditors.
 - **S2-5** Structured logging everywhere (tracing), no secrets in logs, log rotation aligned with `/var/log/hardn`.
 
 **Security gate:** pen-test the auth boundary; confirm no unauthenticated data leak, no privilege escalation via the operator endpoints.
 
 ---
 
-### Sprint 3 — React dashboard shell + Posture & Findings tabs (E3)
+### Sprint 3 - React dashboard shell + Posture & Findings tabs (E3)
 **Goal:** the SOC console renders live compliance data. Sharp, dense, dark, keyboard-first.
 
 - **S3-1** Scaffold `dashboard/` (Vite + React + TypeScript). Design system: dark, monospace-accented, high-density grid; no component-library "default SaaS" look. Accessible (WCAG AA contrast), light/dark aware.
 - **S3-2** App shell: multi-tab layout, command palette (⌘K), keyboard nav, typed API client generated from `openapi.yaml`.
-- **S3-3** **Posture tab**: overall score gauge, pass/fail/NA breakdown, trend since last run, severity heatmap. (Follow dataviz palette rules — no rainbow, colorblind-safe.)
+- **S3-3** **Posture tab**: overall score gauge, pass/fail/NA breakdown, trend since last run, severity heatmap. (Follow dataviz palette rules - no rainbow, colorblind-safe.)
 - **S3-4** **Findings tab**: virtualized table of all 194 rules, filter by result/severity/category, drill-down drawer with remediation + xccdf id + evidence.
 - **S3-5** Empty/error/loading states for every panel; no silent failures.
 
@@ -162,7 +162,7 @@ A ticket is done only when:
 
 ---
 
-### Sprint 4 — Telemetry, Controls, Evidence tabs + run flow (E3 + E7)
+### Sprint 4 - Telemetry, Controls, Evidence tabs + run flow (E3 + E7)
 **Goal:** every remaining data point is live and every REST connection is exercised from the UI.
 
 - **S4-1** **Telemetry tab**: host/kernel/uptime, resource meters, service status grid.
@@ -175,13 +175,13 @@ A ticket is done only when:
 
 ---
 
-### Sprint 5 — FIPS-ready crypto + hardening pass (E5)
+### Sprint 5 - FIPS-ready crypto + hardening pass (E5)
 **Goal:** all crypto goes through a validated module; documented FIPS boundary.
 
 - **S5-1** Replace `sha2` + any hand-rolled HMAC with `aws-lc-rs` (FIPS feature) or OpenSSL 3 FIPS provider.
 - **S5-2** All TLS (evidence signing, optional remote export) via `rustls + aws-lc-rs` FIPS mode.
 - **S5-3** `--fips` build/runtime flag; startup self-check that only validated primitives are reachable.
-- **S5-4** `docs/FIPS.md`: exact boundary, module version, what is and is not covered — plus the **host FIPS-mode Debian 12 recipe** (`fips-mode-setup` + OpenSSL 3 FIPS provider) and its caveats (apt/libgcrypt MD5 breakage, 140-2 sunset).
+- **S5-4** `docs/FIPS.md`: exact boundary, module version, what is and is not covered - plus the **host FIPS-mode Debian 12 recipe** (`fips-mode-setup` + OpenSSL 3 FIPS provider) and its caveats (apt/libgcrypt MD5 breakage, 140-2 sunset).
 - **S5-5** Dependency diet: minimize crate surface (removing GTK already cut ~4 heavy deps); re-run `cargo deny` and SBOM.
 - **S5-6** Host-FIPS compliance check: read `/proc/sys/crypto/fips_enabled`, add a STIG/CIS-style rule to the audit engine, surface **host FIPS posture** as a dashboard data point + `GET /api/v1/system/fips`.
 
@@ -189,7 +189,7 @@ A ticket is done only when:
 
 ---
 
-### Sprint 6 — Debian packaging, release pipeline, GA (E6)
+### Sprint 6 - Debian packaging, release pipeline, GA (E6)
 **Goal:** signed, reproducible `.deb` bundling engine + binary + dashboard; full release provenance.
 
 - **S6-1** `debian/` packaging: `control`, `rules`, `postinst`/`prerm` (create `hardn` user, install socket-activated systemd unit for the loopback API only), conffiles. Bundle the static React build.
@@ -203,7 +203,7 @@ A ticket is done only when:
 
 ---
 
-## 7. REST contract — data points to verify (E7 checklist)
+## 7. REST contract - data points to verify (E7 checklist)
 
 | Endpoint | Data point | Source |
 |----------|-----------|--------|
@@ -227,16 +227,16 @@ Every row must be proven by a Playwright E2E assertion before GA.
 
 ## 8. Decisions (locked 2026-07-10) & risks
 
-- **D1 — Dashboard backend: DECIDED → loopback REST API.** Revive `hardn-apid` (axum) as the single deliberate daemon, loopback/unix-socket only, socket-activated. Supports on-demand audit runs + live telemetry. (Static-SPA alternative rejected.)
-- **D2 — FIPS: DECIDED → FIPS-ready crypto surface.** App-level only, all crypto via a FIPS-validated module (aws-lc-rs FIPS), `--fips` flag + documented boundary. No host/kernel FIPS claim. Drop hand-rolled HMAC.
-- **D3 — Auth: DECIDED → local token + RBAC at GA, mTLS follow-up.** Keyring-stored token, viewer/operator roles for GA; mTLS as a post-GA hardening item.
-- **D4 — AppImage: DEFAULT → `.deb` for GA, AppImage optional.** Not blocking; revisit in Sprint 6.
-- **R1** — C audit engine (`hardn_audit.c`) is 3.6k lines and the compliance heart; treat any change as high-risk, fuzz + golden-output tested.
-- **R2** — Reproducible `.deb` builds are finicky; budget buffer in Sprint 6.
-- **R3** — This machine has no system `cc`; CI and dev must use the zig `.local-tools` toolchain or a pinned container.
-- **R1** — C audit engine (`hardn_audit.c`) is 3.6k lines and the compliance heart; treat any change to it as high-risk, fuzz + golden-output tested.
-- **R2** — Reproducible `.deb` builds are finicky; budget buffer in Sprint 6.
-- **R3** — This machine has no system `cc`; CI and dev must use the zig `.local-tools` toolchain or a pinned container.
+- **D1 - Dashboard backend: DECIDED → loopback REST API.** Revive `hardn-apid` (axum) as the single deliberate daemon, loopback/unix-socket only, socket-activated. Supports on-demand audit runs + live telemetry. (Static-SPA alternative rejected.)
+- **D2 - FIPS: DECIDED → FIPS-ready crypto surface.** App-level only, all crypto via a FIPS-validated module (aws-lc-rs FIPS), `--fips` flag + documented boundary. No host/kernel FIPS claim. Drop hand-rolled HMAC.
+- **D3 - Auth: DECIDED → local token + RBAC at GA, mTLS follow-up.** Keyring-stored token, viewer/operator roles for GA; mTLS as a post-GA hardening item.
+- **D4 - AppImage: DEFAULT → `.deb` for GA, AppImage optional.** Not blocking; revisit in Sprint 6.
+- **R1** - C audit engine (`hardn_audit.c`) is 3.6k lines and the compliance heart; treat any change as high-risk, fuzz + golden-output tested.
+- **R2** - Reproducible `.deb` builds are finicky; budget buffer in Sprint 6.
+- **R3** - This machine has no system `cc`; CI and dev must use the zig `.local-tools` toolchain or a pinned container.
+- **R1** - C audit engine (`hardn_audit.c`) is 3.6k lines and the compliance heart; treat any change to it as high-risk, fuzz + golden-output tested.
+- **R2** - Reproducible `.deb` builds are finicky; budget buffer in Sprint 6.
+- **R3** - This machine has no system `cc`; CI and dev must use the zig `.local-tools` toolchain or a pinned container.
 
 ---
 

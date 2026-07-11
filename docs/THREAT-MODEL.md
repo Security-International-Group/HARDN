@@ -1,6 +1,6 @@
 # HARDN Threat Model (v1)
 
-**Status:** Draft v1 — 2026-07-10 · **Scope:** post-LEGION HARDN (CLI hardening + STIG/CIS audit + planned local dashboard API)
+**Status:** Draft v1 - 2026-07-10 · **Scope:** post-LEGION HARDN (CLI hardening + STIG/CIS audit + planned local dashboard API)
 
 This is a living document. Update it whenever a change touches privileged execution, the network surface, authentication, or the audit/evidence data path (see Definition of Done in the sprint plan).
 
@@ -10,9 +10,9 @@ This is a living document. Update it whenever a change touches privileged execut
 
 HARDN is a locally-installed Debian security tool with three planned surfaces:
 
-1. **`hardn` CLI** (Rust) — runs as root to apply hardening drop-ins (`src/setup`) and to invoke the STIG/CIS audit engine.
-2. **`hardn-audit`** (C, `src/audit/hardn_audit.c`) — evaluates 194 SCAP/XCCDF rules and emits JSON to `/var/log/hardn/hardn_audit_report.json`.
-3. **Compliance API + dashboard** (planned, Sprint 1+) — a loopback/unix-socket axum service serving audit results to a local React SPA.
+1. **`hardn` CLI** (Rust) - runs as root to apply hardening drop-ins (`src/setup`) and to invoke the STIG/CIS audit engine.
+2. **`hardn-audit`** (C, `src/audit/hardn_audit.c`) - evaluates 194 SCAP/XCCDF rules and emits JSON to `/var/log/hardn/hardn_audit_report.json`.
+3. **Compliance API + dashboard** (planned, Sprint 1+) - a loopback/unix-socket axum service serving audit results to a local React SPA.
 
 There is **no continuous-monitoring daemon, no outbound network beaconing, and no GTK GUI** in the target design.
 
@@ -57,7 +57,7 @@ Boundaries that matter: **unprivileged→root** (the sudo gate on the CLI), **ne
 
 - The host root account and kernel are trusted; HARDN does not defend against an already-root attacker (it *reports* posture, e.g. host FIPS mode).
 - The C audit engine (`hardn_audit.c`, ~3.6k lines) is high-value and high-risk; changes require golden-output + fuzz testing (sprint-plan R1).
-- Loopback is treated as a trust boundary, but a local multi-user host means "loopback" is not "single trusted user" — hence T2's authn requirement even on 127.0.0.1.
+- Loopback is treated as a trust boundary, but a local multi-user host means "loopback" is not "single trusted user" - hence T2's authn requirement even on 127.0.0.1.
 
 ## 6. Out of scope (v1)
 

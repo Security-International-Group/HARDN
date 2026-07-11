@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Post-1.2.92 refactor. HARDN is reduced to a **CLI-first hardening and STIG/CIS
+compliance tool with a local web console**. The LEGION runtime engine, the GTK
+desktop application, and all continuous-monitoring daemons are removed.
+
+### Added
+- **Compliance console.** `hardn serve [port]` runs a loopback-only web console
+  (`127.0.0.1`, default port 8000) backed by an axum REST API. Dense operations
+  UI: compliance posture, findings queue, host telemetry, hardening controls,
+  and a hash-chained evidence log.
+- **REST API (`/api/v1`).** `health`, `session` (login / whoami),
+  `compliance/summary`, `compliance/findings` (filter by result + severity),
+  `system/telemetry`, `system/fips`, `hardening/controls`,
+  `hardening/apply/{id}`, `audit/run`, `audit-log`, `evidence/export`.
+- **Authentication + RBAC.** Two console tokens are minted on first run (mode
+  `0600`): an operator (read + mutate) and a viewer (read only), presented via
+  `Authorization: Bearer` or the `hardn_session` cookie. Anonymous access is
+  refused even on loopback.
+- **Tamper-evident audit log.** Every privileged action appends a hash-chained
+  record (`SHA-256(prev | seq | ts | actor | action | detail)`); the chain is
+  verified on read and detects any edit or deletion.
+- **Evidence export.** Point-in-time compliance bundle (JSON or CSV) with a
+  SHA-256 integrity hash computed over the payload.
+- **Live control detection.** `hardening/controls` probes the running host
+  (sysctl values, active services, `sshd_config`, FIPS mode) rather than
+  reporting a static list.
+- **DevSecOps CI gates.** `security.yml` (cargo-audit, cargo-deny, gitleaks,
+  dependency-review, and a no-`0.0.0.0`-bind gate) plus `sbom.yml` (CycloneDX
+  SBOM per build, attached to releases). Threat model in `docs/THREAT-MODEL.md`;
+  gate reference in `docs/CI-SECURITY.md`; API and console reference in
+  `docs/CONSOLE.md`.
+
+### Changed
+- **Single CLI binary.** The C audit engine (`hardn-audit`) writes the 194-rule
+  SCAP/XCCDF report; the `hardn` CLI hardens, audits, and serves the console.
+  Scheduling moves to systemd timers / system cron.
+- **Dependencies trimmed** from 26 crates to 11; every remaining crate is used.
+  The console adds only `axum`, `tokio`, and `sha2`.
+- **The console API binds loopback only**, enforced in code and by a CI gate.
+
+### Removed
+- The **LEGION** detection/monitoring engine (`src/legion/`, ~11k lines) and its
+  daemons (`legion-daemon`, `hardn-monitor`, `hardn-apid`, the Python
+  `hardn-api`).
+- The **GTK desktop application** (`hardn-gui`) and its packaging.
+- The webhook / HMAC alert-delivery layer, the SENTRY cron flag, the in-process
+  cron orchestrator, and the `demo` fixture-threat-intel feature.
+
+### Security
+- No component binds a network interface; the console is loopback-only.
+- The `demo` feature that loaded fixture indicators as live threat intel is gone.
+- Console tokens and the audit log are written with `0600` permissions.
+
+## [1.2.92] - 2026-07-04
+
 ### Durable webhook delivery (retry queue with backoff)
 
 A failed webhook POST is no longer lost. When a delivery fails (slow
