@@ -501,51 +501,91 @@ fn summarize(report: &Value) -> Value {
     })
 }
 
+/// Detect the live state of each hardening control by probing the host
+/// (sysctl values, running services, sshd config, FIPS). This is a real audit
+/// of the running OS, not a static catalog.
 fn controls_catalog() -> Value {
     let c =
         |name: &str, desc: &str, state: &str| json!({ "name": name, "desc": desc, "state": state });
-    json!([
-        c(
-            "sysctl.kernel.randomize_va_space",
-            "Full address-space layout randomization",
-            "applied"
-        ),
-        c(
-            "sysctl.kernel.kptr_restrict",
-            "Hide kernel pointers from userspace",
-            "applied"
-        ),
-        c(
-            "auditd.augenrules",
-            "Privileged-command and identity auditing",
-            "applied"
-        ),
-        c(
-            "sshd.permit_root_login_no",
-            "Disable direct root SSH",
-            "applied"
-        ),
-        c(
-            "sshd.fips_ciphers",
-            "Restrict to validated ciphers",
-            "partial"
-        ),
-        c(
-            "pam.pwquality_minlen_14",
-            "Password length and complexity",
-            "applied"
-        ),
-        c(
-            "mount.tmp_nodev_nosuid_noexec",
-            "Restrict temporary filesystem",
-            "not-applied"
-        ),
-        c(
-            "modprobe.disable_usb_storage",
-            "Block removable storage kernel module",
-            "not-applied"
-        ),
-    ])
+    let mut out: Vec<Value> = Vec::new();
+
+    let aslr = proc_val("/proc/sys/kernel/randomize_va_space");
+    out.push(c(
+        "kernel.randomize_va_space",
+        "Full address-space layout randomization",
+        match aslr.as_deref() {
+            Some("2") => "applied",
+            Some(_) => "partial",
+            None => "not-applied",
+        },
+    ));
+    let kptr = proc_val("/proc/sys/kernel/kptr_restrict");
+    out.push(c(
+        "kernel.kptr_restrict",
+        "Hide kernel pointers from userspace",
+        match kptr.as_deref() {
+            Some("2") => "applied",
+            Some("1") => "partial",
+            _ => "not-applied",
+        },
+    ));
+    out.push(c(
+        "kernel.dmesg_restrict",
+        "Restrict dmesg to privileged users",
+        yn(proc_val("/proc/sys/kernel/dmesg_restrict").as_deref() == Some("1")),
+    ));
+    out.push(c(
+        "net.ipv4.rp_filter",
+        "Reverse-path source validation",
+        match proc_val("/proc/sys/net/ipv4/conf/all/rp_filter").as_deref() {
+            Some("1") => "applied",
+            Some("2") => "partial",
+            _ => "not-applied",
+        },
+    ));
+    for (svc, desc) in [
+        ("auditd", "Audit daemon running"),
+        ("apparmor", "AppArmor mandatory access control active"),
+        ("ufw", "Host firewall active"),
+        ("fail2ban", "Brute-force protection active"),
+    ] {
+        out.push(c(&format!("service.{svc}"), desc, yn(service_active(svc))));
+    }
+    let sshd = fs::read_to_string("/etc/ssh/sshd_config").unwrap_or_default();
+    let root_no = sshd.lines().any(|l| {
+        let l = l.trim();
+        l.starts_with("PermitRootLogin") && l.split_whitespace().nth(1) == Some("no")
+    });
+    out.push(c(
+        "sshd.permit_root_login_no",
+        "Disable direct root SSH login",
+        yn(root_no),
+    ));
+    out.push(c(
+        "host.fips_mode",
+        "Kernel FIPS mode enabled",
+        yn(fips_enabled()),
+    ));
+    Value::Array(out)
+}
+
+fn yn(applied: bool) -> &'static str {
+    if applied { "applied" } else { "not-applied" }
+}
+
+fn proc_val(path: &str) -> Option<String> {
+    fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn service_active(name: &str) -> bool {
+    std::process::Command::new("systemctl")
+        .args(["is-active", name])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "active")
+        .unwrap_or(false)
 }
 
 // ---------- host probes ----------
