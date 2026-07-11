@@ -22,8 +22,10 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+use std::env;
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::PathBuf;
 
 const REPORT_PATH: &str = "/var/log/hardn/hardn_audit_report.json";
 const DASHBOARD: &str = include_str!("../../dashboard/index.html");
@@ -303,10 +305,30 @@ async fn evidence_export(auth: AuthCtx, Query(q): Query<ExportQuery>) -> Respons
 
 async fn audit_run(auth: AuthCtx) -> ApiResult {
     require_operator(&auth)?;
-    let e = audit_log::append(auth.role.as_str(), "audit.run", "triggered via console");
-    Ok(Json(
-        json!({ "accepted": true, "detail": "audit scheduled", "log_seq": e.seq }),
-    ))
+    match tokio::task::spawn_blocking(run_engine).await {
+        Ok(Ok(n)) => {
+            let e = audit_log::append(
+                auth.role.as_str(),
+                "audit.run",
+                &format!("engine run, {n} rules"),
+            );
+            Ok(Json(
+                json!({ "accepted": true, "rules": n, "log_seq": e.seq }),
+            ))
+        }
+        Ok(Err(msg)) => {
+            audit_log::append(
+                auth.role.as_str(),
+                "audit.run",
+                &format!("engine error: {msg}"),
+            );
+            Ok(Json(json!({ "accepted": false, "detail": msg })))
+        }
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": format!("task join error: {e}") })),
+        )),
+    }
 }
 
 async fn hardening_apply(auth: AuthCtx, Path(id): Path<String>) -> ApiResult {
@@ -319,11 +341,125 @@ async fn hardening_apply(auth: AuthCtx, Path(id): Path<String>) -> ApiResult {
 
 // ---------- report loading + summary ----------
 
+fn report_path() -> PathBuf {
+    env::var("HARDN_REPORT_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(REPORT_PATH))
+}
+
 fn load_report() -> Value {
-    fs::read_to_string(REPORT_PATH)
+    match fs::read_to_string(report_path())
         .ok()
         .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-        .unwrap_or_else(sample_report)
+    {
+        Some(raw) => normalize(raw),
+        None => sample_report(),
+    }
+}
+
+/// Map the C engine's report (`status`, xccdf `id`) into the console's
+/// canonical shape (`result`, short `id` + full `xccdf`) and synthesize short
+/// per-category rule codes. Already-canonical input passes through unchanged.
+fn normalize(raw: Value) -> Value {
+    let rules = raw
+        .get("rules")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut counters: BTreeMap<String, u32> = BTreeMap::new();
+    let mut out = Vec::with_capacity(rules.len());
+    for r in rules {
+        let xccdf = r
+            .get("xccdf")
+            .or_else(|| r.get("id"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let cat = r
+            .get("category")
+            .and_then(Value::as_str)
+            .unwrap_or("misc")
+            .to_string();
+        let status = r
+            .get("result")
+            .or_else(|| r.get("status"))
+            .and_then(Value::as_str)
+            .unwrap_or("error");
+        let result = match status {
+            "not_applicable" | "notapplicable" => "na",
+            s => s,
+        };
+        let counter = counters.entry(cat.clone()).or_insert(0);
+        *counter += 1;
+        let idx = *counter;
+        let prefix: String = cat
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .take(4)
+            .collect::<String>()
+            .to_uppercase();
+        let prefix = if prefix.is_empty() {
+            "RULE".to_string()
+        } else {
+            prefix
+        };
+        out.push(json!({
+            "id": format!("{prefix}-{idx:03}"),
+            "xccdf": xccdf,
+            "title": r.get("title").cloned().unwrap_or_else(|| json!("")),
+            "category": cat,
+            "severity": r.get("severity").cloned().unwrap_or_else(|| json!("medium")),
+            "result": result,
+            "evidence": r.get("evidence").cloned().unwrap_or_else(|| json!("")),
+        }));
+    }
+    json!({
+        "report_version": raw.get("report_version").cloned().unwrap_or_else(|| json!("1.0")),
+        "rules": out,
+    })
+}
+
+/// Locate the compiled C audit engine.
+fn find_engine() -> Option<PathBuf> {
+    if let Ok(p) = env::var("HARDN_AUDIT_BIN") {
+        let pb = PathBuf::from(p);
+        if pb.is_file() {
+            return Some(pb);
+        }
+    }
+    for c in [
+        "target/release/hardn-audit",
+        "/usr/lib/hardn/hardn-audit",
+        "/usr/libexec/hardn/hardn-audit",
+    ] {
+        let pb = PathBuf::from(c);
+        if pb.is_file() {
+            return Some(pb);
+        }
+    }
+    None
+}
+
+/// Run the audit engine and persist its report. Returns the rule count.
+fn run_engine() -> Result<usize, String> {
+    let bin = find_engine().ok_or_else(|| "hardn-audit binary not found".to_string())?;
+    let out = std::process::Command::new(&bin)
+        .output()
+        .map_err(|e| format!("failed to run engine: {e}"))?;
+    if !out.status.success() {
+        return Err(format!("engine exited with {}", out.status));
+    }
+    let path = report_path();
+    if let Some(dir) = path.parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    fs::write(&path, &out.stdout).map_err(|e| format!("cannot write report: {e}"))?;
+    let v: Value =
+        serde_json::from_slice(&out.stdout).map_err(|e| format!("engine output not JSON: {e}"))?;
+    Ok(v.get("rules")
+        .and_then(Value::as_array)
+        .map(|a| a.len())
+        .unwrap_or(0))
 }
 
 fn summarize(report: &Value) -> Value {
