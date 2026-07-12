@@ -26,6 +26,7 @@ use std::env;
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
+use std::process::Command;
 
 const REPORT_PATH: &str = "/var/log/hardn/hardn_audit_report.json";
 const DASHBOARD: &str = include_str!("../../dashboard/index.html");
@@ -333,10 +334,33 @@ async fn audit_run(auth: AuthCtx) -> ApiResult {
 
 async fn hardening_apply(auth: AuthCtx, Path(id): Path<String>) -> ApiResult {
     require_operator(&auth)?;
-    let e = audit_log::append(auth.role.as_str(), "hardening.apply", &id);
-    Ok(Json(
-        json!({ "accepted": true, "control": id, "log_seq": e.seq }),
-    ))
+    let id2 = id.clone();
+    match tokio::task::spawn_blocking(move || apply_control(&id2)).await {
+        Ok(Ok(detail)) => {
+            let e = audit_log::append(
+                auth.role.as_str(),
+                "hardening.apply",
+                &format!("{id}: {detail}"),
+            );
+            Ok(Json(
+                json!({ "accepted": true, "control": id, "detail": detail, "log_seq": e.seq }),
+            ))
+        }
+        Ok(Err(err)) => {
+            audit_log::append(
+                auth.role.as_str(),
+                "hardening.apply.failed",
+                &format!("{id}: {err}"),
+            );
+            Ok(Json(
+                json!({ "accepted": false, "control": id, "error": err }),
+            ))
+        }
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": format!("task join error: {e}") })),
+        )),
+    }
 }
 
 // ---------- report loading + summary ----------
@@ -586,6 +610,151 @@ fn service_active(name: &str) -> bool {
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "active")
         .unwrap_or(false)
+}
+
+// ---------- control enforcement ----------
+
+/// Apply a hardening control by changing real system state. Requires root and
+/// returns a clear message otherwise. Every action is reversible except FIPS,
+/// which needs a reboot.
+fn apply_control(id: &str) -> Result<String, String> {
+    if !is_root() {
+        return Err(
+            "changing system state needs root; restart the console as root (sudo hardn serve)"
+                .into(),
+        );
+    }
+    match id {
+        "kernel.randomize_va_space" => set_sysctl("kernel.randomize_va_space", "2"),
+        "kernel.kptr_restrict" => set_sysctl("kernel.kptr_restrict", "2"),
+        "kernel.dmesg_restrict" => set_sysctl("kernel.dmesg_restrict", "1"),
+        "net.ipv4.rp_filter" => set_sysctl("net.ipv4.conf.all.rp_filter", "1"),
+        "service.auditd" => enable_service("auditd"),
+        "service.apparmor" => enable_service("apparmor"),
+        "service.ufw" => enable_service("ufw"),
+        "service.fail2ban" => enable_service("fail2ban"),
+        "sshd.permit_root_login_no" => set_sshd("PermitRootLogin", "no"),
+        "host.fips_mode" => enable_fips(),
+        other => Err(format!("no enforcement is defined for control '{other}'")),
+    }
+}
+
+fn is_root() -> bool {
+    fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with("Uid:"))
+                .and_then(|l| l.split_whitespace().nth(1).map(|u| u == "0"))
+        })
+        .unwrap_or(false)
+}
+
+fn have(bin: &str) -> bool {
+    Command::new("sh")
+        .arg("-c")
+        .arg(format!("command -v {bin}"))
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+fn append_dropin(path: &str, line: &str) -> Result<(), String> {
+    use std::io::Write;
+    if let Some(dir) = std::path::Path::new(path).parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    let mut f = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| format!("write {path}: {e}"))?;
+    f.write_all(line.as_bytes()).map_err(|e| e.to_string())
+}
+
+fn set_sysctl(key: &str, val: &str) -> Result<String, String> {
+    let out = Command::new("sysctl")
+        .arg("-w")
+        .arg(format!("{key}={val}"))
+        .output()
+        .map_err(|e| format!("sysctl: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "sysctl failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    append_dropin("/etc/sysctl.d/90-hardn.conf", &format!("{key} = {val}\n"))?;
+    Ok(format!(
+        "set {key}={val} (runtime + /etc/sysctl.d/90-hardn.conf)"
+    ))
+}
+
+fn enable_service(name: &str) -> Result<String, String> {
+    if name == "ufw" {
+        let out = Command::new("ufw")
+            .args(["--force", "enable"])
+            .output()
+            .map_err(|e| format!("ufw: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "ufw failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+        return Ok("ufw enabled (default deny incoming)".into());
+    }
+    let out = Command::new("systemctl")
+        .args(["enable", "--now", name])
+        .output()
+        .map_err(|e| format!("systemctl: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "systemctl failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(format!("{name} enabled and started"))
+}
+
+fn set_sshd(directive: &str, val: &str) -> Result<String, String> {
+    let path = "/etc/ssh/sshd_config.d/10-hardn.conf";
+    append_dropin(path, &format!("{directive} {val}\n"))?;
+    let reloaded = Command::new("systemctl")
+        .args(["reload", "ssh"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    Ok(format!(
+        "wrote '{directive} {val}' to {path}{}",
+        if reloaded {
+            "; reloaded ssh"
+        } else {
+            "; reload ssh to apply"
+        }
+    ))
+}
+
+fn enable_fips() -> Result<String, String> {
+    if have("fips-mode-setup") {
+        let out = Command::new("fips-mode-setup")
+            .arg("--enable")
+            .output()
+            .map_err(|e| format!("fips-mode-setup: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "fips-mode-setup failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+        return Ok("FIPS mode enabled; reboot required (see docs/FIPS.md)".into());
+    }
+    if have("pro") {
+        return Err(
+            "on Ubuntu, enable FIPS via Ubuntu Pro: sudo pro enable fips-updates, then reboot (see docs/FIPS.md)".into(),
+        );
+    }
+    Err("no FIPS enablement tool found (fips-mode-setup / pro); see docs/FIPS.md".into())
 }
 
 // ---------- host probes ----------

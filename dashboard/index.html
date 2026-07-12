@@ -561,10 +561,13 @@ function renderControls(){
     const row=el("div","ctrl-row",`<div><div class="ctrl-name">${c.name}</div><div class="ctrl-desc">${c.desc}</div></div><span class="${st[0]}">${st[1]}</span><button class="btn">${c.state==="applied"?"RE-APPLY":"APPLY"}</button>`);
     row.querySelector("button").onclick=async()=>{
       if(!ROLE){toast("Connect to the console to apply controls");return;}
+      toast("Applying "+c.name+" ...");
       const res=await api("/api/v1/hardening/apply/"+encodeURIComponent(c.name),{method:"POST"});
-      if(res&&res.forbidden)toast("Operator role required");
-      else if(res&&res.data){toast("Applied: "+c.name);hydrate();}
-      else toast("Apply failed");
+      if(res&&res.forbidden){toast("Operator role required to apply controls");return;}
+      if(res&&res.data){
+        if(res.data.accepted){toast("Applied: "+(res.data.detail||c.name));hydrate();}
+        else toast(res.data.error||"Apply failed");
+      } else toast("Apply failed (no response)");
     };
     box.append(row);
   });
