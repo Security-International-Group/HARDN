@@ -264,6 +264,9 @@ install-core:
 	@printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Installing binaries to $(LIBDIR) and wiring symlinks$(COLORRESET)\n'
 	@mkdir -p "$(DESTDIR)$(LIBDIR)" "$(DESTDIR)$(BINDIR)"
 	@install -m 755 "$(BUILD_TARGET)"            "$(DESTDIR)$(LIBDIR)/hardn"
+	@if [ -f "target/release/hardn-audit" ]; then \
+		install -m 755 target/release/hardn-audit "$(DESTDIR)$(LIBDIR)/hardn-audit"; \
+	fi
 
 	@if [ -f "usr/share/hardn/scripts/hardn-service-manager.sh" ]; then \
 		install -m 755 usr/share/hardn/scripts/hardn-service-manager.sh "$(DESTDIR)$(LIBDIR)/hardn-service-manager"; \

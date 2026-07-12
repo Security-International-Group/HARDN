@@ -598,7 +598,6 @@ function renderControls(){
     list.append(row);
   });
   $("#ctrl-count").textContent=ap+"/"+SEED.controls.length+" applied";
-  $("#c-controls").textContent=na+pa;
   $("#ctrl-summary").innerHTML=[["Applied",ap,"var(--ok)"],["Partial",pa,"var(--med)"],["Not applied",na,"var(--crit)"],["Disruptive",dis,"var(--mut)"]]
     .map(([l,v,c])=>`<div class="mini"><span class="l">${l}</span><span class="v" style="color:${c}">${v}</span></div>`).join("");
 }
@@ -655,7 +654,12 @@ function renderTopbar(){
   $("#fs-rules").textContent=s.total;
   $("#fs-chain").textContent=(SEED.chainOk===false?"BROKEN":"OK "+(SEED.chainHead||"—"));
 }
-function renderAll(){renderKPI();renderPosture();renderCharts("#charts");renderCharts("#tele-charts");renderHost("#host-fips","#host-kv");renderHost("#tele-fips","#tele-kv");renderServices();renderTeleExtras();renderControls();renderLog();renderFQ();renderAF();renderFindingsSummary();renderTopbar();}
+function renderAll(){
+  [renderKPI,renderPosture,()=>renderCharts("#charts"),()=>renderCharts("#tele-charts"),
+   ()=>renderHost("#host-fips","#host-kv"),()=>renderHost("#tele-fips","#tele-kv"),
+   renderServices,renderTeleExtras,renderControls,renderLog,renderFQ,renderAF,renderFindingsSummary,renderTopbar]
+   .forEach(f=>{try{f();}catch(e){console.error("render error:",e);}});
+}
 
 // drawer
 function openDrawer(f){
