@@ -95,6 +95,47 @@ hash = SHA-256( prev | seq | ts | actor | action | detail )
 `integrity.head` is the current chain head; it is also included in exported
 evidence bundles so an auditor can tie an export to a log state.
 
+## Applying controls safely
+
+The Controls tab enforces hardening on the live host. The model is built so it
+cannot quietly disrupt the machine:
+
+- **Risk bands.** Each control is `safe` (sysctl, reversible, no service
+  restart), `moderate` (enable a service), or `disruptive` (ufw, sshd,
+  FIPS). The UI confirms before any disruptive apply.
+- **Dry-run plan.** Every control ships a `plan` and `revert_plan` string shown
+  before anything runs.
+- **Backup + revert.** Before changing a sysctl the prior value is saved to
+  `control-backups.json` in the state dir, so **Revert** restores exactly what
+  was there. Service and sshd changes are reverted by disabling or removing the
+  HARDN drop-in.
+- **Audit trail.** Apply, revert, and uninstall are all recorded in the
+  hash-chained audit log (success or failure).
+- **Uninstall.** The Uninstall action reverts every console-applied control,
+  removes the HARDN drop-ins, and runs the packaged uninstaller if present.
+
+### Privilege model
+
+The web server runs unprivileged and never binds a network interface. Only a
+scoped helper escalates, so enforcement works without running the console as
+root. Two options:
+
+1. **Sudoers rule (recommended).** Install `packaging/hardn-console.sudoers`
+   (fill in the user and the hardn path):
+
+   ```
+   <user> ALL=(root) NOPASSWD: <hardn> __enforce *, <hardn> __revert *, <hardn> __uninstall
+   ```
+
+   The console then invokes `sudo -n hardn __enforce|__revert|__uninstall <id>`
+   for the one action, and nothing else escalates.
+
+2. **Run the console as root.** `sudo hardn serve`. Simpler, but the whole
+   server is privileged.
+
+When neither is set up, apply/revert/uninstall return a clear message rather
+than a false success.
+
 ## Threat model
 
 The console surface maps to the threats in [THREAT-MODEL.md](THREAT-MODEL.md):

@@ -221,6 +221,19 @@ tr.row-error{background:rgba(217,165,20,.035)}
 .toast .live-dot{background:var(--ok)}
 
 .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:34px 12px;color:var(--mut);gap:6px;font-size:12px}
+.mini-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;flex-shrink:0}
+.mini{background:var(--s1);border:1px solid var(--line);padding:8px 12px;display:flex;flex-direction:column;gap:2px}
+.mini .l{font-family:var(--f-mono);font-size:9.5px;color:var(--mut);letter-spacing:1px;text-transform:uppercase}
+.mini .v{font-family:var(--f-mono);font-size:20px;font-weight:800;color:var(--ink)}
+.btn-danger{border-color:rgba(255,77,99,.5);color:var(--crit)}
+.btn-danger:hover{background:rgba(255,77,99,.12);color:#fff}
+.risk-safe{color:var(--ok);border-color:rgba(37,199,124,.5)}
+.risk-moderate{color:var(--med);border-color:rgba(217,165,20,.5)}
+.risk-disruptive{color:var(--crit);border-color:rgba(255,77,99,.5)}
+.ctrl-plan{font-family:var(--f-mono);font-size:10px;color:var(--mut);margin-top:3px}
+.dist{display:flex;height:20px;border:1px solid var(--line);overflow:hidden;background:var(--s3)}
+.dist>span{display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);font-size:10px;font-weight:800;color:#08111f;min-width:0;overflow:hidden;transition:width .4s}
+.ctrl-row{grid-template-columns:1fr auto auto}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media (max-width:1200px){#col-r{display:none}}
 @media (max-width:900px){#kpi{grid-template-columns:repeat(3,1fr)}#col-l{flex-basis:100%}#col-c{display:none}}
@@ -312,6 +325,8 @@ tr.row-error{background:rgba(217,165,20,.035)}
       <div class="view" id="view-findings">
         <div class="panel" style="flex:1">
           <div class="ph">All Findings<span class="ph-badge" id="af-count"></span><span class="ph-right">click a row for evidence + remediation</span></div>
+          <div class="mini-strip" id="af-summary" style="padding:8px 10px 0"></div>
+          <div style="padding:7px 10px 9px"><div class="dist" id="af-dist" title="open findings by severity"></div></div>
           <div class="tbl-toolbar">
             <button class="chip on" data-r="all">ALL</button>
             <button class="chip chip-crit" data-r="fail">FAIL</button>
@@ -330,16 +345,27 @@ tr.row-error{background:rgba(217,165,20,.035)}
 
       <!-- TELEMETRY -->
       <div class="view scrolls" id="view-telemetry">
+        <div class="mini-strip" id="tele-kpi"></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div class="panel"><div class="ph">System</div><div id="tele-fips"></div><div class="kv" id="tele-kv"></div></div>
           <div class="panel"><div class="ph">Security Services</div><div class="svc-list" id="tele-svc"></div></div>
         </div>
-        <div class="panel"><div class="ph">Resources</div><div class="chart-grid" id="tele-charts"></div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="panel"><div class="ph">Kernel &amp; Network Hardening<span class="ph-right">live sysctl / service state</span></div><div class="svc-list" id="tele-harden"></div></div>
+          <div class="panel"><div class="ph">Category Coverage<span class="ph-right">pass rate</span></div><div id="tele-cats" style="padding:9px 10px"></div></div>
+        </div>
+        <div class="panel"><div class="ph">Resources<span class="ph-right">host utilization</span></div><div class="chart-grid" id="tele-charts"></div></div>
       </div>
 
       <!-- CONTROLS -->
       <div class="view scrolls" id="view-controls">
-        <div class="panel"><div class="ph">Hardening Controls<span class="ph-right">system drop-ins, applied state</span></div><div id="ctrl-list"></div></div>
+        <div class="mini-strip" id="ctrl-summary"></div>
+        <div class="panel">
+          <div class="ph">Hardening Controls<span class="ph-badge" id="ctrl-count"></span><span class="ph-right">live host state, apply / revert</span>
+            <button class="btn btn-danger" id="uninstall-btn" style="margin-left:auto">UNINSTALL HARDN</button>
+          </div>
+          <div id="ctrl-list"></div>
+        </div>
       </div>
 
       <!-- EVIDENCE -->
@@ -555,22 +581,57 @@ function renderServices(){
   SEED.services.forEach(s=>box.append(el("div","svc",`<span class="svc-dot ${s.state}"></span><span class="n">${s.name}</span><span class="st ${s.state}">${s.state}</span>`)));
 }
 function renderControls(){
-  const box=$("#ctrl-list");box.innerHTML="";
+  const list=$("#ctrl-list");list.innerHTML="";
+  let ap=0,pa=0,na=0,dis=0;
   SEED.controls.forEach(c=>{
+    if(c.state==="applied")ap++;else if(c.state==="partial")pa++;else na++;
+    if((c.risk||"")==="disruptive")dis++;
     const st=c.state==="applied"?["res st-applied","APPLIED"]:c.state==="partial"?["res st-partial","PARTIAL"]:["res st-notapplied","NOT APPLIED"];
-    const row=el("div","ctrl-row",`<div><div class="ctrl-name">${c.name}</div><div class="ctrl-desc">${c.desc}</div></div><span class="${st[0]}">${st[1]}</span><button class="btn">${c.state==="applied"?"RE-APPLY":"APPLY"}</button>`);
-    row.querySelector("button").onclick=async()=>{
-      if(!ROLE){toast("Connect to the console to apply controls");return;}
-      toast("Applying "+c.name+" ...");
-      const res=await api("/api/v1/hardening/apply/"+encodeURIComponent(c.name),{method:"POST"});
-      if(res&&res.forbidden){toast("Operator role required to apply controls");return;}
-      if(res&&res.data){
-        if(res.data.accepted){toast("Applied: "+(res.data.detail||c.name));hydrate();}
-        else toast(res.data.error||"Apply failed");
-      } else toast("Apply failed (no response)");
-    };
-    box.append(row);
+    const risk=c.risk||"moderate";
+    const canRevert=c.state==="applied"||c.state==="partial";
+    const row=el("div","ctrl-row",
+      `<div><div class="ctrl-name">${c.name} <span class="res risk-${risk}" style="margin-left:4px">${risk.toUpperCase()}</span></div><div class="ctrl-desc">${c.desc}</div>${c.plan?`<div class="ctrl-plan">&#9656; ${c.plan}</div>`:""}</div>`+
+      `<span class="${st[0]}">${st[1]}</span>`+
+      `<div style="display:flex;gap:6px"><button class="btn" data-a="apply">${c.state==="applied"?"RE-APPLY":"APPLY"}</button><button class="btn" data-a="revert"${canRevert?"":" disabled"}>REVERT</button></div>`);
+    row.querySelector('[data-a="apply"]').onclick=()=>doControl(c,true);
+    row.querySelector('[data-a="revert"]').onclick=()=>doControl(c,false);
+    list.append(row);
   });
+  $("#ctrl-count").textContent=ap+"/"+SEED.controls.length+" applied";
+  $("#c-controls").textContent=na+pa;
+  $("#ctrl-summary").innerHTML=[["Applied",ap,"var(--ok)"],["Partial",pa,"var(--med)"],["Not applied",na,"var(--crit)"],["Disruptive",dis,"var(--mut)"]]
+    .map(([l,v,c])=>`<div class="mini"><span class="l">${l}</span><span class="v" style="color:${c}">${v}</span></div>`).join("");
+}
+async function doControl(c,apply){
+  if(!ROLE){toast("Connect to the console to change controls");return;}
+  if(apply&&(c.risk||"")==="disruptive"&&!confirm(`Apply "${c.name}"?\n\n${c.plan||""}\n\nThis changes system state and may affect access. It is logged and revertible.`))return;
+  if(!apply&&!confirm(`Revert "${c.name}"?\n\n${c.revert_plan||"restore the previous state"}`))return;
+  toast((apply?"Applying ":"Reverting ")+c.name+" ...");
+  const res=await api("/api/v1/hardening/"+(apply?"apply":"revert")+"/"+encodeURIComponent(c.name),{method:"POST"});
+  if(res&&res.forbidden){toast("Operator role required");return;}
+  if(res&&res.data){if(res.data.accepted){toast((apply?"Applied: ":"Reverted: ")+(res.data.detail||c.name));hydrate();}else toast(res.data.error||"Action failed");}
+  else toast("Action failed (no response)");
+}
+function renderFindingsSummary(){
+  const cnt={pass:0,fail:0,error:0,na:0};
+  findings.forEach(f=>{cnt[f.res]=(cnt[f.res]||0)+1;});
+  const S=$("#af-summary");
+  if(S)S.innerHTML=[["Pass",cnt.pass,"var(--ok)"],["Fail",cnt.fail,"var(--crit)"],["Error",cnt.error,"var(--med)"],["N/A",cnt.na,"var(--mut)"]]
+    .map(([l,v,c])=>`<div class="mini"><span class="l">${l}</span><span class="v" style="color:${c}">${v}</span></div>`).join("");
+  const sc=sevCounts(),tot=sc.high+sc.medium+sc.low,D=$("#af-dist");
+  if(D)D.innerHTML=tot?[["high",sc.high,"var(--high)"],["medium",sc.medium,"var(--med)"],["low",sc.low,"var(--low)"]].filter(x=>x[1]).map(([k,v,c])=>`<span style="width:${v/tot*100}%;background:${c}" title="${k}: ${v}">${v}</span>`).join(""):`<span style="width:100%;background:var(--s3);color:var(--mut)">no open findings</span>`;
+}
+function renderTeleExtras(){
+  const s=SEED.summary,sc=sevCounts(),K=$("#tele-kpi");
+  if(K)K.innerHTML=[["Score",s.score,"var(--accent)"],["Failing",s.fail,"var(--crit)"],["High open",sc.high,"var(--high)"],["FIPS",SEED.host.fips?"ON":"OFF",SEED.host.fips?"var(--ok)":"var(--med)"]]
+    .map(([l,v,c])=>`<div class="mini"><span class="l">${l}</span><span class="v" style="color:${c}">${v}</span></div>`).join("");
+  const H=$("#tele-harden");
+  if(H){H.innerHTML="";SEED.controls.filter(c=>/^(kernel|net|service)/.test(c.name)).forEach(c=>{
+    const dot=c.state==="applied"?"active":c.state==="partial"?"masked":"inactive";
+    H.append(el("div","svc",`<span class="svc-dot ${dot}"></span><span class="n">${c.name}</span><span class="st ${dot}">${c.state}</span>`));
+  });}
+  const C=$("#tele-cats");
+  if(C)C.innerHTML=catStats().map(c=>{const col=catColor(c.rate);return `<div class="bd-row" style="margin-bottom:7px"><span class="bd-lbl" style="width:120px">${c.name}</span><div class="bd-track"><div class="bd-fill" style="width:${c.rate}%;background:${col}"></div></div><span class="bd-n" style="color:${col}">${c.rate}%</span></div>`;}).join("");
 }
 function renderLog(){
   const mini=$("#mini-log");mini.innerHTML="";
@@ -594,7 +655,7 @@ function renderTopbar(){
   $("#fs-rules").textContent=s.total;
   $("#fs-chain").textContent=(SEED.chainOk===false?"BROKEN":"OK "+(SEED.chainHead||"—"));
 }
-function renderAll(){renderKPI();renderPosture();renderCharts("#charts");renderCharts("#tele-charts");renderHost("#host-fips","#host-kv");renderHost("#tele-fips","#tele-kv");renderServices();renderControls();renderLog();renderFQ();renderAF();renderTopbar();}
+function renderAll(){renderKPI();renderPosture();renderCharts("#charts");renderCharts("#tele-charts");renderHost("#host-fips","#host-kv");renderHost("#tele-fips","#tele-kv");renderServices();renderTeleExtras();renderControls();renderLog();renderFQ();renderAF();renderFindingsSummary();renderTopbar();}
 
 // drawer
 function openDrawer(f){
@@ -664,6 +725,15 @@ function finishScan(){
   else toast("Audit complete. 194 rules evaluated.");
 }
 $("#export-btn").onclick=()=>{if(ROLE){window.open("/api/v1/evidence/export?format=json","_blank");toast("Evidence bundle exported (json)");}else toast("Export requires a live console session");};
+$("#uninstall-btn").onclick=async()=>{
+  if(!ROLE){toast("Connect to the console");return;}
+  if(!confirm("Uninstall HARDN?\n\nThis reverts every console-applied control, removes the HARDN drop-ins, and runs the packaged uninstaller if present. The console stops responding once complete."))return;
+  toast("Uninstalling HARDN ...");
+  const res=await api("/api/v1/system/uninstall",{method:"POST"});
+  if(res&&res.forbidden){toast("Operator role required");return;}
+  if(res&&res.data){toast(res.data.accepted?("Uninstalled: "+(res.data.detail||"done")):(res.data.error||"Uninstall failed"));if(res.data.accepted)hydrate();}
+  else toast("Uninstall failed");
+};
 
 // wire chips + search + nav
 $$(".nav-btn").forEach(n=>n.onclick=()=>switchView(n.dataset.view));

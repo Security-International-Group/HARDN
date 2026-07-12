@@ -3205,6 +3205,7 @@ fn main() {
                     EXIT_SUCCESS
                 }
                 "serve" => crate::api::serve(8000),
+                "__uninstall" => crate::api::uninstall_cli(),
                 "services" => interactive_service_monitor(),
                 "--run-all-modules" | "run-all-modules" => run_all_modules(),
                 "--run-all-tools" | "run-all-tools" => run_all_tools(),
@@ -3232,6 +3233,8 @@ fn main() {
                         EXIT_USAGE
                     }
                 },
+                "__enforce" => crate::api::enforce_cli(&args[2], true),
+                "__revert" => crate::api::enforce_cli(&args[2], false),
                 "service" => manage_service(&args[2]),
                 "run-module" => handle_run_module(&module_dirs, &args[2]),
                 "run-tool" => handle_run_tool(&tool_dirs, &args[2], &module_dirs),

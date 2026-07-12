@@ -73,6 +73,8 @@ async fn run(port: u16, secrets: &auth::Secrets) -> i32 {
         .route("/api/v1/system/fips", get(system_fips))
         .route("/api/v1/hardening/controls", get(hardening_controls))
         .route("/api/v1/hardening/apply/{id}", post(hardening_apply))
+        .route("/api/v1/hardening/revert/{id}", post(hardening_revert))
+        .route("/api/v1/system/uninstall", post(system_uninstall))
         .route("/api/v1/audit/run", post(audit_run))
         .route("/api/v1/audit-log", get(audit_log_get))
         .route("/api/v1/evidence/export", get(evidence_export));
@@ -335,7 +337,7 @@ async fn audit_run(auth: AuthCtx) -> ApiResult {
 async fn hardening_apply(auth: AuthCtx, Path(id): Path<String>) -> ApiResult {
     require_operator(&auth)?;
     let id2 = id.clone();
-    match tokio::task::spawn_blocking(move || apply_control(&id2)).await {
+    match tokio::task::spawn_blocking(move || run_apply(&id2)).await {
         Ok(Ok(detail)) => {
             let e = audit_log::append(
                 auth.role.as_str(),
@@ -355,6 +357,57 @@ async fn hardening_apply(auth: AuthCtx, Path(id): Path<String>) -> ApiResult {
             Ok(Json(
                 json!({ "accepted": false, "control": id, "error": err }),
             ))
+        }
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": format!("task join error: {e}") })),
+        )),
+    }
+}
+
+async fn hardening_revert(auth: AuthCtx, Path(id): Path<String>) -> ApiResult {
+    require_operator(&auth)?;
+    let id2 = id.clone();
+    match tokio::task::spawn_blocking(move || run_revert(&id2)).await {
+        Ok(Ok(detail)) => {
+            let e = audit_log::append(
+                auth.role.as_str(),
+                "hardening.revert",
+                &format!("{id}: {detail}"),
+            );
+            Ok(Json(
+                json!({ "accepted": true, "control": id, "detail": detail, "log_seq": e.seq }),
+            ))
+        }
+        Ok(Err(err)) => {
+            audit_log::append(
+                auth.role.as_str(),
+                "hardening.revert.failed",
+                &format!("{id}: {err}"),
+            );
+            Ok(Json(
+                json!({ "accepted": false, "control": id, "error": err }),
+            ))
+        }
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": format!("task join error: {e}") })),
+        )),
+    }
+}
+
+async fn system_uninstall(auth: AuthCtx) -> ApiResult {
+    require_operator(&auth)?;
+    match tokio::task::spawn_blocking(run_uninstall).await {
+        Ok(Ok(detail)) => {
+            let e = audit_log::append(auth.role.as_str(), "system.uninstall", &detail);
+            Ok(Json(
+                json!({ "accepted": true, "detail": detail, "log_seq": e.seq }),
+            ))
+        }
+        Ok(Err(err)) => {
+            audit_log::append(auth.role.as_str(), "system.uninstall.failed", &err);
+            Ok(Json(json!({ "accepted": false, "error": err })))
         }
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -528,69 +581,200 @@ fn summarize(report: &Value) -> Value {
 /// Detect the live state of each hardening control by probing the host
 /// (sysctl values, running services, sshd config, FIPS). This is a real audit
 /// of the running OS, not a static catalog.
-fn controls_catalog() -> Value {
-    let c =
-        |name: &str, desc: &str, state: &str| json!({ "name": name, "desc": desc, "state": state });
-    let mut out: Vec<Value> = Vec::new();
+enum Risk {
+    Safe,
+    Moderate,
+    Disruptive,
+}
 
-    let aslr = proc_val("/proc/sys/kernel/randomize_va_space");
-    out.push(c(
-        "kernel.randomize_va_space",
-        "Full address-space layout randomization",
-        match aslr.as_deref() {
-            Some("2") => "applied",
-            Some(_) => "partial",
-            None => "not-applied",
-        },
-    ));
-    let kptr = proc_val("/proc/sys/kernel/kptr_restrict");
-    out.push(c(
-        "kernel.kptr_restrict",
-        "Hide kernel pointers from userspace",
-        match kptr.as_deref() {
-            Some("2") => "applied",
-            Some("1") => "partial",
-            _ => "not-applied",
-        },
-    ));
-    out.push(c(
-        "kernel.dmesg_restrict",
-        "Restrict dmesg to privileged users",
-        yn(proc_val("/proc/sys/kernel/dmesg_restrict").as_deref() == Some("1")),
-    ));
-    out.push(c(
-        "net.ipv4.rp_filter",
-        "Reverse-path source validation",
-        match proc_val("/proc/sys/net/ipv4/conf/all/rp_filter").as_deref() {
-            Some("1") => "applied",
-            Some("2") => "partial",
-            _ => "not-applied",
-        },
-    ));
-    for (svc, desc) in [
-        ("auditd", "Audit daemon running"),
-        ("apparmor", "AppArmor mandatory access control active"),
-        ("ufw", "Host firewall active"),
-        ("fail2ban", "Brute-force protection active"),
-    ] {
-        out.push(c(&format!("service.{svc}"), desc, yn(service_active(svc))));
+impl Risk {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Risk::Safe => "safe",
+            Risk::Moderate => "moderate",
+            Risk::Disruptive => "disruptive",
+        }
     }
-    let sshd = fs::read_to_string("/etc/ssh/sshd_config").unwrap_or_default();
-    let root_no = sshd.lines().any(|l| {
+}
+
+enum Kind {
+    Sysctl {
+        key: &'static str,
+        want: &'static str,
+        partial: Option<&'static str>,
+    },
+    Service {
+        unit: &'static str,
+    },
+    SshdRootLogin,
+    Fips,
+}
+
+struct Control {
+    id: &'static str,
+    desc: &'static str,
+    risk: Risk,
+    plan: &'static str,
+    revert_plan: &'static str,
+    kind: Kind,
+}
+
+/// The full control catalogue. `plan`/`revert_plan` are shown in the UI before
+/// anything runs; `risk` drives the confirmation prompt. Sysctl controls are
+/// safe and reversible; the console records the prior value before changing it.
+const CONTROLS: &[Control] = &[
+    Control {
+        id: "kernel.randomize_va_space",
+        desc: "Full address-space layout randomization",
+        risk: Risk::Safe,
+        plan: "sysctl kernel.randomize_va_space=2 (runtime + /etc/sysctl.d/90-hardn.conf)",
+        revert_plan: "restore the previous sysctl value",
+        kind: Kind::Sysctl {
+            key: "kernel.randomize_va_space",
+            want: "2",
+            partial: Some("1"),
+        },
+    },
+    Control {
+        id: "kernel.kptr_restrict",
+        desc: "Hide kernel pointers from userspace",
+        risk: Risk::Safe,
+        plan: "sysctl kernel.kptr_restrict=2",
+        revert_plan: "restore the previous value",
+        kind: Kind::Sysctl {
+            key: "kernel.kptr_restrict",
+            want: "2",
+            partial: Some("1"),
+        },
+    },
+    Control {
+        id: "kernel.dmesg_restrict",
+        desc: "Restrict dmesg to privileged users",
+        risk: Risk::Safe,
+        plan: "sysctl kernel.dmesg_restrict=1",
+        revert_plan: "restore the previous value",
+        kind: Kind::Sysctl {
+            key: "kernel.dmesg_restrict",
+            want: "1",
+            partial: None,
+        },
+    },
+    Control {
+        id: "net.ipv4.rp_filter",
+        desc: "Reverse-path source validation",
+        risk: Risk::Safe,
+        plan: "sysctl net.ipv4.conf.all.rp_filter=1",
+        revert_plan: "restore the previous value",
+        kind: Kind::Sysctl {
+            key: "net.ipv4.conf.all.rp_filter",
+            want: "1",
+            partial: Some("2"),
+        },
+    },
+    Control {
+        id: "service.auditd",
+        desc: "Audit daemon running",
+        risk: Risk::Moderate,
+        plan: "systemctl enable --now auditd",
+        revert_plan: "systemctl disable --now auditd",
+        kind: Kind::Service { unit: "auditd" },
+    },
+    Control {
+        id: "service.apparmor",
+        desc: "AppArmor mandatory access control active",
+        risk: Risk::Moderate,
+        plan: "systemctl enable --now apparmor",
+        revert_plan: "systemctl disable --now apparmor",
+        kind: Kind::Service { unit: "apparmor" },
+    },
+    Control {
+        id: "service.ufw",
+        desc: "Host firewall active",
+        risk: Risk::Disruptive,
+        plan: "ufw --force enable (default deny incoming; make sure SSH is allowed)",
+        revert_plan: "ufw disable",
+        kind: Kind::Service { unit: "ufw" },
+    },
+    Control {
+        id: "service.fail2ban",
+        desc: "Brute-force protection active",
+        risk: Risk::Moderate,
+        plan: "systemctl enable --now fail2ban",
+        revert_plan: "systemctl disable --now fail2ban",
+        kind: Kind::Service { unit: "fail2ban" },
+    },
+    Control {
+        id: "sshd.permit_root_login_no",
+        desc: "Disable direct root SSH login",
+        risk: Risk::Disruptive,
+        plan: "write 'PermitRootLogin no' to sshd_config.d/10-hardn.conf and reload ssh",
+        revert_plan: "remove the drop-in and reload ssh",
+        kind: Kind::SshdRootLogin,
+    },
+    Control {
+        id: "host.fips_mode",
+        desc: "Kernel FIPS mode enabled",
+        risk: Risk::Disruptive,
+        plan: "fips-mode-setup --enable (reboot required; Ubuntu uses Ubuntu Pro)",
+        revert_plan: "not auto-revertible (fips-mode-setup --disable + reboot)",
+        kind: Kind::Fips,
+    },
+];
+
+fn find_control(id: &str) -> Option<&'static Control> {
+    CONTROLS.iter().find(|c| c.id == id)
+}
+
+fn detect(kind: &Kind) -> &'static str {
+    match kind {
+        Kind::Sysctl { key, want, partial } => {
+            let want = *want;
+            let partial = *partial;
+            let path = format!("/proc/sys/{}", key.replace('.', "/"));
+            match proc_val(&path).as_deref() {
+                Some(v) if v == want => "applied",
+                Some(v) if partial == Some(v) => "partial",
+                _ => "not-applied",
+            }
+        }
+        Kind::Service { unit } => yn(service_active(unit)),
+        Kind::SshdRootLogin => yn(sshd_root_login_no()),
+        Kind::Fips => yn(fips_enabled()),
+    }
+}
+
+fn sshd_root_login_no() -> bool {
+    let mut txt = fs::read_to_string("/etc/ssh/sshd_config").unwrap_or_default();
+    if let Ok(rd) = fs::read_dir("/etc/ssh/sshd_config.d") {
+        for e in rd.flatten() {
+            if let Ok(s) = fs::read_to_string(e.path()) {
+                txt.push('\n');
+                txt.push_str(&s);
+            }
+        }
+    }
+    txt.lines().any(|l| {
         let l = l.trim();
         l.starts_with("PermitRootLogin") && l.split_whitespace().nth(1) == Some("no")
-    });
-    out.push(c(
-        "sshd.permit_root_login_no",
-        "Disable direct root SSH login",
-        yn(root_no),
-    ));
-    out.push(c(
-        "host.fips_mode",
-        "Kernel FIPS mode enabled",
-        yn(fips_enabled()),
-    ));
-    Value::Array(out)
+    })
+}
+
+fn controls_catalog() -> Value {
+    Value::Array(
+        CONTROLS
+            .iter()
+            .map(|c| {
+                json!({
+                    "name": c.id,
+                    "desc": c.desc,
+                    "state": detect(&c.kind),
+                    "risk": c.risk.as_str(),
+                    "plan": c.plan,
+                    "revert_plan": c.revert_plan,
+                })
+            })
+            .collect(),
+    )
 }
 
 fn yn(applied: bool) -> &'static str {
@@ -614,29 +798,230 @@ fn service_active(name: &str) -> bool {
 
 // ---------- control enforcement ----------
 
-/// Apply a hardening control by changing real system state. Requires root and
-/// returns a clear message otherwise. Every action is reversible except FIPS,
-/// which needs a reboot.
-fn apply_control(id: &str) -> Result<String, String> {
+/// Apply or revert a control. When the console runs unprivileged, the scoped
+/// `hardn __enforce/__revert <id>` helper is invoked via `sudo -n` so only that
+/// narrow action escalates; the web server itself never runs as root.
+fn run_apply(id: &str) -> Result<String, String> {
+    run_privileged(id, true)
+}
+
+fn run_revert(id: &str) -> Result<String, String> {
+    run_privileged(id, false)
+}
+
+fn run_privileged(id: &str, apply: bool) -> Result<String, String> {
+    if is_root() {
+        return if apply {
+            enforce_control(id)
+        } else {
+            revert_control(id)
+        };
+    }
+    let exe = std::env::current_exe().map_err(|e| format!("cannot locate hardn binary: {e}"))?;
+    let verb = if apply { "__enforce" } else { "__revert" };
+    let out = Command::new("sudo")
+        .arg("-n")
+        .arg(&exe)
+        .arg(verb)
+        .arg(id)
+        .output()
+        .map_err(|e| format!("sudo: {e}"))?;
+    let so = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let se = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    if out.status.success() {
+        Ok(if so.is_empty() { "done".into() } else { so })
+    } else if se.contains("password is required") || se.starts_with("sudo:") {
+        Err("needs privilege: install /etc/sudoers.d/hardn-console (see docs/CONSOLE.md) or run the console as root".into())
+    } else if !se.is_empty() {
+        Err(se)
+    } else if !so.is_empty() {
+        Err(so)
+    } else {
+        Err("enforcement failed".into())
+    }
+}
+
+/// Root-side apply. Records the prior sysctl value before changing it so the
+/// action can be reverted.
+fn enforce_control(id: &str) -> Result<String, String> {
+    let c = find_control(id).ok_or_else(|| format!("unknown control '{id}'"))?;
+    match &c.kind {
+        Kind::Sysctl { key, want, .. } => {
+            let path = format!("/proc/sys/{}", key.replace('.', "/"));
+            if let Some(cur) = proc_val(&path) {
+                save_backup(id, &cur);
+            }
+            set_sysctl(key, want)
+        }
+        Kind::Service { unit } => enable_service(unit),
+        Kind::SshdRootLogin => set_sshd("PermitRootLogin", "no"),
+        Kind::Fips => enable_fips(),
+    }
+}
+
+/// Root-side revert. Restores the backed-up value or removes the drop-in.
+fn revert_control(id: &str) -> Result<String, String> {
+    let c = find_control(id).ok_or_else(|| format!("unknown control '{id}'"))?;
+    match &c.kind {
+        Kind::Sysctl { key, .. } => match take_backup(id) {
+            Some(prev) => {
+                let out = Command::new("sysctl")
+                    .arg("-w")
+                    .arg(format!("{key}={prev}"))
+                    .output()
+                    .map_err(|e| format!("sysctl: {e}"))?;
+                if !out.status.success() {
+                    return Err(format!(
+                        "sysctl failed: {}",
+                        String::from_utf8_lossy(&out.stderr).trim()
+                    ));
+                }
+                remove_dropin_line("/etc/sysctl.d/90-hardn.conf", key);
+                Ok(format!("reverted {key} to {prev}"))
+            }
+            None => {
+                Err("no saved value to revert to (control was not applied via the console)".into())
+            }
+        },
+        Kind::Service { unit } => disable_service(unit),
+        Kind::SshdRootLogin => remove_sshd_dropin(),
+        Kind::Fips => {
+            Err("FIPS cannot be auto-reverted; run fips-mode-setup --disable and reboot".into())
+        }
+    }
+}
+
+/// CLI entry for the scoped enforcement helper (`hardn __enforce|__revert <id>`).
+pub fn enforce_cli(id: &str, apply: bool) -> i32 {
     if !is_root() {
-        return Err(
-            "changing system state needs root; restart the console as root (sudo hardn serve)"
-                .into(),
+        eprintln!(
+            "hardn {} must run as root",
+            if apply { "__enforce" } else { "__revert" }
         );
+        return 1;
     }
-    match id {
-        "kernel.randomize_va_space" => set_sysctl("kernel.randomize_va_space", "2"),
-        "kernel.kptr_restrict" => set_sysctl("kernel.kptr_restrict", "2"),
-        "kernel.dmesg_restrict" => set_sysctl("kernel.dmesg_restrict", "1"),
-        "net.ipv4.rp_filter" => set_sysctl("net.ipv4.conf.all.rp_filter", "1"),
-        "service.auditd" => enable_service("auditd"),
-        "service.apparmor" => enable_service("apparmor"),
-        "service.ufw" => enable_service("ufw"),
-        "service.fail2ban" => enable_service("fail2ban"),
-        "sshd.permit_root_login_no" => set_sshd("PermitRootLogin", "no"),
-        "host.fips_mode" => enable_fips(),
-        other => Err(format!("no enforcement is defined for control '{other}'")),
+    match if apply {
+        enforce_control(id)
+    } else {
+        revert_control(id)
+    } {
+        Ok(msg) => {
+            println!("{msg}");
+            0
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            1
+        }
     }
+}
+
+fn run_uninstall() -> Result<String, String> {
+    if is_root() {
+        return do_uninstall();
+    }
+    let exe = std::env::current_exe().map_err(|e| format!("cannot locate hardn binary: {e}"))?;
+    let out = Command::new("sudo")
+        .arg("-n")
+        .arg(&exe)
+        .arg("__uninstall")
+        .output()
+        .map_err(|e| format!("sudo: {e}"))?;
+    let so = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let se = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    if out.status.success() {
+        Ok(if so.is_empty() {
+            "uninstalled".into()
+        } else {
+            so
+        })
+    } else if se.contains("password is required") || se.starts_with("sudo:") {
+        Err("needs privilege: install /etc/sudoers.d/hardn-console (see docs/CONSOLE.md) or run the console as root".into())
+    } else {
+        Err(if !se.is_empty() { se } else { so })
+    }
+}
+
+/// Undo HARDN's footprint: revert every console-applied control, remove the
+/// HARDN drop-ins, then run the packaged uninstaller if present.
+fn do_uninstall() -> Result<String, String> {
+    let mut msgs: Vec<String> = Vec::new();
+    let ids: Vec<String> = load_backups()
+        .as_object()
+        .map(|o| o.keys().cloned().collect())
+        .unwrap_or_default();
+    for id in ids {
+        if let Ok(m) = revert_control(&id) {
+            msgs.push(m);
+        }
+    }
+    let _ = fs::remove_file("/etc/sysctl.d/90-hardn.conf");
+    let _ = fs::remove_file("/etc/ssh/sshd_config.d/10-hardn.conf");
+    msgs.push("removed HARDN sysctl + sshd drop-ins".into());
+    for p in [
+        "/usr/share/hardn/scripts/hardn-uninstall.sh",
+        "/usr/local/share/hardn/scripts/hardn-uninstall.sh",
+    ] {
+        if std::path::Path::new(p).exists() {
+            match Command::new("bash").arg(p).arg("--yes").output() {
+                Ok(o) if o.status.success() => msgs.push(format!("ran {p}")),
+                Ok(o) => msgs.push(format!("{p} exited {}", o.status)),
+                Err(e) => msgs.push(format!("{p}: {e}")),
+            }
+        }
+    }
+    Ok(msgs.join("; "))
+}
+
+pub fn uninstall_cli() -> i32 {
+    if !is_root() {
+        eprintln!("hardn __uninstall must run as root");
+        return 1;
+    }
+    match do_uninstall() {
+        Ok(m) => {
+            println!("{m}");
+            0
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            1
+        }
+    }
+}
+
+fn backup_path() -> PathBuf {
+    auth::state_dir().join("control-backups.json")
+}
+
+fn load_backups() -> Value {
+    fs::read_to_string(backup_path())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| json!({}))
+}
+
+fn save_backup(id: &str, val: &str) {
+    let mut b = load_backups();
+    if let Some(o) = b.as_object_mut() {
+        o.entry(id.to_string()).or_insert_with(|| json!(val));
+    }
+    let p = backup_path();
+    if let Some(dir) = p.parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    if let Ok(s) = serde_json::to_string(&b) {
+        let _ = fs::write(&p, s);
+    }
+}
+
+fn take_backup(id: &str) -> Option<String> {
+    let mut b = load_backups();
+    let v = b.as_object_mut().and_then(|o| o.remove(id));
+    if let Ok(s) = serde_json::to_string(&b) {
+        let _ = fs::write(backup_path(), s);
+    }
+    v.and_then(|x| x.as_str().map(|s| s.to_string()))
 }
 
 fn is_root() -> bool {
@@ -733,6 +1118,51 @@ fn set_sshd(directive: &str, val: &str) -> Result<String, String> {
             "; reload ssh to apply"
         }
     ))
+}
+
+fn disable_service(name: &str) -> Result<String, String> {
+    if name == "ufw" {
+        let out = Command::new("ufw")
+            .arg("disable")
+            .output()
+            .map_err(|e| format!("ufw: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "ufw failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+        return Ok("ufw disabled".into());
+    }
+    let out = Command::new("systemctl")
+        .args(["disable", "--now", name])
+        .output()
+        .map_err(|e| format!("systemctl: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "systemctl failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(format!("{name} disabled and stopped"))
+}
+
+fn remove_sshd_dropin() -> Result<String, String> {
+    let path = "/etc/ssh/sshd_config.d/10-hardn.conf";
+    remove_dropin_line(path, "PermitRootLogin");
+    let _ = Command::new("systemctl").args(["reload", "ssh"]).output();
+    Ok(format!("removed HARDN directive from {path}; reloaded ssh"))
+}
+
+fn remove_dropin_line(path: &str, key: &str) {
+    if let Ok(s) = fs::read_to_string(path) {
+        let kept: String = s
+            .lines()
+            .filter(|l| !l.trim_start().starts_with(key))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        let _ = fs::write(path, kept);
+    }
 }
 
 fn enable_fips() -> Result<String, String> {
