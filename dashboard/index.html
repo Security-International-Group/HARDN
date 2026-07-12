@@ -1,4 +1,4 @@
-<title>HARDN — STIG/CIS Compliance Console</title>
+<title>HARDN - STIG/CIS Compliance Console</title>
 <style>
 :root{
   --bg:#070b12; --s1:#0a0f1a; --s2:#0e1522; --s3:#131c2c;
@@ -234,6 +234,26 @@ tr.row-error{background:rgba(217,165,20,.035)}
 .dist{display:flex;height:20px;border:1px solid var(--line);overflow:hidden;background:var(--s3)}
 .dist>span{display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);font-size:10px;font-weight:800;color:#08111f;min-width:0;overflow:hidden;transition:width .4s}
 .ctrl-row{grid-template-columns:1fr auto auto}
+/* docs */
+.doc-index{padding:8px 6px;overflow-y:auto;display:flex;flex-direction:column;gap:1px}
+.doc-index a{font-family:var(--f-mono);font-size:11px;color:var(--ink2);text-decoration:none;padding:5px 9px;border-left:2px solid transparent;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.doc-index a:hover{background:var(--s2);color:var(--ink)}
+.doc-index a.active{color:var(--accent);border-left-color:var(--accent);background:rgba(0,200,255,.06)}
+.doc-body{padding:16px 22px;line-height:1.6}
+.doc-body h2{font-size:15px;color:var(--ink);font-weight:600;margin:24px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line);scroll-margin-top:8px}
+.doc-body h2:first-of-type{margin-top:0}
+.doc-body h3{font-family:var(--f-mono);font-size:11px;color:var(--ink2);letter-spacing:.6px;text-transform:uppercase;margin:16px 0 7px}
+.doc-body p{color:var(--ink2);font-size:13px;margin:0 0 10px;max-width:760px}
+.doc-body ul{margin:0 0 10px;padding-left:18px;color:var(--ink2);font-size:13px;max-width:760px}
+.doc-body li{margin:3px 0}
+.doc-body b{color:var(--ink)}
+.doc-body code{font-family:var(--f-mono);font-size:11.5px;background:var(--s2);border:1px solid var(--line);padding:1px 5px;color:var(--accent)}
+.doc-body pre{background:var(--bg);border:1px solid var(--line);border-left:2px solid var(--accent2);padding:11px 13px;overflow-x:auto;margin:0 0 12px;max-width:760px}
+.doc-body pre code{background:none;border:none;padding:0;color:var(--ink);font-size:11.5px}
+.doc-tbl{width:100%;max-width:760px;border-collapse:collapse;font-family:var(--f-mono);font-size:11px;margin:0 0 12px}
+.doc-tbl th{text-align:left;color:var(--mut);border-bottom:1px solid var(--line);padding:5px 8px;text-transform:uppercase;letter-spacing:.5px;font-size:10px}
+.doc-tbl td{border-bottom:1px solid var(--dim);padding:5px 8px;color:var(--ink2);vertical-align:top}
+.doc-note{border:1px solid var(--line2);border-left:2px solid var(--med);background:rgba(217,165,20,.05);padding:9px 12px;margin:0 0 12px;max-width:760px;font-size:12.5px;color:var(--ink2)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media (max-width:1200px){#col-r{display:none}}
 @media (max-width:900px){#kpi{grid-template-columns:repeat(3,1fr)}#col-l{flex-basis:100%}#col-c{display:none}}
@@ -246,11 +266,11 @@ tr.row-error{background:rgba(217,165,20,.035)}
       <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="0"/><path d="M8 21h8M12 17v4"/></svg>
       <span class="tb-os-label" id="tb-os">DEBIAN</span>
     </div>
-    <span id="page-title">Overview <span>— STIG / CIS compliance console</span></span>
+    <span id="page-title">Overview <span>- STIG / CIS compliance console</span></span>
     <div class="tb-right">
       <span class="tb-tag tag-info" id="tg-role">NO SESSION</span>
-      <span class="tb-tag tag-warn" id="tg-fips">FIPS —</span>
-      <span class="tb-tag tag-crit" id="tg-score">SCORE —</span>
+      <span class="tb-tag tag-warn" id="tg-fips">FIPS -</span>
+      <span class="tb-tag tag-crit" id="tg-score">SCORE -</span>
       <button class="btn btn-primary" id="run-btn"><svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20"/></svg>RUN AUDIT</button>
       <span class="live-dot sample" id="live-dot" title="data source"></span>
       <span class="clock" id="clock">--:--:--</span>
@@ -264,6 +284,7 @@ tr.row-error{background:rgba(217,165,20,.035)}
       <button class="nav-btn" data-view="telemetry" title="Telemetry"><svg viewBox="0 0 24 24"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg><span>TELE</span></button>
       <button class="nav-btn" data-view="controls" title="Controls"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span>CTRL</span></button>
       <button class="nav-btn" data-view="evidence" title="Evidence"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span>EVID</span></button>
+      <button class="nav-btn" data-view="docs" title="Documentation"><svg viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 0-2 2V5z"/><path d="M9 7h7M9 11h7"/></svg><span>DOCS</span></button>
     </nav>
 
     <div id="views">
@@ -286,11 +307,11 @@ tr.row-error{background:rgba(217,165,20,.035)}
           </div>
           <div id="col-c">
             <div class="panel" style="flex:0 0 auto">
-              <div class="ph">Compliance Posture<span class="ph-badge" id="posture-badge">—</span><span class="ph-right">weighted, pass + n/a satisfied</span></div>
+              <div class="ph">Compliance Posture<span class="ph-badge" id="posture-badge">-</span><span class="ph-right">weighted, pass + n/a satisfied</span></div>
               <div id="score-row">
                 <div class="score-box">
-                  <div class="score-num" id="score-num">—<small>/100</small></div>
-                  <div class="score-grade" id="score-grade">GRADE —</div>
+                  <div class="score-num" id="score-num">-<small>/100</small></div>
+                  <div class="score-grade" id="score-grade">GRADE -</div>
                   <div class="score-lbl">Compliance score</div>
                   <div class="score-bar"><span id="score-fill" style="width:0"></span></div>
                 </div>
@@ -372,7 +393,7 @@ tr.row-error{background:rgba(217,165,20,.035)}
       <div class="view" id="view-evidence">
         <div style="display:flex;gap:8px;flex:1;overflow:hidden;min-height:0">
           <div class="panel" style="flex:1">
-            <div class="ph">Audit Log<span class="ph-badge" id="ev-integrity">—</span><span class="ph-right">hash-chained, append-only</span>
+            <div class="ph">Audit Log<span class="ph-badge" id="ev-integrity">-</span><span class="ph-right">hash-chained, append-only</span>
               <button class="btn" id="export-btn" style="margin-left:auto"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>EXPORT</button>
             </div>
             <div class="scroll" id="full-log"></div>
@@ -384,13 +405,173 @@ tr.row-error{background:rgba(217,165,20,.035)}
           </div>
         </div>
       </div>
+
+      <!-- DOCS -->
+      <div class="view" id="view-docs">
+        <div style="display:flex;gap:8px;flex:1;overflow:hidden;min-height:0">
+          <div class="panel" style="flex:0 0 232px">
+            <div class="ph">Index</div>
+            <div class="doc-index" id="doc-index"></div>
+          </div>
+          <div class="panel" style="flex:1">
+            <div class="ph">Documentation<span class="ph-right">HARDN console v1.2.92</span></div>
+            <div class="doc-body scroll" id="doc-body">
+
+              <h2 id="d-overview">1. Overview</h2>
+              <p>HARDN hardens a Debian or Ubuntu host, runs a STIG and CIS compliance audit, and serves this local console so you can review posture, act on findings, and keep evidence. It runs as one binary. There is no background monitoring daemon and no desktop application.</p>
+              <p>The console has five working tabs plus this one. Everything it shows comes from the host it runs on: the audit report, live telemetry, and the real state of each hardening control.</p>
+              <ul>
+                <li><b>Overview</b>: score, open findings, posture, host summary.</li>
+                <li><b>Findings</b>: every audit rule, filterable, with evidence and remediation.</li>
+                <li><b>Telemetry</b>: host facts, services, resources, hardening state.</li>
+                <li><b>Controls</b>: apply or revert hardening, or uninstall HARDN.</li>
+                <li><b>Evidence</b>: the hash-chained audit log and evidence export.</li>
+              </ul>
+
+              <h2 id="d-start">2. Getting started</h2>
+              <h3>Build</h3>
+              <pre><code>cargo build --release
+cc -std=c11 -O2 src/audit/hardn_audit.c -o target/release/hardn-audit</code></pre>
+              <p>Or install to the system, which builds both binaries and wires the paths:</p>
+              <pre><code>sudo make hardn</code></pre>
+              <h3>Run the console</h3>
+              <pre><code>hardn serve            # binds 127.0.0.1:8000
+hardn serve 9000       # a different port</code></pre>
+              <p>On start it prints two links, each with a one time token:</p>
+              <pre><code>HARDN console on http://127.0.0.1:8000  (loopback only; Ctrl-C to stop)
+  operator: http://127.0.0.1:8000/?token=&lt;operator-secret&gt;
+  viewer:   http://127.0.0.1:8000/?token=&lt;viewer-secret&gt;</code></pre>
+              <p>Open the operator link in a browser on the same machine. The token sets a session cookie and the console loads with live data. The tokens live under the state directory (<code>~/.local/share/hardn</code> by default, or <code>/var/lib/hardn</code> when packaged), mode 0600.</p>
+
+              <h2 id="d-roles">3. Roles and tokens</h2>
+              <p>Two tokens are minted on first run. A <b>viewer</b> token can read everything. An <b>operator</b> token can also apply, revert, and uninstall. Present a token as a bearer header or the session cookie.</p>
+              <pre><code>OP=$(cat ~/.local/share/hardn/operator.secret)
+curl -s -H "Authorization: Bearer $OP" http://127.0.0.1:8000/api/v1/compliance/summary</code></pre>
+              <table class="doc-tbl"><thead><tr><th>Action</th><th>Viewer</th><th>Operator</th></tr></thead><tbody>
+                <tr><td>Read posture, findings, telemetry, log</td><td>yes</td><td>yes</td></tr>
+                <tr><td>Run audit, apply, revert, uninstall</td><td>no</td><td>yes</td></tr>
+              </tbody></table>
+              <p>An unauthenticated request to any data route returns 401. A viewer request to an operator route returns 403. The console refuses anonymous access even on loopback.</p>
+
+              <h2 id="d-tabs">4. The tabs</h2>
+              <h3>Overview</h3>
+              <p>A six cell KPI strip (score, passing, failing, high severity open, errors, FIPS), the compliance posture with a severity breakdown and category coverage, a findings queue sorted most severe first, a host panel, and the recent audit log.</p>
+              <h3>Findings</h3>
+              <p>The full rule set with a result summary and a severity distribution bar. Filter by result (fail, error, pass, n/a) and by severity (high, medium, low), or type to search rule id, title, or XCCDF id. Click any row for the drill down.</p>
+              <h3>Telemetry</h3>
+              <p>Host name, platform, kernel, architecture, uptime, and FIPS state, plus a security services grid, a live kernel and network hardening panel, category coverage bars, and resource sparklines.</p>
+              <h3>Controls and Evidence</h3>
+              <p>Covered in sections 7 and 11 below.</p>
+
+              <h2 id="d-audit">5. Compliance audit</h2>
+              <p>The audit engine is a C program, <code>hardn-audit</code>. It evaluates 194 SCAP and XCCDF rules and writes a JSON report to <code>/var/log/hardn/hardn_audit_report.json</code> (override with <code>HARDN_REPORT_PATH</code>). Each rule carries an id, title, category, severity, status, and evidence.</p>
+              <p>Run an audit from the console with the <b>Run Audit</b> button in the top bar (operator only), or from the CLI:</p>
+              <pre><code>sudo hardn audit
+# the console re-reads the report on the next load</code></pre>
+              <p>The score is weighted: a rule that passes or is not applicable counts as satisfied. Grade bands are A at 90, B at 80, C at 70, D at 60, F below.</p>
+
+              <h2 id="d-findings">6. Findings</h2>
+              <p>Each finding has a short id (for example <code>SSH-019</code>), the full XCCDF identifier, a category, a severity, a result, evidence text, and a remediation note. Results are pass, fail, error, or n/a. Filter with the chips, search across id, title, and XCCDF id, then click a row to see evidence and the exact fix.</p>
+              <pre><code># fail, high severity only
+curl -s -H "Authorization: Bearer $OP" \
+  "http://127.0.0.1:8000/api/v1/compliance/findings?result=fail&amp;severity=high"</code></pre>
+
+              <h2 id="d-controls">7. Controls and enforcement</h2>
+              <p>The Controls tab shows the live state of each hardening control, read from the host: sysctl values, running services, the sshd configuration, and FIPS. State is applied, partial, or not applied.</p>
+              <h3>Risk bands</h3>
+              <table class="doc-tbl"><thead><tr><th>Band</th><th>Meaning</th><th>Examples</th></tr></thead><tbody>
+                <tr><td><b>safe</b></td><td>Reversible, no service restart</td><td>kernel and network sysctls</td></tr>
+                <tr><td><b>moderate</b></td><td>Enables a service</td><td>auditd, apparmor, fail2ban</td></tr>
+                <tr><td><b>disruptive</b></td><td>Can affect access; confirmed first</td><td>ufw, sshd root login, FIPS</td></tr>
+              </tbody></table>
+              <h3>Apply and revert</h3>
+              <p>Every control shows a plan (what it will run) and a revert plan before anything happens. Applying a sysctl saves the previous value first, so <b>Revert</b> restores exactly what was there. Service and sshd changes are reverted by disabling the service or removing the HARDN drop in. A disruptive apply asks for confirmation. Every action is written to the audit log.</p>
+              <pre><code># apply, then revert one control
+curl -s -X POST -H "Authorization: Bearer $OP" \
+  http://127.0.0.1:8000/api/v1/hardening/apply/kernel.dmesg_restrict
+curl -s -X POST -H "Authorization: Bearer $OP" \
+  http://127.0.0.1:8000/api/v1/hardening/revert/kernel.dmesg_restrict</code></pre>
+              <div class="doc-note">Enforcement changes real system state and needs privilege. See section 8. Until privilege is set up, apply and revert return a clear message instead of a false success.</div>
+
+              <h2 id="d-privilege">8. Privilege setup</h2>
+              <p>The web server runs unprivileged and never binds a network interface. Only a scoped helper escalates, so enforcement works without running the console as root. Pick one option.</p>
+              <h3>Option 1: sudoers rule (recommended)</h3>
+              <p>Install <code>packaging/hardn-console.sudoers</code>, filling in your user and the hardn path:</p>
+              <pre><code>&lt;user&gt; ALL=(root) NOPASSWD: &lt;hardn&gt; __enforce *, &lt;hardn&gt; __revert *, &lt;hardn&gt; __uninstall</code></pre>
+              <pre><code>sudo install -m 0440 packaging/hardn-console.sudoers /etc/sudoers.d/hardn-console
+sudo visudo -cf /etc/sudoers.d/hardn-console     # prints parsed OK</code></pre>
+              <p>The console then runs <code>sudo -n hardn __enforce &lt;id&gt;</code> for that one action, and nothing else escalates.</p>
+              <h3>Option 2: run the console as root</h3>
+              <pre><code>sudo hardn serve</code></pre>
+              <p>Simpler, but the whole server is privileged.</p>
+
+              <h2 id="d-uninstall">9. Uninstall</h2>
+              <p>The <b>Uninstall HARDN</b> button on the Controls tab reverts every control that was applied through the console, removes the HARDN sysctl and sshd drop ins, and runs the packaged uninstaller if one is present. It asks for confirmation first and is recorded in the audit log. The console stops responding once the uninstall completes.</p>
+
+              <h2 id="d-fips">10. FIPS mode</h2>
+              <p>HARDN reads <code>/proc/sys/crypto/fips_enabled</code> and reports host FIPS state. It does not ship a FIPS kernel. Enabling FIPS depends on the distribution.</p>
+              <ul>
+                <li>On Debian or Red Hat family hosts with <code>fips-mode-setup</code>, the FIPS control runs <code>fips-mode-setup --enable</code>. A reboot is required.</li>
+                <li>On Ubuntu, FIPS is enabled through Ubuntu Pro. Run <code>sudo pro enable fips-updates</code> and reboot. The console reports this rather than pretending it can do it.</li>
+              </ul>
+              <div class="doc-note">Enabling kernel FIPS mode on Debian 12 can break apt because libgcrypt drops MD5 in FIPS mode. Read docs/FIPS.md before enabling it on a working host.</div>
+
+              <h2 id="d-evidence">11. Evidence and audit log</h2>
+              <p>Every privileged action appends one record to an append only log. Each record chains to the previous one:</p>
+              <pre><code>hash = SHA-256( prev | seq | ts | actor | action | detail )</code></pre>
+              <p>Editing, reordering, or removing any record breaks the chain. The Evidence tab shows the log with its integrity state, and reading the log recomputes the chain and flags any tampering. Export a point in time bundle as JSON or CSV; the JSON form carries a SHA-256 hash over the payload so an auditor can tie an export to a log state.</p>
+              <pre><code>curl -s -H "Authorization: Bearer $OP" \
+  "http://127.0.0.1:8000/api/v1/evidence/export?format=json" -o hardn-evidence.json</code></pre>
+
+              <h2 id="d-api">12. REST API</h2>
+              <p>All routes are under <code>/api/v1</code> on <code>127.0.0.1</code>. Reads need a viewer token; mutations need operator.</p>
+              <table class="doc-tbl"><thead><tr><th>Method</th><th>Route</th><th>Purpose</th></tr></thead><tbody>
+                <tr><td>GET</td><td><code>/health</code></td><td>liveness, unauthenticated</td></tr>
+                <tr><td>GET</td><td><code>/session</code></td><td>current role</td></tr>
+                <tr><td>GET</td><td><code>/compliance/summary</code></td><td>score and counts</td></tr>
+                <tr><td>GET</td><td><code>/compliance/findings</code></td><td>rules, filter by result and severity</td></tr>
+                <tr><td>GET</td><td><code>/system/telemetry</code></td><td>host, kernel, os, arch, fips</td></tr>
+                <tr><td>GET</td><td><code>/system/fips</code></td><td>FIPS state and source</td></tr>
+                <tr><td>GET</td><td><code>/hardening/controls</code></td><td>live control state, risk, plan</td></tr>
+                <tr><td>POST</td><td><code>/hardening/apply/{id}</code></td><td>apply a control, operator</td></tr>
+                <tr><td>POST</td><td><code>/hardening/revert/{id}</code></td><td>revert a control, operator</td></tr>
+                <tr><td>POST</td><td><code>/audit/run</code></td><td>run the audit engine, operator</td></tr>
+                <tr><td>GET</td><td><code>/audit-log</code></td><td>log records and integrity</td></tr>
+                <tr><td>GET</td><td><code>/evidence/export</code></td><td>signed bundle, json or csv</td></tr>
+                <tr><td>POST</td><td><code>/system/uninstall</code></td><td>revert all and remove, operator</td></tr>
+              </tbody></table>
+
+              <h2 id="d-cli">13. CLI reference</h2>
+              <table class="doc-tbl"><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody>
+                <tr><td><code>hardn serve [port]</code></td><td>start the console on loopback</td></tr>
+                <tr><td><code>hardn audit</code></td><td>run the compliance audit</td></tr>
+                <tr><td><code>hardn --status</code></td><td>show service and tool status</td></tr>
+                <tr><td><code>hardn --help</code></td><td>list commands</td></tr>
+              </tbody></table>
+              <p>The console also uses three internal helpers behind the sudoers rule: <code>hardn __enforce &lt;id&gt;</code>, <code>hardn __revert &lt;id&gt;</code>, and <code>hardn __uninstall</code>. You do not call these directly.</p>
+
+              <h2 id="d-security">14. Security model</h2>
+              <ul>
+                <li><b>Loopback only.</b> The console binds <code>127.0.0.1</code>. This is fixed in code and checked by a build gate that fails on any bind all pattern.</li>
+                <li><b>Authenticated.</b> Reads need a viewer token, mutations need operator, and anonymous access is refused.</li>
+                <li><b>Least privilege.</b> The server is unprivileged; only the scoped helper escalates for one action at a time.</li>
+                <li><b>Auditable.</b> Every privileged action is hash chained, and tampering is detected on read.</li>
+                <li><b>Reversible.</b> Applying a control records the prior value so it can be put back.</li>
+              </ul>
+              <p>See docs/THREAT-MODEL.md in the repository for the full threat list and mitigations.</p>
+
+              <div style="height:24px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
   <div id="footer">
     <span>SOURCE <b id="fs-src" class="fs-sample">SAMPLE</b></span>
-    <span>ENGINE <b id="fs-rules">—</b> rules</span>
-    <span>CHAIN <b id="fs-chain">—</b></span>
+    <span>ENGINE <b id="fs-rules">-</b> rules</span>
+    <span>CHAIN <b id="fs-chain">-</b></span>
     <span class="right">HARDN v1.2.92 · SCAP/XCCDF · <b id="fs-bind">loopback 127.0.0.1</b></span>
   </div>
 </div>
@@ -573,7 +754,7 @@ function renderHost(fipsTarget,kvTarget){
   $(fipsTarget).innerHTML = h.fips
     ? `<div class="fips-line on">FIPS mode <b>ENABLED</b> · fips_enabled=1</div>`
     : `<div class="fips-line off">FIPS mode <b>DISABLED</b> · fips_enabled=0</div>`;
-  $(kvTarget).innerHTML=[["Host",h.name],["Platform",h.os],["Kernel",h.kernel],["Arch",h.arch],["Uptime",h.uptime||"—"]]
+  $(kvTarget).innerHTML=[["Host",h.name],["Platform",h.os],["Kernel",h.kernel],["Arch",h.arch],["Uptime",h.uptime||"-"]]
     .map(([k,v])=>`<span class="k">${k}</span><span class="v" title="${v}">${v}</span>`).join("");
 }
 function renderServices(){
@@ -643,7 +824,7 @@ function renderLog(){
   $("#ev-integrity").style.color=SEED.chainOk===false?"var(--crit)":"var(--ok)";
   const rh=$("#runhist");rh.innerHTML="";
   SEED.runHistory.forEach(v=>{const b=el("div","b");b.style.height=v+"%";b.title="score "+v;rh.append(b);});
-  $("#ev-kv").innerHTML=[["Entries",String(SEED.auditLog.length)],["Integrity",SEED.chainOk===false?"BROKEN":"verified"],["Chain head","sha256:"+(SEED.chainHead||"—")],["Export","on demand"]]
+  $("#ev-kv").innerHTML=[["Entries",String(SEED.auditLog.length)],["Integrity",SEED.chainOk===false?"BROKEN":"verified"],["Chain head","sha256:"+(SEED.chainHead||"-")],["Export","on demand"]]
     .map(([k,v])=>`<span class="k">${k}</span><span class="v">${v}</span>`).join("");
 }
 function renderTopbar(){
@@ -652,7 +833,7 @@ function renderTopbar(){
   const fe=$("#tg-fips");fe.textContent="FIPS "+(SEED.host.fips?"ON":"OFF");fe.className="tb-tag "+(SEED.host.fips?"tag-ok":"tag-warn");
   const se=$("#tg-score");se.textContent="SCORE "+s.score+" "+s.grade;se.className="tb-tag "+(s.score>=80?"tag-ok":s.score>=60?"tag-warn":"tag-crit");
   $("#fs-rules").textContent=s.total;
-  $("#fs-chain").textContent=(SEED.chainOk===false?"BROKEN":"OK "+(SEED.chainHead||"—"));
+  $("#fs-chain").textContent=(SEED.chainOk===false?"BROKEN":"OK "+(SEED.chainHead||"-"));
 }
 function renderAll(){
   [renderKPI,renderPosture,()=>renderCharts("#charts"),()=>renderCharts("#tele-charts"),
@@ -677,8 +858,8 @@ function closeDrawer(){$("#scrim").classList.remove("open");$("#drawer").classLi
 function switchView(name){
   $$(".nav-btn").forEach(n=>n.classList.toggle("active",n.dataset.view===name));
   $$(".view").forEach(v=>v.classList.toggle("active",v.id==="view-"+name));
-  const titles={dash:"Overview",findings:"Findings",telemetry:"Telemetry",controls:"Controls",evidence:"Evidence"};
-  $("#page-title").innerHTML=titles[name]+' <span>— STIG / CIS compliance console</span>';
+  const titles={dash:"Overview",findings:"Findings",telemetry:"Telemetry",controls:"Controls",evidence:"Evidence",docs:"Documentation"};
+  $("#page-title").innerHTML=titles[name]+' <span>- STIG / CIS compliance console</span>';
 }
 function syncChips(sel,attr,val){$$(sel).forEach(c=>c.classList.toggle("on",c.getAttribute(attr)===val));}
 
@@ -749,7 +930,15 @@ $$("#view-findings .chip[data-r]").forEach(c=>c.onclick=()=>{afRes=c.dataset.r;s
 $$("#view-findings .chip[data-s]").forEach(c=>c.onclick=()=>{afSev=(afSev===c.dataset.s?"all":c.dataset.s);syncChips("#view-findings .chip[data-s]","data-s",afSev==="all"?null:afSev);renderAF();});
 $("#af-search").oninput=e=>{afQ=e.target.value.toLowerCase();renderAF();};
 
+function buildDocs(){
+  const idx=$("#doc-index"),body=$("#doc-body");if(!idx||!body)return;idx.innerHTML="";
+  const hs=$$("#doc-body h2[id]");
+  hs.forEach(h=>{const a=el("a",null,h.textContent);a.dataset.t=h.id;a.onclick=()=>h.scrollIntoView({block:"start"});idx.append(a);});
+  const spy=()=>{let cur=hs[0]&&hs[0].id;hs.forEach(h=>{if(h.offsetTop-body.scrollTop<=70)cur=h.id;});$$("#doc-index a").forEach(a=>a.classList.toggle("active",a.dataset.t===cur));};
+  body.addEventListener("scroll",spy);spy();
+}
 setInterval(tick,1000);tick();
 renderAll();
+buildDocs();
 hydrate();
 </script>
