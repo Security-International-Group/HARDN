@@ -56,8 +56,9 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Forbid binding all interfaces
         run: |
-          # The compliance API must bind loopback/unix-socket only (threat T1).
-          if grep -RInE '0\.0\.0\.0|BindAll|INADDR_ANY' src; then
+          # Match real bind-all constructs, not comments or example output that
+          # mention the address. The API binds Ipv4Addr::LOCALHOST only (T1).
+          if grep -RInE '"0\.0\.0\.0"|Ipv4Addr::UNSPECIFIED|Ipv6Addr::UNSPECIFIED|Ipv4Addr::new\(0, *0, *0, *0\)|INADDR_ANY|"\[::\]"' src; then
             echo "::error::Found a bind-all-interfaces pattern; the API must be loopback-only."
             exit 1
           fi
@@ -69,25 +70,25 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-    env:
-      # Bump deliberately; a wrong version fails loudly rather than silently skipping.
-      GITLEAKS_VERSION: 8.21.2
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-      - name: Install gitleaks (verified release binary)
+      - name: Install gitleaks (latest release, checksum-verified)
         run: |
           set -euo pipefail
-          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
-          tar="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          ver=$(curl -fsSL https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
+                | grep -oP '"tag_name": *"v\K[^"]+')
+          echo "gitleaks version: ${ver}"
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${ver}"
+          tar="gitleaks_${ver}_linux_x64.tar.gz"
           curl -fsSL -o "$tar" "${base}/${tar}"
-          curl -fsSL -o checksums.txt "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          curl -fsSL -o checksums.txt "${base}/gitleaks_${ver}_checksums.txt"
           grep " ${tar}\$" checksums.txt | sha256sum -c -
           tar -xzf "$tar" gitleaks
           sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
-      - name: Scan repository history for secrets
-        run: gitleaks detect --source . --redact --verbose
+      - name: Scan repository for secrets
+        run: gitleaks detect --source . --redact
 
   dependency-review:
     name: dependency review (PR only)

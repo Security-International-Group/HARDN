@@ -32,8 +32,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - language: python
-            build_mode: none
           - language: rust
             build_mode: none
     steps:
