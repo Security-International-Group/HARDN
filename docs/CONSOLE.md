@@ -75,7 +75,9 @@ curl -s -H "Authorization: Bearer $OP" http://127.0.0.1:8000/api/v1/compliance/s
 ### Mutations (operator only)
 
 - `POST /api/v1/audit/run` - runs the C audit engine, writes the report
-- `POST /api/v1/hardening/apply/{id}` - records a control application (audit-logged)
+- `POST /api/v1/hardening/apply/{id}` - apply a control, enforcing real host state
+- `POST /api/v1/hardening/revert/{id}` - revert a control to its prior state
+- `POST /api/v1/system/uninstall` - revert all console changes and remove HARDN
 
 ### Unauthenticated
 

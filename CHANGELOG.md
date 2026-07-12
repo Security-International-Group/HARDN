@@ -19,7 +19,8 @@ desktop application, and all continuous-monitoring daemons are removed.
 - **REST API (`/api/v1`).** `health`, `session` (login / whoami),
   `compliance/summary`, `compliance/findings` (filter by result + severity),
   `system/telemetry`, `system/fips`, `hardening/controls`,
-  `hardening/apply/{id}`, `audit/run`, `audit-log`, `evidence/export`.
+  `hardening/apply/{id}`, `hardening/revert/{id}`, `system/uninstall`,
+  `audit/run`, `audit-log`, `evidence/export`.
 - **Authentication + RBAC.** Two console tokens are minted on first run (mode
   `0600`): an operator (read + mutate) and a viewer (read only), presented via
   `Authorization: Bearer` or the `hardn_session` cookie. Anonymous access is
@@ -32,6 +33,15 @@ desktop application, and all continuous-monitoring daemons are removed.
 - **Live control detection.** `hardening/controls` probes the running host
   (sysctl values, active services, `sshd_config`, FIPS mode) rather than
   reporting a static list.
+- **Safe control enforcement.** Applying a control changes real host state
+  (sysctl, service, sshd, FIPS). Each control has a risk band (safe, moderate,
+  disruptive), a dry-run plan, and a saved backup so **Revert** restores the
+  prior value. Disruptive actions are confirmed in the UI. The web server stays
+  unprivileged; only a scoped `__enforce` / `__revert` helper escalates through
+  a sudoers rule (`packaging/hardn-console.sudoers`).
+- **Uninstall.** Reverts every console-applied control, removes the HARDN
+  drop-ins, and runs the packaged uninstaller if present.
+- **Documentation tab.** An in-console indexed reference with worked examples.
 - **DevSecOps CI gates.** `security.yml` (cargo-audit, cargo-deny, gitleaks,
   dependency-review, and a no-`0.0.0.0`-bind gate) plus `sbom.yml` (CycloneDX
   SBOM per build, attached to releases). Threat model in `docs/THREAT-MODEL.md`;
@@ -45,6 +55,8 @@ desktop application, and all continuous-monitoring daemons are removed.
 - **Dependencies trimmed** from 26 crates to 11; every remaining crate is used.
   The console adds only `axum`, `tokio`, and `sha2`.
 - **The console API binds loopback only**, enforced in code and by a CI gate.
+- **`make hardn` installs the audit engine.** The install target now copies the
+  compiled `hardn-audit` binary alongside `hardn`.
 
 ### Removed
 - The **LEGION** detection/monitoring engine (`src/legion/`, ~11k lines) and its

@@ -65,6 +65,8 @@ long-running surface in HARDN; it never binds a network interface.
 | `GET /api/v1/system/fips` | FIPS mode from `/proc/sys/crypto/fips_enabled` |
 | `GET /api/v1/hardening/controls` | live control state (sysctl, services, sshd) |
 | `POST /api/v1/hardening/apply/{id}` | apply a control (operator) |
+| `POST /api/v1/hardening/revert/{id}` | revert a control to its prior state (operator) |
+| `POST /api/v1/system/uninstall` | revert all changes and remove HARDN (operator) |
 | `POST /api/v1/audit/run` | run the audit engine (operator) |
 | `GET /api/v1/audit-log` | hash-chained audit log + integrity |
 | `GET /api/v1/evidence/export` | signed evidence bundle (`format=json\|csv`) |
