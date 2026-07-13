@@ -1,0 +1,25 @@
+# gitleaks configuration for HARDN.
+#
+# Extends the upstream default ruleset (every real secret format -- private
+# keys, cloud credentials, provider tokens, high-entropy assignments -- is
+# still detected) and allowlists the two sources of benign high-entropy
+# strings in this repository.
+#
+# The CI job scans the working tree (`--no-git`), so this covers what ships,
+# not deleted history.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "HARDN benign high-entropy: dependency lockfile and pinned CI action SHAs"
+paths = [
+  # Cargo.lock stores a SHA-256 checksum for every crate; these are integrity
+  # hashes, not secrets.
+  '''Cargo\.lock''',
+]
+regexes = [
+  # Pinned GitHub Action commit SHAs, e.g. `uses: owner/action@<40-hex> # vX`.
+  # Pinning by commit SHA is a supply-chain best practice, not a leak.
+  '''uses:\s+\S+@[0-9a-f]{40}''',
+]
