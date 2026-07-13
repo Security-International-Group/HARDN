@@ -1,0 +1,44 @@
+# gitleaks fingerprint allowlist.
+#
+# Each line is a `commit:file:rule:line` fingerprint gitleaks should ignore.
+# All entries below are the `curl-auth-header` rule matching documentation
+# examples in docs/hardn-api.md and docs/legion-daemon.md -- both files were
+# removed in the CLI/console refactor. The matched "secrets" are literal
+# placeholders (YOUR_SSH_KEY / YOUR_SSH_PUBLIC_KEY) in
+# `curl -H "Authorization: Bearer <placeholder>"` snippets, not real
+# credentials. Verified by inspecting the unredacted matches.
+#
+# Regenerate after a history change with:
+#   gitleaks detect --source . --report-format json --report-path r.json
+#   jq -r '.[].Fingerprint' r.json
+3989fab26be433a1e8a949d0e1452b4385f17450:docs/hardn-api.md:curl-auth-header:125
+3989fab26be433a1e8a949d0e1452b4385f17450:docs/hardn-api.md:curl-auth-header:128
+3989fab26be433a1e8a949d0e1452b4385f17450:docs/hardn-api.md:curl-auth-header:131
+3989fab26be433a1e8a949d0e1452b4385f17450:docs/hardn-api.md:curl-auth-header:134
+3989fab26be433a1e8a949d0e1452b4385f17450:docs/hardn-api.md:curl-auth-header:141
+3989fab26be433a1e8a949d0e1452b4385f17450:docs/hardn-api.md:curl-auth-header:144
+3989fab26be433a1e8a949d0e1452b4385f17450:docs/hardn-api.md:curl-auth-header:147
+3989fab26be433a1e8a949d0e1452b4385f17450:docs/hardn-api.md:curl-auth-header:90
+3989fab26be433a1e8a949d0e1452b4385f17450:docs/hardn-api.md:curl-auth-header:93
+3989fab26be433a1e8a949d0e1452b4385f17450:docs/hardn-api.md:curl-auth-header:96
+3989fab26be433a1e8a949d0e1452b4385f17450:docs/legion-daemon.md:curl-auth-header:464
+3989fab26be433a1e8a949d0e1452b4385f17450:docs/legion-daemon.md:curl-auth-header:467
+416bb348630b29e6fcf9d6d545eb28dccba06568:docs/hardn-api.md:curl-auth-header:102
+416bb348630b29e6fcf9d6d545eb28dccba06568:docs/hardn-api.md:curl-auth-header:105
+416bb348630b29e6fcf9d6d545eb28dccba06568:docs/hardn-api.md:curl-auth-header:134
+416bb348630b29e6fcf9d6d545eb28dccba06568:docs/hardn-api.md:curl-auth-header:140
+416bb348630b29e6fcf9d6d545eb28dccba06568:docs/hardn-api.md:curl-auth-header:143
+416bb348630b29e6fcf9d6d545eb28dccba06568:docs/hardn-api.md:curl-auth-header:150
+416bb348630b29e6fcf9d6d545eb28dccba06568:docs/hardn-api.md:curl-auth-header:156
+416bb348630b29e6fcf9d6d545eb28dccba06568:docs/hardn-api.md:curl-auth-header:160
+416bb348630b29e6fcf9d6d545eb28dccba06568:docs/hardn-api.md:curl-auth-header:168
+416bb348630b29e6fcf9d6d545eb28dccba06568:docs/hardn-api.md:curl-auth-header:171
+416bb348630b29e6fcf9d6d545eb28dccba06568:docs/hardn-api.md:curl-auth-header:174
+416bb348630b29e6fcf9d6d545eb28dccba06568:docs/hardn-api.md:curl-auth-header:99
+416bb348630b29e6fcf9d6d545eb28dccba06568:docs/legion-daemon.md:curl-auth-header:482
+416bb348630b29e6fcf9d6d545eb28dccba06568:docs/legion-daemon.md:curl-auth-header:485
+5b5e667174ee90ed6467eed2638bb44d38a3f3eb:docs/hardn-api.md:curl-auth-header:103
+5b5e667174ee90ed6467eed2638bb44d38a3f3eb:docs/hardn-api.md:curl-auth-header:141
+5b5e667174ee90ed6467eed2638bb44d38a3f3eb:docs/hardn-api.md:curl-auth-header:148
+5b5e667174ee90ed6467eed2638bb44d38a3f3eb:docs/hardn-api.md:curl-auth-header:154
+5b5e667174ee90ed6467eed2638bb44d38a3f3eb:docs/hardn-api.md:curl-auth-header:158
