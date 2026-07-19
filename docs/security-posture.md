@@ -33,7 +33,9 @@ This document provides a consolidated view of the security controls implemented 
 
 ### Detection & Platform Health
 
-- **File-Baseline Drift (SENTRY)**: a daily sha256 diff of high-value persistence files summarizes added, removed, and changed entries and raises one alert per change (see File-Baseline Drift below).
+- **Compliance audit**: the SCAP/XCCDF C engine (`hardn-audit`) evaluates 194
+  STIG/CIS rules on demand and emits a JSON report used by the console and by
+  automation.
 - **Security Platform Health**: Tracks Grafana, Wazuh, and other platform services. Records warnings, inactive states, and time of last alert.
 - **HIDS Resilience**: OSSEC tooling now auto-falls back to Wazuh packages when the legacy `ossec-hids` feed is unavailable and sends status logs to stderr so automation can detect failures cleanly.
 
@@ -70,40 +72,24 @@ This document provides a consolidated view of the security controls implemented 
 - Auditd setup exits cleanly inside containers (audit subsystem belongs
   to the host kernel).
 
-### File-Baseline Drift (SENTRY)
-
-- Daily sha256 baseline diff of the high-value persistence files:
-  `/etc/passwd`, `/etc/shadow`, `/etc/sudoers{,.d/*}`,
-  `authorized_keys` for root and every UID >= 1000, `/etc/crontab`,
-  `/etc/cron.*`, `/var/spool/cron/*`, `/etc/systemd/system/*.{service,timer,socket,path}`.
-- Added/removed/changed files fire one alert each. Sudoers and
-  authorized_keys drift = `critical`; other categories = `warning`.
-- Alerts share the dedupe + journald + webhook fanout (see Reporting &
-  Response).
-
 ### Reporting & Response
 
 - The compliance audit emits a JSON report of rule id, title, status,
-  evidence, category, and severity, plus a SENTRY baseline-drift summary.
-- JSON mode mirrors the console output for machine ingestion.
-- Unified alert channel: `emit_alert()` writes to
-  `/var/log/hardn/alerts.jsonl` and fans out to journald (always) and an
-  optional webhook (`HARDN_ALERT_WEBHOOK_URL`). Per-key TTL dedupe
-  (default 6 h, override `HARDN_ALERT_DEDUPE_TTL_SEC`) prevents
-  pager-spam.
+  evidence, category, and severity to
+  `/var/log/hardn/hardn_audit_report.json`.
+- The loopback console (`hardn serve`) presents the posture score, a
+  filterable findings queue, and live control state, and can run the audit
+  on demand.
+- Every operator action taken through the console is recorded in a
+  hash-chained audit log (`SHA-256(prev | seq | ts | actor | action |
+  detail)`); the chain is verified on read and detects any edit or deletion.
+  Evidence exports as a SHA-256-sealed JSON or CSV bundle.
 
 ### Observability Stack
 
-- `hardn-api` exposes `GET /metrics` in Prometheus text format. Series
-  cover service up/down, alert counts by severity, SENTRY drift by verb
-  and category, cron last-run timestamps and success flags, and SENTRY
-  baseline age. Unauthenticated; relies on
-  the UFW + iptables `HARDN-LOCKDOWN` chain scoped via
-  `HARDN_API_ALLOWED_CIDRS` for access control.
 - `tools/prometheus.sh` installs Prometheus + `prometheus-node-exporter`
-  from Debian main and writes a HARDN scrape drop-in pointed at the
-  `/metrics` endpoint plus the node exporter. Skipped in unprivileged
-  containers.
+  from Debian main and writes a scrape drop-in for the host node exporter at
+  `localhost:9100`. Skipped in unprivileged containers.
 - `tools/grafana.sh` installs Grafana on `HARDN_GRAFANA_PORT` (default
   3000) and provisions a default Prometheus data source so the dashboard
   boots wired in. UFW rule is added when UFW is active.
@@ -122,7 +108,7 @@ This document provides a consolidated view of the security controls implemented 
 | --- | --- | --- |
 | System Hardening | Authentication, logging, file permissions, network tuning | ✔ Active (via `hardening.sh`) |
 | Compiler Restriction | Group-based least privilege with optional relaxations | ✔ Restrict by default (updated) |
-| Compliance & Drift | SCAP/XCCDF audit, SENTRY file-baseline drift | ✔ Active (audit engine + daily diff) |
+| Compliance | SCAP/XCCDF 194-rule audit with signed evidence | ✔ Active (audit engine + console) |
 | Response & Reporting | Structured dashboards, JSON output, reactive plans | ✔ Automated + manual workflows |
 | Governance | Configurable policies, auditable state, documented outputs | ✔ Supported (this document) |
 
@@ -131,4 +117,4 @@ This document provides a consolidated view of the security controls implemented 
 1. Review `hardn` service manager docs for operational runbooks (`docs/hardn-service-manager.md`).
 2. Maintain the `hardncompilers` group membership via IAM/HR processes.
 3. Integrate audit reports with downstream SIEM/dashboard tooling using JSON exports.
-4. Schedule periodic reviews of SENTRY baseline drift and compliance findings.
+4. Schedule periodic reviews of compliance findings and the console audit log.
