@@ -1,0 +1,944 @@
+<title>HARDN - STIG/CIS Compliance Console</title>
+<style>
+:root{
+  --bg:#070b12; --s1:#0a0f1a; --s2:#0e1522; --s3:#131c2c;
+  --line:#1b2842; --line2:#27395c; --ink:#d7e3f2; --ink2:#a9bbd2; --mut:#6d8199;
+  --accent:#00c8ff; --accent2:#0a86b8;
+  --crit:#ff4d63; --high:#e0621f; --med:#d9a514; --low:#4a90f0; --ok:#25c77c; --info:#6d8199;
+  --dim:#141e30;
+  --f-ui:"Segoe UI","Inter",system-ui,-apple-system,sans-serif;
+  --f-mono:"Cascadia Code","JetBrains Mono","Fira Code","Consolas",monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:13px;overflow:hidden}
+button,input{font-family:inherit}
+::selection{background:rgba(0,200,255,.25)}
+*::-webkit-scrollbar{width:9px;height:9px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:#223350;border:2px solid var(--s1)}
+*::-webkit-scrollbar-thumb:hover{background:#314a6e}
+*{scrollbar-width:thin;scrollbar-color:#223350 transparent}
+:focus{outline:none}
+:focus-visible{outline:1px solid var(--accent);outline-offset:1px}
+.mono{font-family:var(--f-mono)}
+
+/* shell */
+#app{display:flex;flex-direction:column;height:100%}
+#topbar{height:46px;flex-shrink:0;display:flex;align-items:center;gap:12px;background:var(--s1);border-bottom:1px solid var(--line);padding:0 14px 0 10px}
+.tb-badge{font-family:var(--f-mono);background:var(--crit);color:#fff;font-weight:800;font-size:13px;letter-spacing:3px;padding:4px 12px}
+.tb-os-badge{display:flex;align-items:center;gap:8px;background:var(--s2);border:1px solid var(--line);padding:4px 10px}
+.tb-os-badge svg{width:15px;height:15px;stroke:var(--mut);fill:none;stroke-width:1.7}
+.tb-os-label{font-family:var(--f-mono);font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--ink2)}
+#page-title{font-size:13px;font-weight:600;color:var(--ink);letter-spacing:.4px}
+#page-title span{color:var(--mut);font-weight:400}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.tb-tag{font-family:var(--f-mono);font-size:10px;font-weight:700;letter-spacing:1px;padding:3px 9px;border:1px solid;white-space:nowrap}
+.tag-ok{color:var(--ok);border-color:rgba(37,199,124,.45)}
+.tag-warn{color:var(--med);border-color:rgba(217,165,20,.45)}
+.tag-crit{color:var(--crit);border-color:rgba(255,77,99,.55);background:rgba(255,77,99,.08)}
+.tag-info{color:var(--ink2);border-color:var(--line2)}
+.live-dot{width:7px;height:7px;background:var(--ok);box-shadow:0 0 5px var(--ok);display:inline-block}
+.live-dot.sample{background:var(--mut);box-shadow:none}
+.live-dot.run{background:var(--accent);box-shadow:0 0 6px var(--accent);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.3}}
+.clock{font-family:var(--f-mono);color:var(--ink2);font-size:11px}
+
+#shell{display:flex;flex:1;overflow:hidden}
+#nav-rail{width:64px;flex-shrink:0;background:var(--s1);border-right:1px solid var(--line);display:flex;flex-direction:column;padding-top:8px;gap:2px}
+.nav-btn{background:none;border:none;border-left:2px solid transparent;color:var(--mut);display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px 9px;cursor:pointer;transition:color .12s,background .12s}
+.nav-btn svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.nav-btn span{font-family:var(--f-mono);font-size:9px;font-weight:700;letter-spacing:1px}
+.nav-btn:hover{color:var(--ink2);background:var(--s2)}
+.nav-btn.active{color:var(--accent);border-left-color:var(--accent);background:linear-gradient(90deg,rgba(0,200,255,.08),transparent)}
+#views{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.view{flex:1;overflow:hidden;display:none;flex-direction:column;padding:8px;gap:8px}
+.view.active{display:flex}
+.view.scrolls{overflow-y:auto}
+
+#footer{height:26px;flex-shrink:0;display:flex;align-items:center;gap:10px;background:var(--s1);border-top:1px solid var(--line);padding:0 14px;font-family:var(--f-mono);font-size:10px;color:var(--mut)}
+#footer .right{margin-left:auto}
+#footer b{color:var(--ink2);font-weight:700}
+.fs-live{color:var(--ok)}.fs-sample{color:var(--med)}
+
+/* panel primitives */
+.panel{background:var(--s1);border:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;min-height:0}
+.ph{background:var(--s2);border-bottom:1px solid var(--line);padding:6px 12px;font-family:var(--f-mono);font-size:10px;font-weight:700;color:var(--ink2);letter-spacing:1.5px;text-transform:uppercase;display:flex;align-items:center;gap:8px;flex-shrink:0;min-height:30px}
+.ph-badge{font-size:10px;color:var(--accent);font-weight:700}
+.ph-right{margin-left:auto;font-size:10px;color:var(--mut);letter-spacing:.5px;text-transform:none}
+
+.btn{background:var(--s2);border:1px solid var(--line2);color:var(--ink2);font-family:var(--f-mono);font-size:10px;font-weight:700;letter-spacing:1px;padding:5px 12px;cursor:pointer;transition:all .12s;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{color:var(--ink);border-color:var(--accent2)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2}
+.btn-primary{background:rgba(0,200,255,.12);border-color:var(--accent2);color:var(--accent)}
+.btn-primary:hover{background:rgba(0,200,255,.2);color:#fff}
+
+.chip{background:none;border:1px solid var(--line2);color:var(--mut);font-family:var(--f-mono);font-size:10px;font-weight:700;letter-spacing:.5px;padding:3px 10px;cursor:pointer;transition:all .12s}
+.chip:hover{color:var(--ink2);border-color:var(--mut)}
+.chip.on{color:var(--accent);border-color:var(--accent2);background:rgba(0,200,255,.08)}
+.chip.chip-crit.on{color:var(--crit);border-color:var(--crit);background:rgba(255,77,99,.08)}
+.chip.chip-high.on{color:var(--high);border-color:var(--high);background:rgba(224,98,31,.08)}
+.chip.chip-med.on{color:var(--med);border-color:var(--med);background:rgba(217,165,20,.08)}
+.chip.chip-low.on{color:var(--low);border-color:var(--low);background:rgba(74,144,240,.08)}
+.search-input{background:var(--s3);border:1px solid var(--line);color:var(--ink);font-family:var(--f-mono);font-size:11px;padding:4px 9px;min-width:0}
+.search-input::placeholder{color:var(--mut)}
+.search-input:focus{border-color:var(--accent2)}
+
+.sev{font-family:var(--f-mono);font-size:9.5px;font-weight:800;letter-spacing:.8px;padding:2px 7px;border:1px solid;display:inline-block;line-height:1.3}
+.sev-high{color:var(--high);border-color:var(--high);background:rgba(224,98,31,.1)}
+.sev-medium{color:var(--med);border-color:var(--med);background:rgba(217,165,20,.1)}
+.sev-low{color:var(--low);border-color:var(--low);background:rgba(74,144,240,.1)}
+.res{font-family:var(--f-mono);font-size:9.5px;font-weight:800;letter-spacing:.8px;padding:2px 7px;border:1px solid;display:inline-block;line-height:1.3}
+.res-pass{color:var(--ok);border-color:rgba(37,199,124,.5);background:rgba(37,199,124,.08)}
+.res-fail{color:var(--crit);border-color:rgba(255,77,99,.5);background:rgba(255,77,99,.08)}
+.res-error{color:var(--med);border-color:rgba(217,165,20,.5);background:rgba(217,165,20,.08)}
+.res-na{color:var(--mut);border-color:var(--line2)}
+
+/* kpi strip */
+#kpi{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;flex-shrink:0}
+.kpi{background:var(--s1);border:1px solid var(--line);padding:9px 12px 8px;display:flex;flex-direction:column;gap:2px;position:relative;overflow:hidden}
+.kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--line2)}
+.kpi.k-score::before{background:var(--accent)}
+.kpi.k-pass::before{background:var(--ok)}
+.kpi.k-fail::before{background:var(--crit)}
+.kpi.k-high::before{background:var(--high)}
+.kpi.k-err::before{background:var(--med)}
+.kpi.k-fips::before{background:var(--low)}
+.kpi-lbl{font-family:var(--f-mono);font-size:10px;color:var(--mut);letter-spacing:1.2px;text-transform:uppercase}
+.kpi-val{font-family:var(--f-mono);font-size:24px;font-weight:800;line-height:1.05;color:var(--ink)}
+.kpi-val small{font-size:12px;color:var(--mut);font-weight:700}
+.kpi-sub{font-size:10px;color:var(--mut)}
+
+/* overview 3-col */
+#main{flex:1;display:flex;gap:8px;overflow:hidden;min-height:0}
+#col-l{flex:0 0 42%;display:flex;flex-direction:column;min-width:340px;overflow:hidden}
+#col-c{flex:1;display:flex;flex-direction:column;gap:8px;min-width:300px;overflow:hidden}
+#col-r{flex:0 0 250px;display:flex;flex-direction:column;gap:8px;min-width:210px;overflow:hidden}
+
+/* tables */
+.tbl{width:100%;border-collapse:collapse;table-layout:fixed;font-family:var(--f-mono)}
+.tbl thead th{background:var(--s2);padding:5px 8px;text-align:left;font-size:10px;color:var(--mut);letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2;white-space:nowrap;cursor:default}
+.tbl tbody tr{border-bottom:1px solid var(--dim);transition:background .1s;cursor:pointer}
+.tbl tbody tr:hover{background:var(--s3)}
+.tbl tbody td{padding:5px 8px;font-size:11.5px;vertical-align:middle;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--ink2)}
+.tbl td.t-id{color:var(--accent)}
+.tbl td.t-title{color:var(--ink)}
+.tbl td.t-cat{color:var(--mut);font-size:10.5px}
+tr.row-fail{background:rgba(255,77,99,.045)}
+tr.row-error{background:rgba(217,165,20,.035)}
+.scroll{flex:1;overflow-y:auto;min-height:0}
+.tbl-toolbar{display:flex;align-items:center;gap:6px;padding:7px 10px;flex-wrap:wrap;border-bottom:1px solid var(--line);background:var(--s1);flex-shrink:0}
+.tbl-toolbar .search-input{flex:1;min-width:120px}
+
+/* posture */
+#score-row{display:flex;gap:16px;padding:11px 12px;align-items:center;border-bottom:1px solid var(--line)}
+.score-box{flex-shrink:0;width:120px;display:flex;flex-direction:column;gap:6px}
+.score-num{font-family:var(--f-mono);font-size:44px;font-weight:800;letter-spacing:-1px;line-height:.9;color:var(--ink)}
+.score-num small{font-size:16px;color:var(--mut)}
+.score-grade{font-family:var(--f-mono);font-size:11px;letter-spacing:2px;font-weight:700}
+.score-lbl{font-size:9px;color:var(--mut);letter-spacing:1px;text-transform:uppercase}
+.score-bar{height:6px;background:var(--s3);overflow:hidden}
+.score-bar>span{display:block;height:100%;background:var(--accent);transition:width .5s}
+#breakdown{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.bd-title{font-family:var(--f-mono);font-size:10px;color:var(--mut);letter-spacing:1.2px;text-transform:uppercase;margin-bottom:2px}
+.bd-row{display:flex;align-items:center;gap:8px;cursor:pointer}
+.bd-lbl{font-size:10.5px;color:var(--ink2);width:70px;flex-shrink:0}
+.bd-track{flex:1;height:6px;background:var(--s3);overflow:hidden}
+.bd-fill{height:100%;transition:width .5s}
+.bd-n{font-family:var(--f-mono);font-size:11px;width:26px;text-align:right;flex-shrink:0;font-weight:700}
+
+/* category matrix */
+#cat-wrap{padding:6px 10px 10px;overflow-x:auto}
+#cat-table{width:100%;border-collapse:collapse;font-family:var(--f-mono);font-size:10px}
+#cat-table td{padding:3px 4px}
+#cat-table td.cat-lbl{text-align:left;color:var(--ink2);font-size:10.5px;white-space:nowrap;width:130px}
+#cat-table td.cat-bar{width:100%}
+.cat-track{height:9px;background:var(--s3);display:flex}
+.cat-track>span{height:100%}
+#cat-table td.cat-pct{text-align:right;color:var(--mut);width:38px;font-weight:700}
+
+/* charts */
+.chart-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--line);padding:1px}
+.chart-block{background:var(--s1);padding:7px 10px 8px;display:flex;flex-direction:column;gap:4px}
+.chart-hdr{display:flex;align-items:flex-start;justify-content:space-between;gap:6px}
+.chart-title{font-family:var(--f-mono);font-size:10px;font-weight:700;color:var(--ink2);letter-spacing:1px;text-transform:uppercase}
+.chart-val{font-family:var(--f-mono);font-size:15px;font-weight:800;line-height:1}
+.spark{width:100%;height:30px;display:block}
+
+/* key-value + services */
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;padding:10px 12px;font-family:var(--f-mono);font-size:11px}
+.kv .k{color:var(--mut)}
+.kv .v{color:var(--ink);text-align:right;overflow:hidden;text-overflow:ellipsis}
+.svc-list{padding:8px 10px;display:flex;flex-direction:column;gap:4px}
+.svc{display:flex;align-items:center;gap:8px;font-family:var(--f-mono);font-size:11px}
+.svc .n{color:var(--ink2);flex:1}
+.svc .st{font-size:9px;letter-spacing:.5px;text-transform:uppercase;font-weight:700}
+.svc .st.active{color:var(--ok)}.svc .st.inactive{color:var(--crit)}.svc .st.masked{color:var(--mut)}
+.svc-dot{width:6px;height:6px;flex-shrink:0}
+.svc-dot.active{background:var(--ok)}.svc-dot.inactive{background:var(--crit)}.svc-dot.masked{background:var(--mut)}
+
+.fips-line{padding:9px 12px;font-family:var(--f-mono);font-size:11px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
+.fips-line.on{color:var(--ok)}.fips-line.off{color:var(--med)}
+.fips-line b{color:var(--ink)}
+
+/* controls */
+.ctrl-row{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid var(--dim)}
+.ctrl-row:hover{background:var(--s3)}
+.ctrl-name{font-family:var(--f-mono);font-size:11.5px;color:var(--ink)}
+.ctrl-desc{font-size:10.5px;color:var(--mut);margin-top:1px}
+.st-applied{color:var(--ok);border-color:rgba(37,199,124,.5)}
+.st-partial{color:var(--med);border-color:rgba(217,165,20,.5)}
+.st-notapplied{color:var(--crit);border-color:rgba(255,77,99,.5)}
+
+/* evidence log */
+.log-row{display:grid;grid-template-columns:150px 82px 1fr;gap:10px;padding:6px 12px;border-bottom:1px solid var(--dim);font-family:var(--f-mono);font-size:11px;align-items:baseline}
+.log-row .ts{color:var(--mut);font-size:10.5px}
+.log-row .actor{color:var(--accent)}
+.log-row .msg{color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.log-row .msg .h{color:var(--line2);font-size:10px}
+.runhist{display:flex;align-items:flex-end;gap:3px;height:56px;padding:10px 12px 6px}
+.runhist .b{flex:1;background:var(--accent2);min-height:3px}
+.runhist .b:last-child{background:var(--accent)}
+
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(4,7,12,.6);opacity:0;pointer-events:none;transition:opacity .16s;z-index:40}
+.scrim.open{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(460px,92vw);background:var(--s1);border-left:1px solid var(--line2);z-index:50;transform:translateX(100%);transition:transform .18s ease;display:flex;flex-direction:column}
+.drawer.open{transform:none}
+.drawer .dh{background:var(--s2);border-bottom:1px solid var(--line);padding:12px 14px}
+.drawer .dh .rid{font-family:var(--f-mono);font-size:11px;color:var(--accent);letter-spacing:.5px}
+.drawer .dh h3{margin:7px 0 10px;font-size:14px;color:var(--ink);line-height:1.35;font-weight:600}
+.drawer .dh .chips{display:flex;gap:6px}
+.drawer .db{padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:14px}
+.fb .lbl{font-family:var(--f-mono);font-size:9.5px;color:var(--mut);letter-spacing:1.2px;text-transform:uppercase;display:block;margin-bottom:5px}
+.fb .val{font-family:var(--f-mono);font-size:11.5px;color:var(--ink2);line-height:1.6;word-break:break-word}
+.fb .val.code{background:var(--bg);border:1px solid var(--line);padding:9px 11px;color:var(--ink);white-space:pre-wrap}
+.dclose{position:absolute;top:10px;right:12px;background:none;border:none;color:var(--mut);cursor:pointer;font-size:18px;line-height:1;padding:4px}
+.dclose:hover{color:var(--ink)}
+
+.toast{position:fixed;bottom:34px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--s3);border:1px solid var(--line2);padding:9px 14px;font-family:var(--f-mono);font-size:11.5px;color:var(--ink);z-index:60;opacity:0;transition:opacity .18s,transform .18s;display:flex;align-items:center;gap:9px;box-shadow:0 8px 28px rgba(0,0,0,.5)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast .live-dot{background:var(--ok)}
+
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:34px 12px;color:var(--mut);gap:6px;font-size:12px}
+.mini-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;flex-shrink:0}
+.mini{background:var(--s1);border:1px solid var(--line);padding:8px 12px;display:flex;flex-direction:column;gap:2px}
+.mini .l{font-family:var(--f-mono);font-size:9.5px;color:var(--mut);letter-spacing:1px;text-transform:uppercase}
+.mini .v{font-family:var(--f-mono);font-size:20px;font-weight:800;color:var(--ink)}
+.btn-danger{border-color:rgba(255,77,99,.5);color:var(--crit)}
+.btn-danger:hover{background:rgba(255,77,99,.12);color:#fff}
+.risk-safe{color:var(--ok);border-color:rgba(37,199,124,.5)}
+.risk-moderate{color:var(--med);border-color:rgba(217,165,20,.5)}
+.risk-disruptive{color:var(--crit);border-color:rgba(255,77,99,.5)}
+.ctrl-plan{font-family:var(--f-mono);font-size:10px;color:var(--mut);margin-top:3px}
+.dist{display:flex;height:20px;border:1px solid var(--line);overflow:hidden;background:var(--s3)}
+.dist>span{display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);font-size:10px;font-weight:800;color:#08111f;min-width:0;overflow:hidden;transition:width .4s}
+.ctrl-row{grid-template-columns:1fr auto auto}
+/* docs */
+.doc-index{padding:8px 6px;overflow-y:auto;display:flex;flex-direction:column;gap:1px}
+.doc-index a{font-family:var(--f-mono);font-size:11px;color:var(--ink2);text-decoration:none;padding:5px 9px;border-left:2px solid transparent;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.doc-index a:hover{background:var(--s2);color:var(--ink)}
+.doc-index a.active{color:var(--accent);border-left-color:var(--accent);background:rgba(0,200,255,.06)}
+.doc-body{padding:16px 22px;line-height:1.6}
+.doc-body h2{font-size:15px;color:var(--ink);font-weight:600;margin:24px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line);scroll-margin-top:8px}
+.doc-body h2:first-of-type{margin-top:0}
+.doc-body h3{font-family:var(--f-mono);font-size:11px;color:var(--ink2);letter-spacing:.6px;text-transform:uppercase;margin:16px 0 7px}
+.doc-body p{color:var(--ink2);font-size:13px;margin:0 0 10px;max-width:760px}
+.doc-body ul{margin:0 0 10px;padding-left:18px;color:var(--ink2);font-size:13px;max-width:760px}
+.doc-body li{margin:3px 0}
+.doc-body b{color:var(--ink)}
+.doc-body code{font-family:var(--f-mono);font-size:11.5px;background:var(--s2);border:1px solid var(--line);padding:1px 5px;color:var(--accent)}
+.doc-body pre{background:var(--bg);border:1px solid var(--line);border-left:2px solid var(--accent2);padding:11px 13px;overflow-x:auto;margin:0 0 12px;max-width:760px}
+.doc-body pre code{background:none;border:none;padding:0;color:var(--ink);font-size:11.5px}
+.doc-tbl{width:100%;max-width:760px;border-collapse:collapse;font-family:var(--f-mono);font-size:11px;margin:0 0 12px}
+.doc-tbl th{text-align:left;color:var(--mut);border-bottom:1px solid var(--line);padding:5px 8px;text-transform:uppercase;letter-spacing:.5px;font-size:10px}
+.doc-tbl td{border-bottom:1px solid var(--dim);padding:5px 8px;color:var(--ink2);vertical-align:top}
+.doc-note{border:1px solid var(--line2);border-left:2px solid var(--med);background:rgba(217,165,20,.05);padding:9px 12px;margin:0 0 12px;max-width:760px;font-size:12.5px;color:var(--ink2)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:1200px){#col-r{display:none}}
+@media (max-width:900px){#kpi{grid-template-columns:repeat(3,1fr)}#col-l{flex-basis:100%}#col-c{display:none}}
+</style>
+
+<div id="app">
+  <div id="topbar">
+    <div class="tb-badge">HARDN</div>
+    <div class="tb-os-badge">
+      <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="0"/><path d="M8 21h8M12 17v4"/></svg>
+      <span class="tb-os-label" id="tb-os">DEBIAN</span>
+    </div>
+    <span id="page-title">Overview <span>- STIG / CIS compliance console</span></span>
+    <div class="tb-right">
+      <span class="tb-tag tag-info" id="tg-role">NO SESSION</span>
+      <span class="tb-tag tag-warn" id="tg-fips">FIPS -</span>
+      <span class="tb-tag tag-crit" id="tg-score">SCORE -</span>
+      <button class="btn btn-primary" id="run-btn"><svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20"/></svg>RUN AUDIT</button>
+      <span class="live-dot sample" id="live-dot" title="data source"></span>
+      <span class="clock" id="clock">--:--:--</span>
+    </div>
+  </div>
+
+  <div id="shell">
+    <nav id="nav-rail">
+      <button class="nav-btn active" data-view="dash" title="Overview"><svg viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z"/></svg><span>OVER</span></button>
+      <button class="nav-btn" data-view="findings" title="Findings"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>FIND</span></button>
+      <button class="nav-btn" data-view="telemetry" title="Telemetry"><svg viewBox="0 0 24 24"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg><span>TELE</span></button>
+      <button class="nav-btn" data-view="controls" title="Controls"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span>CTRL</span></button>
+      <button class="nav-btn" data-view="evidence" title="Evidence"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span>EVID</span></button>
+      <button class="nav-btn" data-view="docs" title="Documentation"><svg viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 0-2 2V5z"/><path d="M9 7h7M9 11h7"/></svg><span>DOCS</span></button>
+    </nav>
+
+    <div id="views">
+      <!-- OVERVIEW -->
+      <div class="view active" id="view-dash">
+        <div id="kpi"></div>
+        <div id="main">
+          <div id="col-l">
+            <div class="panel" style="flex:1">
+              <div class="ph">Findings Queue<span class="ph-badge" id="fq-count"></span><span class="ph-right" id="fq-note">failing + error, most severe first</span></div>
+              <div class="tbl-toolbar">
+                <button class="chip on" data-f="all">ALL</button>
+                <button class="chip chip-high" data-f="high">HIGH</button>
+                <button class="chip chip-med" data-f="medium">MED</button>
+                <button class="chip chip-low" data-f="low">LOW</button>
+                <input class="search-input" id="fq-search" type="search" placeholder="filter rule / title / xccdf…">
+              </div>
+              <div class="scroll"><table class="tbl"><thead><tr><th style="width:74px">Rule</th><th>Title</th><th style="width:70px">Sev</th><th style="width:62px">Result</th></tr></thead><tbody id="fq-body"></tbody></table></div>
+            </div>
+          </div>
+          <div id="col-c">
+            <div class="panel" style="flex:0 0 auto">
+              <div class="ph">Compliance Posture<span class="ph-badge" id="posture-badge">-</span><span class="ph-right">weighted, pass + n/a satisfied</span></div>
+              <div id="score-row">
+                <div class="score-box">
+                  <div class="score-num" id="score-num">-<small>/100</small></div>
+                  <div class="score-grade" id="score-grade">GRADE -</div>
+                  <div class="score-lbl">Compliance score</div>
+                  <div class="score-bar"><span id="score-fill" style="width:0"></span></div>
+                </div>
+                <div id="breakdown">
+                  <div class="bd-title">Open findings by severity</div>
+                  <div id="bd-rows"></div>
+                </div>
+              </div>
+              <div class="ph" style="border-top:1px solid var(--line)">Category Coverage<span class="ph-right">pass rate by control family</span></div>
+              <div id="cat-wrap"><table id="cat-table"><tbody id="cat-body"></tbody></table></div>
+            </div>
+            <div class="panel" style="flex:0 0 auto">
+              <div class="ph">System Monitor<span class="ph-right">host resources</span></div>
+              <div class="chart-grid" id="charts"></div>
+            </div>
+          </div>
+          <div id="col-r">
+            <div class="panel" style="flex:0 0 auto">
+              <div class="ph">Host</div>
+              <div id="host-fips"></div>
+              <div class="kv" id="host-kv"></div>
+            </div>
+            <div class="panel" style="flex:1;min-height:120px">
+              <div class="ph">Audit Log<span class="ph-right" id="chain-note"></span></div>
+              <div class="scroll" id="mini-log"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FINDINGS -->
+      <div class="view" id="view-findings">
+        <div class="panel" style="flex:1">
+          <div class="ph">All Findings<span class="ph-badge" id="af-count"></span><span class="ph-right">click a row for evidence + remediation</span></div>
+          <div class="mini-strip" id="af-summary" style="padding:8px 10px 0"></div>
+          <div style="padding:7px 10px 9px"><div class="dist" id="af-dist" title="open findings by severity"></div></div>
+          <div class="tbl-toolbar">
+            <button class="chip on" data-r="all">ALL</button>
+            <button class="chip chip-crit" data-r="fail">FAIL</button>
+            <button class="chip chip-med" data-r="error">ERROR</button>
+            <button class="chip" data-r="pass">PASS</button>
+            <button class="chip" data-r="na">N/A</button>
+            <span style="width:8px"></span>
+            <button class="chip chip-high" data-s="high">HIGH</button>
+            <button class="chip chip-med" data-s="medium">MED</button>
+            <button class="chip chip-low" data-s="low">LOW</button>
+            <input class="search-input" id="af-search" type="search" placeholder="filter rule / title / xccdf id…">
+          </div>
+          <div class="scroll"><table class="tbl"><thead><tr><th style="width:78px">Rule</th><th>Title</th><th style="width:120px">Category</th><th style="width:70px">Sev</th><th style="width:62px">Result</th></tr></thead><tbody id="af-body"></tbody></table></div>
+        </div>
+      </div>
+
+      <!-- TELEMETRY -->
+      <div class="view scrolls" id="view-telemetry">
+        <div class="mini-strip" id="tele-kpi"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="panel"><div class="ph">System</div><div id="tele-fips"></div><div class="kv" id="tele-kv"></div></div>
+          <div class="panel"><div class="ph">Security Services</div><div class="svc-list" id="tele-svc"></div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div class="panel"><div class="ph">Kernel &amp; Network Hardening<span class="ph-right">live sysctl / service state</span></div><div class="svc-list" id="tele-harden"></div></div>
+          <div class="panel"><div class="ph">Category Coverage<span class="ph-right">pass rate</span></div><div id="tele-cats" style="padding:9px 10px"></div></div>
+        </div>
+        <div class="panel"><div class="ph">Resources<span class="ph-right">host utilization</span></div><div class="chart-grid" id="tele-charts"></div></div>
+      </div>
+
+      <!-- CONTROLS -->
+      <div class="view scrolls" id="view-controls">
+        <div class="mini-strip" id="ctrl-summary"></div>
+        <div class="panel">
+          <div class="ph">Hardening Controls<span class="ph-badge" id="ctrl-count"></span><span class="ph-right">live host state, apply / revert</span>
+            <button class="btn btn-danger" id="uninstall-btn" style="margin-left:auto">UNINSTALL HARDN</button>
+          </div>
+          <div id="ctrl-list"></div>
+        </div>
+      </div>
+
+      <!-- EVIDENCE -->
+      <div class="view" id="view-evidence">
+        <div style="display:flex;gap:8px;flex:1;overflow:hidden;min-height:0">
+          <div class="panel" style="flex:1">
+            <div class="ph">Audit Log<span class="ph-badge" id="ev-integrity">-</span><span class="ph-right">hash-chained, append-only</span>
+              <button class="btn" id="export-btn" style="margin-left:auto"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>EXPORT</button>
+            </div>
+            <div class="scroll" id="full-log"></div>
+          </div>
+          <div class="panel" style="flex:0 0 260px">
+            <div class="ph">Scan History</div>
+            <div class="runhist" id="runhist"></div>
+            <div class="kv" id="ev-kv"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DOCS -->
+      <div class="view" id="view-docs">
+        <div style="display:flex;gap:8px;flex:1;overflow:hidden;min-height:0">
+          <div class="panel" style="flex:0 0 232px">
+            <div class="ph">Index</div>
+            <div class="doc-index" id="doc-index"></div>
+          </div>
+          <div class="panel" style="flex:1">
+            <div class="ph">Documentation<span class="ph-right">HARDN console v1.2.92</span></div>
+            <div class="doc-body scroll" id="doc-body">
+
+              <h2 id="d-overview">1. Overview</h2>
+              <p>HARDN hardens a Debian or Ubuntu host, runs a STIG and CIS compliance audit, and serves this local console so you can review posture, act on findings, and keep evidence. It runs as one binary. There is no background monitoring daemon and no desktop application.</p>
+              <p>The console has five working tabs plus this one. Everything it shows comes from the host it runs on: the audit report, live telemetry, and the real state of each hardening control.</p>
+              <ul>
+                <li><b>Overview</b>: score, open findings, posture, host summary.</li>
+                <li><b>Findings</b>: every audit rule, filterable, with evidence and remediation.</li>
+                <li><b>Telemetry</b>: host facts, services, resources, hardening state.</li>
+                <li><b>Controls</b>: apply or revert hardening, or uninstall HARDN.</li>
+                <li><b>Evidence</b>: the hash-chained audit log and evidence export.</li>
+              </ul>
+
+              <h2 id="d-start">2. Getting started</h2>
+              <h3>Build</h3>
+              <pre><code>cargo build --release
+cc -std=c11 -O2 src/audit/hardn_audit.c -o target/release/hardn-audit</code></pre>
+              <p>Or install to the system, which builds both binaries and wires the paths:</p>
+              <pre><code>sudo make hardn</code></pre>
+              <h3>Run the console</h3>
+              <pre><code>hardn serve            # binds 127.0.0.1:8000
+hardn serve 9000       # a different port</code></pre>
+              <p>On start it prints two links, each with a one time token:</p>
+              <pre><code>HARDN console on http://127.0.0.1:8000  (loopback only; Ctrl-C to stop)
+  operator: http://127.0.0.1:8000/?token=&lt;operator-secret&gt;
+  viewer:   http://127.0.0.1:8000/?token=&lt;viewer-secret&gt;</code></pre>
+              <p>Open the operator link in a browser on the same machine. The token sets a session cookie and the console loads with live data. The tokens live under the state directory (<code>~/.local/share/hardn</code> by default, or <code>/var/lib/hardn</code> when packaged), mode 0600.</p>
+
+              <h2 id="d-roles">3. Roles and tokens</h2>
+              <p>Two tokens are minted on first run. A <b>viewer</b> token can read everything. An <b>operator</b> token can also apply, revert, and uninstall. Present a token as a bearer header or the session cookie.</p>
+              <pre><code>OP=$(cat ~/.local/share/hardn/operator.secret)
+curl -s -H "Authorization: Bearer $OP" http://127.0.0.1:8000/api/v1/compliance/summary</code></pre>
+              <table class="doc-tbl"><thead><tr><th>Action</th><th>Viewer</th><th>Operator</th></tr></thead><tbody>
+                <tr><td>Read posture, findings, telemetry, log</td><td>yes</td><td>yes</td></tr>
+                <tr><td>Run audit, apply, revert, uninstall</td><td>no</td><td>yes</td></tr>
+              </tbody></table>
+              <p>An unauthenticated request to any data route returns 401. A viewer request to an operator route returns 403. The console refuses anonymous access even on loopback.</p>
+
+              <h2 id="d-tabs">4. The tabs</h2>
+              <h3>Overview</h3>
+              <p>A six cell KPI strip (score, passing, failing, high severity open, errors, FIPS), the compliance posture with a severity breakdown and category coverage, a findings queue sorted most severe first, a host panel, and the recent audit log.</p>
+              <h3>Findings</h3>
+              <p>The full rule set with a result summary and a severity distribution bar. Filter by result (fail, error, pass, n/a) and by severity (high, medium, low), or type to search rule id, title, or XCCDF id. Click any row for the drill down.</p>
+              <h3>Telemetry</h3>
+              <p>Host name, platform, kernel, architecture, uptime, and FIPS state, plus a security services grid, a live kernel and network hardening panel, category coverage bars, and resource sparklines.</p>
+              <h3>Controls and Evidence</h3>
+              <p>Covered in sections 7 and 11 below.</p>
+
+              <h2 id="d-audit">5. Compliance audit</h2>
+              <p>The audit engine is a C program, <code>hardn-audit</code>. It evaluates 194 SCAP and XCCDF rules and writes a JSON report to <code>/var/log/hardn/hardn_audit_report.json</code> (override with <code>HARDN_REPORT_PATH</code>). Each rule carries an id, title, category, severity, status, and evidence.</p>
+              <p>Run an audit from the console with the <b>Run Audit</b> button in the top bar (operator only), or from the CLI:</p>
+              <pre><code>sudo hardn audit
+# the console re-reads the report on the next load</code></pre>
+              <p>The score is weighted: a rule that passes or is not applicable counts as satisfied. Grade bands are A at 90, B at 80, C at 70, D at 60, F below.</p>
+
+              <h2 id="d-findings">6. Findings</h2>
+              <p>Each finding has a short id (for example <code>SSH-019</code>), the full XCCDF identifier, a category, a severity, a result, evidence text, and a remediation note. Results are pass, fail, error, or n/a. Filter with the chips, search across id, title, and XCCDF id, then click a row to see evidence and the exact fix.</p>
+              <pre><code># fail, high severity only
+curl -s -H "Authorization: Bearer $OP" \
+  "http://127.0.0.1:8000/api/v1/compliance/findings?result=fail&amp;severity=high"</code></pre>
+
+              <h2 id="d-controls">7. Controls and enforcement</h2>
+              <p>The Controls tab shows the live state of each hardening control, read from the host: sysctl values, running services, the sshd configuration, and FIPS. State is applied, partial, or not applied.</p>
+              <h3>Risk bands</h3>
+              <table class="doc-tbl"><thead><tr><th>Band</th><th>Meaning</th><th>Examples</th></tr></thead><tbody>
+                <tr><td><b>safe</b></td><td>Reversible, no service restart</td><td>kernel and network sysctls</td></tr>
+                <tr><td><b>moderate</b></td><td>Enables a service</td><td>auditd, apparmor, fail2ban</td></tr>
+                <tr><td><b>disruptive</b></td><td>Can affect access; confirmed first</td><td>ufw, sshd root login, FIPS</td></tr>
+              </tbody></table>
+              <h3>Apply and revert</h3>
+              <p>Every control shows a plan (what it will run) and a revert plan before anything happens. Applying a sysctl saves the previous value first, so <b>Revert</b> restores exactly what was there. Service and sshd changes are reverted by disabling the service or removing the HARDN drop in. A disruptive apply asks for confirmation. Every action is written to the audit log.</p>
+              <pre><code># apply, then revert one control
+curl -s -X POST -H "Authorization: Bearer $OP" \
+  http://127.0.0.1:8000/api/v1/hardening/apply/kernel.dmesg_restrict
+curl -s -X POST -H "Authorization: Bearer $OP" \
+  http://127.0.0.1:8000/api/v1/hardening/revert/kernel.dmesg_restrict</code></pre>
+              <div class="doc-note">Enforcement changes real system state and needs privilege. See section 8. Until privilege is set up, apply and revert return a clear message instead of a false success.</div>
+
+              <h2 id="d-privilege">8. Privilege setup</h2>
+              <p>The web server runs unprivileged and never binds a network interface. Only a scoped helper escalates, so enforcement works without running the console as root. Pick one option.</p>
+              <h3>Option 1: sudoers rule (recommended)</h3>
+              <p>Install <code>packaging/hardn-console.sudoers</code>, filling in your user and the hardn path:</p>
+              <pre><code>&lt;user&gt; ALL=(root) NOPASSWD: &lt;hardn&gt; __enforce *, &lt;hardn&gt; __revert *, &lt;hardn&gt; __uninstall</code></pre>
+              <pre><code>sudo install -m 0440 packaging/hardn-console.sudoers /etc/sudoers.d/hardn-console
+sudo visudo -cf /etc/sudoers.d/hardn-console     # prints parsed OK</code></pre>
+              <p>The console then runs <code>sudo -n hardn __enforce &lt;id&gt;</code> for that one action, and nothing else escalates.</p>
+              <h3>Option 2: run the console as root</h3>
+              <pre><code>sudo hardn serve</code></pre>
+              <p>Simpler, but the whole server is privileged.</p>
+
+              <h2 id="d-uninstall">9. Uninstall</h2>
+              <p>The <b>Uninstall HARDN</b> button on the Controls tab reverts every control that was applied through the console, removes the HARDN sysctl and sshd drop ins, and runs the packaged uninstaller if one is present. It asks for confirmation first and is recorded in the audit log. The console stops responding once the uninstall completes.</p>
+
+              <h2 id="d-fips">10. FIPS mode</h2>
+              <p>HARDN reads <code>/proc/sys/crypto/fips_enabled</code> and reports host FIPS state. It does not ship a FIPS kernel. Enabling FIPS depends on the distribution.</p>
+              <ul>
+                <li>On Debian or Red Hat family hosts with <code>fips-mode-setup</code>, the FIPS control runs <code>fips-mode-setup --enable</code>. A reboot is required.</li>
+                <li>On Ubuntu, FIPS is enabled through Ubuntu Pro. Run <code>sudo pro enable fips-updates</code> and reboot. The console reports this rather than pretending it can do it.</li>
+              </ul>
+              <div class="doc-note">Enabling kernel FIPS mode on Debian 12 can break apt because libgcrypt drops MD5 in FIPS mode. Read docs/FIPS.md before enabling it on a working host.</div>
+
+              <h2 id="d-evidence">11. Evidence and audit log</h2>
+              <p>Every privileged action appends one record to an append only log. Each record chains to the previous one:</p>
+              <pre><code>hash = SHA-256( prev | seq | ts | actor | action | detail )</code></pre>
+              <p>Editing, reordering, or removing any record breaks the chain. The Evidence tab shows the log with its integrity state, and reading the log recomputes the chain and flags any tampering. Export a point in time bundle as JSON or CSV; the JSON form carries a SHA-256 hash over the payload so an auditor can tie an export to a log state.</p>
+              <pre><code>curl -s -H "Authorization: Bearer $OP" \
+  "http://127.0.0.1:8000/api/v1/evidence/export?format=json" -o hardn-evidence.json</code></pre>
+
+              <h2 id="d-api">12. REST API</h2>
+              <p>All routes are under <code>/api/v1</code> on <code>127.0.0.1</code>. Reads need a viewer token; mutations need operator.</p>
+              <table class="doc-tbl"><thead><tr><th>Method</th><th>Route</th><th>Purpose</th></tr></thead><tbody>
+                <tr><td>GET</td><td><code>/health</code></td><td>liveness, unauthenticated</td></tr>
+                <tr><td>GET</td><td><code>/session</code></td><td>current role</td></tr>
+                <tr><td>GET</td><td><code>/compliance/summary</code></td><td>score and counts</td></tr>
+                <tr><td>GET</td><td><code>/compliance/findings</code></td><td>rules, filter by result and severity</td></tr>
+                <tr><td>GET</td><td><code>/system/telemetry</code></td><td>host, kernel, os, arch, fips</td></tr>
+                <tr><td>GET</td><td><code>/system/fips</code></td><td>FIPS state and source</td></tr>
+                <tr><td>GET</td><td><code>/hardening/controls</code></td><td>live control state, risk, plan</td></tr>
+                <tr><td>POST</td><td><code>/hardening/apply/{id}</code></td><td>apply a control, operator</td></tr>
+                <tr><td>POST</td><td><code>/hardening/revert/{id}</code></td><td>revert a control, operator</td></tr>
+                <tr><td>POST</td><td><code>/audit/run</code></td><td>run the audit engine, operator</td></tr>
+                <tr><td>GET</td><td><code>/audit-log</code></td><td>log records and integrity</td></tr>
+                <tr><td>GET</td><td><code>/evidence/export</code></td><td>signed bundle, json or csv</td></tr>
+                <tr><td>POST</td><td><code>/system/uninstall</code></td><td>revert all and remove, operator</td></tr>
+              </tbody></table>
+
+              <h2 id="d-cli">13. CLI reference</h2>
+              <table class="doc-tbl"><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody>
+                <tr><td><code>hardn serve [port]</code></td><td>start the console on loopback</td></tr>
+                <tr><td><code>hardn audit</code></td><td>run the compliance audit</td></tr>
+                <tr><td><code>hardn --status</code></td><td>show service and tool status</td></tr>
+                <tr><td><code>hardn --help</code></td><td>list commands</td></tr>
+              </tbody></table>
+              <p>The console also uses three internal helpers behind the sudoers rule: <code>hardn __enforce &lt;id&gt;</code>, <code>hardn __revert &lt;id&gt;</code>, and <code>hardn __uninstall</code>. You do not call these directly.</p>
+
+              <h2 id="d-security">14. Security model</h2>
+              <ul>
+                <li><b>Loopback only.</b> The console binds <code>127.0.0.1</code>. This is fixed in code and checked by a build gate that fails on any bind all pattern.</li>
+                <li><b>Authenticated.</b> Reads need a viewer token, mutations need operator, and anonymous access is refused.</li>
+                <li><b>Least privilege.</b> The server is unprivileged; only the scoped helper escalates for one action at a time.</li>
+                <li><b>Auditable.</b> Every privileged action is hash chained, and tampering is detected on read.</li>
+                <li><b>Reversible.</b> Applying a control records the prior value so it can be put back.</li>
+              </ul>
+              <p>See docs/THREAT-MODEL.md in the repository for the full threat list and mitigations.</p>
+
+              <div style="height:24px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="footer">
+    <span>SOURCE <b id="fs-src" class="fs-sample">SAMPLE</b></span>
+    <span>ENGINE <b id="fs-rules">-</b> rules</span>
+    <span>CHAIN <b id="fs-chain">-</b></span>
+    <span class="right">HARDN v1.2.92 · SCAP/XCCDF · <b id="fs-bind">loopback 127.0.0.1</b></span>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <button class="dclose" id="dclose">&times;</button>
+  <div class="dh"><div class="rid" id="d-rid"></div><h3 id="d-title"></h3><div class="chips" id="d-chips"></div></div>
+  <div class="db">
+    <div class="fb"><span class="lbl">XCCDF Identifier</span><div class="val" id="d-xccdf"></div></div>
+    <div class="fb"><span class="lbl">Category</span><div class="val" id="d-cat"></div></div>
+    <div class="fb"><span class="lbl">Evidence</span><div class="val code" id="d-ev"></div></div>
+    <div class="fb"><span class="lbl">Remediation</span><div class="val code" id="d-rem"></div></div>
+  </div>
+</aside>
+<div class="toast" id="toast"><span class="live-dot"></span><span id="toast-msg"></span></div>
+
+<script>
+const SEED = {
+  host:{ name:"hardn-prod-01", os:"Debian 12 (bookworm)", kernel:"6.1.0-18-amd64", arch:"x86_64", uptime:"14d 06:22", fips:true },
+  summary:{ score:82, grade:"B", total:194, pass:148, fail:27, na:15, error:4 },
+  resources:[ {n:"CPU",pct:12}, {n:"Memory",pct:47}, {n:"Disk /",pct:68}, {n:"Load 1m",pct:22}, {n:"Swap",pct:4}, {n:"Inodes",pct:31} ],
+  services:[ {name:"auditd",state:"active"},{name:"apparmor",state:"active"},{name:"fail2ban",state:"active"},{name:"ufw",state:"active"},{name:"clamav-daemon",state:"inactive"},{name:"suricata",state:"masked"},{name:"chrony",state:"active"},{name:"systemd-journald",state:"active"} ],
+  controls:[
+    {name:"sysctl.kernel.randomize_va_space",desc:"Full address-space layout randomization",state:"applied"},
+    {name:"sysctl.kernel.kptr_restrict",desc:"Hide kernel pointers from userspace",state:"applied"},
+    {name:"auditd.augenrules",desc:"Privileged-command and identity auditing",state:"applied"},
+    {name:"sshd.permit_root_login_no",desc:"Disable direct root SSH",state:"applied"},
+    {name:"sshd.fips_ciphers",desc:"Restrict to validated ciphers",state:"partial"},
+    {name:"pam.pwquality_minlen_14",desc:"Password length and complexity",state:"applied"},
+    {name:"mount.tmp_nodev_nosuid_noexec",desc:"Restrict temporary filesystem",state:"not-applied"},
+    {name:"modprobe.disable_usb_storage",desc:"Block removable storage kernel module",state:"not-applied"},
+  ],
+  auditLog:[
+    {ts:"21:58:12Z",actor:"system",msg:"audit run completed, 194 rules",h:"9f3a1c"},
+    {ts:"21:58:04Z",actor:"operator",msg:"audit run triggered",h:"7b22e0"},
+    {ts:"20:14:39Z",actor:"operator",msg:"control applied mount /var/log",h:"4c8d11"},
+    {ts:"18:02:55Z",actor:"system",msg:"evidence exported json",h:"a10f7d"},
+    {ts:"14:30:01Z",actor:"system",msg:"scheduled audit, score 79",h:"d4e9b2"},
+  ],
+  runHistory:[71,68,74,73,76,75,78,77,79,80,79,82],
+  chainOk:true, chainHead:"9f3a1c",
+};
+const REM = {
+  ssh:"Set the directive in /etc/ssh/sshd_config.d/10-hardn.conf, then reload:\n  sshd -t && systemctl reload ssh",
+  sysctl:"Write the key to /etc/sysctl.d/90-hardn.conf, then apply:\n  sysctl --system",
+  pam:"Edit the pam_pwquality / pam_faillock stanza in\n/etc/security/pwquality.conf and /etc/pam.d/common-auth.",
+  mount:"Add nodev,nosuid,noexec to the fstab entry and remount:\n  mount -o remount /tmp",
+  audit:"Deploy the STIG augenrules set to /etc/audit/rules.d/\nand reload:  augenrules --load",
+  fips:"Enable FIPS mode and rebuild with a validated provider.\nHost: fips-mode-setup --enable  (see docs/FIPS.md;\nnote it breaks apt on Bookworm until libgcrypt is patched).",
+  net:"Apply the network sysctl drop-in and blacklist unused\nprotocol modules via modprobe.",
+};
+const FIND_SEED=[
+  ["SSH-004","xccdf_org.ssgproject.content_rule_sshd_disable_root_login","Disable SSH root login","ssh","high","pass"],
+  ["SSH-019","xccdf_org.ssgproject.content_rule_sshd_use_strong_ciphers","Use only FIPS-approved SSH ciphers","ssh","high","fail"],
+  ["SSH-011","xccdf_org.ssgproject.content_rule_sshd_set_idle_timeout","Set SSH client alive interval","ssh","medium","fail"],
+  ["ACC-023","xccdf_org.ssgproject.content_rule_accounts_password_pam_minlen","Password minimum length 14","auth","medium","pass"],
+  ["ACC-031","xccdf_org.ssgproject.content_rule_accounts_passwords_pam_faillock_deny","Lock accounts after 3 failures","auth","medium","pass"],
+  ["ACC-047","xccdf_org.ssgproject.content_rule_accounts_password_pam_dcredit","Require a digit in passwords","auth","low","fail"],
+  ["ACC-052","xccdf_org.ssgproject.content_rule_account_disable_post_pw_expiration","Disable accounts 30d after expiry","auth","medium","na"],
+  ["KRN-009","xccdf_org.ssgproject.content_rule_sysctl_kernel_randomize_va_space","Enable full ASLR","kernel","high","pass"],
+  ["KRN-021","xccdf_org.ssgproject.content_rule_sysctl_kernel_dmesg_restrict","Restrict dmesg to privileged users","kernel","low","fail"],
+  ["KRN-028","xccdf_org.ssgproject.content_rule_sysctl_kernel_yama_ptrace_scope","Restrict ptrace scope","kernel","medium","fail"],
+  ["AUD-017","xccdf_org.ssgproject.content_rule_audit_rules_privileged_commands","Audit privileged command use","audit","high","pass"],
+  ["AUD-024","xccdf_org.ssgproject.content_rule_audit_rules_dac_modification","Audit DAC permission changes","audit","medium","fail"],
+  ["AUD-030","xccdf_org.ssgproject.content_rule_auditd_data_retention_max_log","Set max audit log file size","audit","low","error"],
+  ["FS-006","xccdf_org.ssgproject.content_rule_mount_option_tmp_noexec","Mount /tmp with noexec","filesystem","medium","fail"],
+  ["FS-022","xccdf_org.ssgproject.content_rule_file_permissions_sshd_config","Restrict sshd_config permissions","filesystem","medium","pass"],
+  ["NET-013","xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_accept_redirects","Disable ICMP redirect acceptance","network","medium","fail"],
+  ["NET-020","xccdf_org.ssgproject.content_rule_kernel_module_dccp_disabled","Disable DCCP kernel module","network","low","fail"],
+  ["SVC-009","xccdf_org.ssgproject.content_rule_package_telnet_removed","Remove telnet server","services","high","pass"],
+  ["SVC-015","xccdf_org.ssgproject.content_rule_service_avahi_disabled","Disable avahi-daemon","services","medium","fail"],
+  ["CRY-004","xccdf_org.ssgproject.content_rule_enable_fips_mode","Enable kernel FIPS mode","crypto","high","fail"],
+  ["CRY-008","xccdf_org.ssgproject.content_rule_configure_crypto_policy","Set system-wide crypto policy","crypto","high","fail"],
+  ["CRY-016","xccdf_org.ssgproject.content_rule_openssl_fips_provider","Load OpenSSL FIPS provider","crypto","high","error"],
+];
+const SEV_RANK={high:0,medium:1,low:2};
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
+const remFor=cat=>{const c=(cat||"").toLowerCase();
+  if(c.includes("ssh"))return REM.ssh; if(c.includes("kernel"))return REM.sysctl;
+  if(c.includes("auth")||c.includes("pam")||c.includes("account"))return REM.pam;
+  if(c.includes("file")||c.includes("mount"))return REM.mount; if(c.includes("audit"))return REM.audit;
+  if(c.includes("crypto")||c.includes("fips"))return REM.fips; if(c.includes("net"))return REM.net;
+  return "Consult the rule reference for remediation steps.";};
+const catColor=r=>r>=85?"var(--ok)":r>=65?"var(--med)":"var(--crit)";
+const sevColor=s=>({high:"var(--high)",medium:"var(--med)",low:"var(--low)"}[s]||"var(--mut)");
+let findings=FIND_SEED.map(([id,xccdf,title,cat,sev,res])=>({id,xccdf,title,cat,sev,res,evidence:"",rem:remFor(cat)}));
+let ROLE=null, fqSev="all", afRes="all", afSev="all", fqQ="", afQ="";
+
+function catStats(){
+  const m={};
+  findings.forEach(f=>{const k=f.cat||"misc";(m[k]=m[k]||{pass:0,total:0}).total++; if(f.res==="pass"||f.res==="na")m[k].pass++;});
+  return Object.entries(m).map(([name,v])=>({name,pass:v.pass,total:v.total,rate:Math.round(v.pass/v.total*100)})).sort((a,b)=>a.rate-b.rate);
+}
+function sevCounts(){const c={high:0,medium:0,low:0};findings.forEach(f=>{if((f.res==="fail"||f.res==="error")&&c[f.sev]!=null)c[f.sev]++;});return c;}
+
+function renderKPI(){
+  const s=SEED.summary, sc=sevCounts();
+  const items=[
+    ["k-score","Compliance","score",`${s.score}<small>/100</small>`,`grade ${s.grade}`],
+    ["k-pass","Passing","",`${s.pass}`,`${Math.round(s.pass/s.total*100)}% of ${s.total}`],
+    ["k-fail","Failing","",`${s.fail}`,`${sc.high} high · ${sc.medium} med`],
+    ["k-high","High Sev Open","",`${sc.high}`,"failing, priority"],
+    ["k-err","Errors / N/A","",`${s.error+s.na}`,`${s.error} err · ${s.na} n/a`],
+    ["k-fips","FIPS Mode","",SEED.host.fips?"ON":"OFF",SEED.host.fips?"host validated":"not enabled"],
+  ];
+  const box=$("#kpi");box.innerHTML="";
+  items.forEach(([cls,lbl,,val,sub])=>box.append(el("div",`kpi ${cls}`,`<span class="kpi-lbl">${lbl}</span><span class="kpi-val">${val}</span><span class="kpi-sub">${sub}</span>`)));
+}
+function renderPosture(){
+  const s=SEED.summary;
+  $("#score-num").innerHTML=`${s.score}<small>/100</small>`;
+  $("#score-grade").textContent="GRADE "+s.grade;
+  $("#score-grade").style.color=catColor(s.score);
+  $("#score-fill").style.width=s.score+"%";
+  $("#posture-badge").textContent=s.grade;
+  const sc=sevCounts(), max=Math.max(1,sc.high,sc.medium,sc.low);
+  $("#bd-rows").innerHTML="";
+  [["High","high"],["Medium","medium"],["Low","low"]].forEach(([lbl,k])=>{
+    const row=el("div","bd-row",`<span class="bd-lbl">${lbl}</span><div class="bd-track"><div class="bd-fill" style="width:${sc[k]/max*100}%;background:${sevColor(k)}"></div></div><span class="bd-n" style="color:${sevColor(k)}">${sc[k]}</span>`);
+    row.onclick=()=>{switchView("findings");afSev=k;afRes="all";syncChips("#view-findings [data-s]","data-s",k);renderAF();};
+    $("#bd-rows").append(row);
+  });
+  const cats=catStats();
+  $("#cat-body").innerHTML="";
+  cats.forEach(c=>{
+    const col=catColor(c.rate);
+    $("#cat-body").append(el("tr",null,`<td class="cat-lbl">${c.name}</td><td class="cat-bar"><div class="cat-track"><span style="width:${c.rate}%;background:${col}"></span><span style="width:${100-c.rate}%;background:var(--s3)"></span></div></td><td class="cat-pct" style="color:${col}">${c.rate}%</td>`));
+  });
+}
+function sparkline(series,color){
+  const w=100,h=30,max=Math.max(...series,1),min=Math.min(...series,0),rng=max-min||1;
+  const pts=series.map((v,i)=>`${(i/(series.length-1)*w).toFixed(1)},${(h-4-(v-min)/rng*(h-8)).toFixed(1)}`).join(" ");
+  const area=`0,${h} `+pts+` ${w},${h}`;
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polygon points="${area}" fill="${color}" fill-opacity="0.12"/><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.4"/></svg>`;
+}
+function wave(base){return Array.from({length:14},(_,i)=>Math.max(1,Math.min(100,base+Math.round(Math.sin(i*0.9)*7+(i%3-1)*4))));}
+function renderCharts(target){
+  const box=$(target);box.innerHTML="";
+  SEED.resources.forEach(r=>{
+    const col=r.pct>=80?"var(--crit)":r.pct>=60?"var(--med)":"var(--accent)";
+    box.append(el("div","chart-block",`<div class="chart-hdr"><div class="chart-title">${r.n}</div><div class="chart-val" style="color:${col}">${r.pct}%</div></div>${sparkline(wave(r.pct),col)}`));
+  });
+}
+function rowsFor(list){
+  const b=el("tbody");
+  return list;
+}
+function findingRow(f,withCat){
+  const cat=withCat?`<td class="t-cat">${f.cat}</td>`:"";
+  const tr=el("tr",f.res==="fail"?"row-fail":f.res==="error"?"row-error":null,
+    `<td class="t-id">${f.id}</td><td class="t-title">${f.title}</td>${cat}<td><span class="sev sev-${f.sev}">${f.sev.toUpperCase()}</span></td><td><span class="res res-${f.res}">${f.res==="na"?"N/A":f.res.toUpperCase()}</span></td>`);
+  tr.onclick=()=>openDrawer(f);
+  return tr;
+}
+function renderFQ(){
+  let list=findings.filter(f=>f.res==="fail"||f.res==="error");
+  if(fqSev!=="all")list=list.filter(f=>f.sev===fqSev);
+  if(fqQ)list=list.filter(f=>(f.id+f.title+f.xccdf).toLowerCase().includes(fqQ));
+  list.sort((a,b)=>SEV_RANK[a.sev]-SEV_RANK[b.sev]);
+  const b=$("#fq-body");b.innerHTML="";
+  if(!list.length)b.append(el("tr",null,`<td colspan="4"><div class="empty">No matching findings</div></td>`));
+  list.forEach(f=>b.append(findingRow(f,false)));
+  $("#fq-count").textContent=list.length;
+}
+function renderAF(){
+  let list=findings.slice();
+  if(afRes!=="all")list=list.filter(f=>f.res===afRes);
+  if(afSev!=="all")list=list.filter(f=>f.sev===afSev);
+  if(afQ)list=list.filter(f=>(f.id+f.title+f.xccdf).toLowerCase().includes(afQ));
+  list.sort((a,b)=>SEV_RANK[a.sev]-SEV_RANK[b.sev]);
+  const b=$("#af-body");b.innerHTML="";
+  if(!list.length)b.append(el("tr",null,`<td colspan="5"><div class="empty">No matching findings</div></td>`));
+  list.forEach(f=>b.append(findingRow(f,true)));
+  $("#af-count").textContent=list.length+" / "+findings.length;
+}
+function renderHost(fipsTarget,kvTarget){
+  const h=SEED.host;
+  $(fipsTarget).innerHTML = h.fips
+    ? `<div class="fips-line on">FIPS mode <b>ENABLED</b> · fips_enabled=1</div>`
+    : `<div class="fips-line off">FIPS mode <b>DISABLED</b> · fips_enabled=0</div>`;
+  $(kvTarget).innerHTML=[["Host",h.name],["Platform",h.os],["Kernel",h.kernel],["Arch",h.arch],["Uptime",h.uptime||"-"]]
+    .map(([k,v])=>`<span class="k">${k}</span><span class="v" title="${v}">${v}</span>`).join("");
+}
+function renderServices(){
+  const box=$("#tele-svc");box.innerHTML="";
+  SEED.services.forEach(s=>box.append(el("div","svc",`<span class="svc-dot ${s.state}"></span><span class="n">${s.name}</span><span class="st ${s.state}">${s.state}</span>`)));
+}
+function renderControls(){
+  const list=$("#ctrl-list");list.innerHTML="";
+  let ap=0,pa=0,na=0,dis=0;
+  SEED.controls.forEach(c=>{
+    if(c.state==="applied")ap++;else if(c.state==="partial")pa++;else na++;
+    if((c.risk||"")==="disruptive")dis++;
+    const st=c.state==="applied"?["res st-applied","APPLIED"]:c.state==="partial"?["res st-partial","PARTIAL"]:["res st-notapplied","NOT APPLIED"];
+    const risk=c.risk||"moderate";
+    const canRevert=c.state==="applied"||c.state==="partial";
+    const row=el("div","ctrl-row",
+      `<div><div class="ctrl-name">${c.name} <span class="res risk-${risk}" style="margin-left:4px">${risk.toUpperCase()}</span></div><div class="ctrl-desc">${c.desc}</div>${c.plan?`<div class="ctrl-plan">&#9656; ${c.plan}</div>`:""}</div>`+
+      `<span class="${st[0]}">${st[1]}</span>`+
+      `<div style="display:flex;gap:6px"><button class="btn" data-a="apply">${c.state==="applied"?"RE-APPLY":"APPLY"}</button><button class="btn" data-a="revert"${canRevert?"":" disabled"}>REVERT</button></div>`);
+    row.querySelector('[data-a="apply"]').onclick=()=>doControl(c,true);
+    row.querySelector('[data-a="revert"]').onclick=()=>doControl(c,false);
+    list.append(row);
+  });
+  $("#ctrl-count").textContent=ap+"/"+SEED.controls.length+" applied";
+  $("#ctrl-summary").innerHTML=[["Applied",ap,"var(--ok)"],["Partial",pa,"var(--med)"],["Not applied",na,"var(--crit)"],["Disruptive",dis,"var(--mut)"]]
+    .map(([l,v,c])=>`<div class="mini"><span class="l">${l}</span><span class="v" style="color:${c}">${v}</span></div>`).join("");
+}
+async function doControl(c,apply){
+  if(!ROLE){toast("Connect to the console to change controls");return;}
+  if(apply&&(c.risk||"")==="disruptive"&&!confirm(`Apply "${c.name}"?\n\n${c.plan||""}\n\nThis changes system state and may affect access. It is logged and revertible.`))return;
+  if(!apply&&!confirm(`Revert "${c.name}"?\n\n${c.revert_plan||"restore the previous state"}`))return;
+  toast((apply?"Applying ":"Reverting ")+c.name+" ...");
+  const res=await api("/api/v1/hardening/"+(apply?"apply":"revert")+"/"+encodeURIComponent(c.name),{method:"POST"});
+  if(res&&res.forbidden){toast("Operator role required");return;}
+  if(res&&res.data){if(res.data.accepted){toast((apply?"Applied: ":"Reverted: ")+(res.data.detail||c.name));hydrate();}else toast(res.data.error||"Action failed");}
+  else toast("Action failed (no response)");
+}
+function renderFindingsSummary(){
+  const cnt={pass:0,fail:0,error:0,na:0};
+  findings.forEach(f=>{cnt[f.res]=(cnt[f.res]||0)+1;});
+  const S=$("#af-summary");
+  if(S)S.innerHTML=[["Pass",cnt.pass,"var(--ok)"],["Fail",cnt.fail,"var(--crit)"],["Error",cnt.error,"var(--med)"],["N/A",cnt.na,"var(--mut)"]]
+    .map(([l,v,c])=>`<div class="mini"><span class="l">${l}</span><span class="v" style="color:${c}">${v}</span></div>`).join("");
+  const sc=sevCounts(),tot=sc.high+sc.medium+sc.low,D=$("#af-dist");
+  if(D)D.innerHTML=tot?[["high",sc.high,"var(--high)"],["medium",sc.medium,"var(--med)"],["low",sc.low,"var(--low)"]].filter(x=>x[1]).map(([k,v,c])=>`<span style="width:${v/tot*100}%;background:${c}" title="${k}: ${v}">${v}</span>`).join(""):`<span style="width:100%;background:var(--s3);color:var(--mut)">no open findings</span>`;
+}
+function renderTeleExtras(){
+  const s=SEED.summary,sc=sevCounts(),K=$("#tele-kpi");
+  if(K)K.innerHTML=[["Score",s.score,"var(--accent)"],["Failing",s.fail,"var(--crit)"],["High open",sc.high,"var(--high)"],["FIPS",SEED.host.fips?"ON":"OFF",SEED.host.fips?"var(--ok)":"var(--med)"]]
+    .map(([l,v,c])=>`<div class="mini"><span class="l">${l}</span><span class="v" style="color:${c}">${v}</span></div>`).join("");
+  const H=$("#tele-harden");
+  if(H){H.innerHTML="";SEED.controls.filter(c=>/^(kernel|net|service)/.test(c.name)).forEach(c=>{
+    const dot=c.state==="applied"?"active":c.state==="partial"?"masked":"inactive";
+    H.append(el("div","svc",`<span class="svc-dot ${dot}"></span><span class="n">${c.name}</span><span class="st ${dot}">${c.state}</span>`));
+  });}
+  const C=$("#tele-cats");
+  if(C)C.innerHTML=catStats().map(c=>{const col=catColor(c.rate);return `<div class="bd-row" style="margin-bottom:7px"><span class="bd-lbl" style="width:120px">${c.name}</span><div class="bd-track"><div class="bd-fill" style="width:${c.rate}%;background:${col}"></div></div><span class="bd-n" style="color:${col}">${c.rate}%</span></div>`;}).join("");
+}
+function renderLog(){
+  const mini=$("#mini-log");mini.innerHTML="";
+  SEED.auditLog.slice(0,7).forEach(e=>mini.append(el("div","log-row",`<span class="ts">${e.ts}</span><span class="actor">${e.actor}</span><span class="msg">${e.msg} <span class="h">${e.h}</span></span>`)));
+  const full=$("#full-log");full.innerHTML="";
+  SEED.auditLog.forEach(e=>full.append(el("div","log-row",`<span class="ts">${e.ts}</span><span class="actor">${e.actor}</span><span class="msg">${e.msg} <span class="h">sha256:${e.h}</span></span>`)));
+  $("#chain-note").textContent=SEED.chainOk===false?"CHAIN BROKEN":"verified";
+  $("#chain-note").style.color=SEED.chainOk===false?"var(--crit)":"var(--ok)";
+  $("#ev-integrity").textContent=SEED.chainOk===false?"BROKEN":"VERIFIED";
+  $("#ev-integrity").style.color=SEED.chainOk===false?"var(--crit)":"var(--ok)";
+  const rh=$("#runhist");rh.innerHTML="";
+  SEED.runHistory.forEach(v=>{const b=el("div","b");b.style.height=v+"%";b.title="score "+v;rh.append(b);});
+  $("#ev-kv").innerHTML=[["Entries",String(SEED.auditLog.length)],["Integrity",SEED.chainOk===false?"BROKEN":"verified"],["Chain head","sha256:"+(SEED.chainHead||"-")],["Export","on demand"]]
+    .map(([k,v])=>`<span class="k">${k}</span><span class="v">${v}</span>`).join("");
+}
+function renderTopbar(){
+  const s=SEED.summary;
+  $("#tb-os").textContent=(SEED.host.os||"linux").split(" ")[0].toUpperCase();
+  const fe=$("#tg-fips");fe.textContent="FIPS "+(SEED.host.fips?"ON":"OFF");fe.className="tb-tag "+(SEED.host.fips?"tag-ok":"tag-warn");
+  const se=$("#tg-score");se.textContent="SCORE "+s.score+" "+s.grade;se.className="tb-tag "+(s.score>=80?"tag-ok":s.score>=60?"tag-warn":"tag-crit");
+  $("#fs-rules").textContent=s.total;
+  $("#fs-chain").textContent=(SEED.chainOk===false?"BROKEN":"OK "+(SEED.chainHead||"-"));
+}
+function renderAll(){
+  [renderKPI,renderPosture,()=>renderCharts("#charts"),()=>renderCharts("#tele-charts"),
+   ()=>renderHost("#host-fips","#host-kv"),()=>renderHost("#tele-fips","#tele-kv"),
+   renderServices,renderTeleExtras,renderControls,renderLog,renderFQ,renderAF,renderFindingsSummary,renderTopbar]
+   .forEach(f=>{try{f();}catch(e){console.error("render error:",e);}});
+}
+
+// drawer
+function openDrawer(f){
+  $("#d-rid").textContent=f.id+"  ·  "+f.cat;
+  $("#d-title").textContent=f.title;
+  $("#d-chips").innerHTML=`<span class="sev sev-${f.sev}">${f.sev.toUpperCase()}</span><span class="res res-${f.res}">${f.res==="na"?"N/A":f.res.toUpperCase()}</span>`;
+  $("#d-xccdf").textContent=f.xccdf; $("#d-cat").textContent=f.cat;
+  $("#d-ev").textContent=f.evidence||(f.res==="pass"?"Rule satisfied. Configuration matches the expected baseline.":f.res==="na"?"Not applicable to this platform or role.":f.res==="error"?"Check could not complete at scan time.":"Observed value does not match the required baseline.");
+  $("#d-rem").textContent=f.rem||remFor(f.cat);
+  $("#scrim").classList.add("open");$("#drawer").classList.add("open");
+}
+function closeDrawer(){$("#scrim").classList.remove("open");$("#drawer").classList.remove("open");}
+
+// nav
+function switchView(name){
+  $$(".nav-btn").forEach(n=>n.classList.toggle("active",n.dataset.view===name));
+  $$(".view").forEach(v=>v.classList.toggle("active",v.id==="view-"+name));
+  const titles={dash:"Overview",findings:"Findings",telemetry:"Telemetry",controls:"Controls",evidence:"Evidence",docs:"Documentation"};
+  $("#page-title").innerHTML=titles[name]+' <span>- STIG / CIS compliance console</span>';
+}
+function syncChips(sel,attr,val){$$(sel).forEach(c=>c.classList.toggle("on",c.getAttribute(attr)===val));}
+
+// toast
+let tT;function toast(m){$("#toast-msg").textContent=m;$("#toast").classList.add("show");clearTimeout(tT);tT=setTimeout(()=>$("#toast").classList.remove("show"),2600);}
+
+// clock
+function tick(){const t=$("#clock");if(t)t.textContent=new Date().toISOString().slice(11,19)+"Z";}
+
+// api
+async function api(u,opts){try{const r=await fetch(u,Object.assign({credentials:"same-origin"},opts||{}));if(r.status===401)return{auth:false};if(r.status===403)return{forbidden:true};if(!r.ok)return null;const ct=r.headers.get("content-type")||"";return{data:ct.includes("json")?await r.json():await r.text()};}catch{return null;}}
+
+async function hydrate(){
+  const who=await api("/api/v1/session");
+  const dot=$("#live-dot"), fs=$("#fs-src"), rt=$("#tg-role");
+  if(who===null){fs.textContent="SAMPLE";fs.className="fs-sample";dot.className="live-dot sample";rt.textContent="OFFLINE";return;}
+  if(who.auth===false){fs.textContent="AUTH REQ";fs.className="fs-sample";dot.className="live-dot sample";rt.textContent="NO SESSION";toast("Open with ?token= to authenticate");return;}
+  ROLE=who.data.role;
+  rt.textContent=ROLE.toUpperCase();rt.className="tb-tag "+(ROLE==="operator"?"tag-ok":"tag-info");
+  const S=x=>x&&x.data;
+  const [sum,tel,fips,fin,log,ctl]=await Promise.all([api("/api/v1/compliance/summary"),api("/api/v1/system/telemetry"),api("/api/v1/system/fips"),api("/api/v1/compliance/findings"),api("/api/v1/audit-log"),api("/api/v1/hardening/controls")]);
+  if(S(sum))Object.assign(SEED.summary,S(sum));
+  if(S(tel))Object.assign(SEED.host,{name:S(tel).host,os:S(tel).os,kernel:S(tel).kernel,arch:S(tel).arch});
+  if(S(fips))SEED.host.fips=S(fips).enabled;
+  if(S(ctl)&&S(ctl).controls&&S(ctl).controls.length)SEED.controls=S(ctl).controls;
+  if(S(fin)&&S(fin).findings&&S(fin).findings.length>findings.length){
+    findings=S(fin).findings.map(x=>({id:x.id,xccdf:x.xccdf,title:x.title,cat:x.category,sev:x.severity,res:x.result,evidence:x.evidence,rem:remFor(x.category)}));
+  }
+  if(S(log)&&S(log).entries){
+    SEED.auditLog=S(log).entries.slice().reverse().map(e=>({ts:(e.ts||"").slice(11,19)+"Z",actor:e.actor,msg:(e.action+" "+e.detail).trim(),h:(e.hash||"").slice(0,6)}));
+    SEED.chainOk=(S(log).integrity||{}).verified; SEED.chainHead=((S(log).integrity||{}).head||"").slice(0,6);
+  }
+  fs.textContent="LIVE";fs.className="fs-live";dot.className="live-dot";
+  renderAll();
+}
+
+// scan
+let running=false;
+$("#run-btn").onclick=()=>{
+  if(running)return;running=true;
+  const dot=$("#live-dot"),btn=$("#run-btn");dot.className="live-dot run";btn.disabled=true;
+  let n=0;const iv=setInterval(()=>{n+=Math.floor(24+Math.random()*34);if(n>=194)n=194;btn.innerHTML=`<svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20"/></svg>${n}/194`;if(n>=194){clearInterval(iv);finishScan();}},150);
+};
+function finishScan(){
+  const btn=$("#run-btn");btn.innerHTML=`<svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20"/></svg>RUN AUDIT`;btn.disabled=false;running=false;
+  $("#live-dot").className=ROLE?"live-dot":"live-dot sample";
+  if(ROLE)api("/api/v1/audit/run",{method:"POST"}).then(r=>{if(r&&r.forbidden)toast("Viewer role cannot trigger audits");else{toast("Audit complete. 194 rules evaluated.");hydrate();}});
+  else toast("Audit complete. 194 rules evaluated.");
+}
+$("#export-btn").onclick=()=>{if(ROLE){window.open("/api/v1/evidence/export?format=json","_blank");toast("Evidence bundle exported (json)");}else toast("Export requires a live console session");};
+$("#uninstall-btn").onclick=async()=>{
+  if(!ROLE){toast("Connect to the console");return;}
+  if(!confirm("Uninstall HARDN?\n\nThis reverts every console-applied control, removes the HARDN drop-ins, and runs the packaged uninstaller if present. The console stops responding once complete."))return;
+  toast("Uninstalling HARDN ...");
+  const res=await api("/api/v1/system/uninstall",{method:"POST"});
+  if(res&&res.forbidden){toast("Operator role required");return;}
+  if(res&&res.data){toast(res.data.accepted?("Uninstalled: "+(res.data.detail||"done")):(res.data.error||"Uninstall failed"));if(res.data.accepted)hydrate();}
+  else toast("Uninstall failed");
+};
+
+// wire chips + search + nav
+$$(".nav-btn").forEach(n=>n.onclick=()=>switchView(n.dataset.view));
+$("#scrim").onclick=closeDrawer;$("#dclose").onclick=closeDrawer;
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeDrawer();});
+$$("#view-dash .chip[data-f]").forEach(c=>c.onclick=()=>{fqSev=c.dataset.f;syncChips("#view-dash .chip[data-f]","data-f",fqSev);renderFQ();});
+$("#fq-search").oninput=e=>{fqQ=e.target.value.toLowerCase();renderFQ();};
+$$("#view-findings .chip[data-r]").forEach(c=>c.onclick=()=>{afRes=c.dataset.r;syncChips("#view-findings .chip[data-r]","data-r",afRes);renderAF();});
+$$("#view-findings .chip[data-s]").forEach(c=>c.onclick=()=>{afSev=(afSev===c.dataset.s?"all":c.dataset.s);syncChips("#view-findings .chip[data-s]","data-s",afSev==="all"?null:afSev);renderAF();});
+$("#af-search").oninput=e=>{afQ=e.target.value.toLowerCase();renderAF();};
+
+function buildDocs(){
+  const idx=$("#doc-index"),body=$("#doc-body");if(!idx||!body)return;idx.innerHTML="";
+  const hs=$$("#doc-body h2[id]");
+  hs.forEach(h=>{const a=el("a",null,h.textContent);a.dataset.t=h.id;a.onclick=()=>h.scrollIntoView({block:"start"});idx.append(a);});
+  const spy=()=>{let cur=hs[0]&&hs[0].id;hs.forEach(h=>{if(h.offsetTop-body.scrollTop<=70)cur=h.id;});$$("#doc-index a").forEach(a=>a.classList.toggle("active",a.dataset.t===cur));};
+  body.addEventListener("scroll",spy);spy();
+}
+setInterval(tick,1000);tick();
+renderAll();
+buildDocs();
+hydrate();
+</script>

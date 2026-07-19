@@ -21,17 +21,13 @@ The report path is printed on the last line of stdout, e.g.
 | `static/shellcheck` | `shellcheck -S error` on every shell file | `shellcheck` |
 | `static/python-syntax` | `py_compile` on every `src/*.py` | `python3` |
 | `static/yaml-lint` | `yaml.safe_load` on every workflow YAML | `python3-yaml` |
-| `static/systemd-verify` | `systemd-analyze verify` on every unit | `systemd-analyze` |
 | `static/doc-hygiene` | no em-dashes / AI-tell adjectives / vendor strings in docs | -- |
 | `unit/env-detect` | container-host / nftables / cloud-LB CIDR predicates | -- |
 | `unit/preflight` | required-vs-optional exit-code logic via mocked `apt-cache` | -- |
 | `unit/functions` | HARDN_STATUS no-color when not a TTY; distro detection | -- |
-| `unit/alerts-payload` | canonical `{ts,severity,source,message,key}` shape | `python3` |
 | `integration/cli-help` | `hardn --help` lists current flags; `run-tool <missing>` -> 127 | `cargo` |
-| `integration/sentry-flow` | first-run baseline + drift detection + alert write | `cargo`, writable `/etc/cron.d` |
 | `integration/uninstall-dryrun` | every PR-E cleanup path is mentioned in `--dry-run` output | root |
-| `integration/api-endpoints` | FastAPI TestClient on every endpoint + bearer-auth contract + /metrics shape | `fastapi`, `psutil` |
-| `cargo/cargo-test` | `cargo test --bin hardn` and `--bin hardn-monitor` | `cargo` |
+| `cargo/cargo-test` | `cargo test --bin hardn` | `cargo` |
 
 ## What this harness does *not* cover
 
@@ -43,8 +39,6 @@ Those stay in the manual shakedown checklist in `docs/BUG_REPORT.md`:
 * `auditctl -R` rule loading (kernel permissions).
 * Real `ufw` / `iptables` / `nftables` rule writes.
 * `apt install` of `suricata`, `clamav`, `aide` (network + root).
-* `systemctl start hardn.service` and friends in a privileged systemd
-  container (the harness runs in CI containers where pid 1 isn't systemd).
 
 If you need to verify any of those, follow the steps in
 `docs/supported-platforms.md` and re-run the harness on each target

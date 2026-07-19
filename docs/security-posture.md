@@ -3,14 +3,14 @@
 
 ## Purpose
 
-This document provides a consolidated view of the security controls implemented across the HARDN platform, including baseline hardening, monitoring, response automation, and recent updates to developer tooling access.
+This document provides a consolidated view of the security controls implemented across the HARDN platform, including baseline hardening, compliance auditing, file-baseline drift detection, and recent updates to developer tooling access.
 
 ## Architecture Summary
 
 - **Hardening Layer (`usr/share/hardn/modules/hardening.sh`)**: opinionated system lockdown that configures authentication, logging, networking, kernel parameters, and service hardening.
-- **Monitoring & Orchestration (`src/legion/`)**: Legion service orchestrates baseline capture, drift detection, risk scoring, banner display, and automated response plans.
+- **Compliance Audit (`src/audit/`)**: C-based SCAP/XCCDF engine that evaluates STIG/CIS rules and emits a JSON report of rule id, status, evidence, and severity.
 - **Service Manager (`src/hardn-service-manager/`)**: supervises HARDN services with secure defaults, ensuring health checks and controlled restarts.
-- **Agent & CLI (`src/hardn-monitor.rs`, `scripts/`)**: provide operator touchpoints with consistent logging (`[INFO]`, `[WARN]`, etc.) through the `safe_println!` abstraction.
+- **CLI (`src/`, `scripts/`)**: provide operator touchpoints with consistent logging (`[INFO]`, `[WARN]`, etc.) through the `safe_println!` abstraction.
 
 ## Core Security Controls
 
@@ -31,11 +31,9 @@ This document provides a consolidated view of the security controls implemented 
   - `disable`/`off`: leaves existing permissions untouched, useful when external configuration management handles compiler lockdown.
 - Recommendation: keep the group membership minimal and audited via `getent group hardncompilers`.
 
-### Monitoring & Detection Enhancements
+### Detection & Platform Health
 
-- **Baseline Drift Detection**: Legion compares current processes and listening ports against stored baselines, summarizing additions and missing entries in reports and snapshots.
-- **Risk Scoring Engine**: Component-level factors recorded for anomaly, threat intel, behavioral, network, process, file integrity, system health, and temporal trends. Reports render explanations alongside numeric scores for transparency.
-- **Domain-Aware Script Scoring**: Aggregates script results per domain, elevating anomaly scores when hardening checks emit warnings/failures.
+- **File-Baseline Drift (SENTRY)**: a daily sha256 diff of high-value persistence files summarizes added, removed, and changed entries and raises one alert per change (see File-Baseline Drift below).
 - **Security Platform Health**: Tracks Grafana, Wazuh, and other platform services. Records warnings, inactive states, and time of last alert.
 - **HIDS Resilience**: OSSEC tooling now auto-falls back to Wazuh packages when the legacy `ossec-hids` feed is unavailable and sends status logs to stderr so automation can detect failures cleanly.
 
@@ -85,15 +83,9 @@ This document provides a consolidated view of the security controls implemented 
 
 ### Reporting & Response
 
-- Enhanced report output includes component factor tables, contributing
-  factors, threat indicator breakdowns, detected issues, and baseline
-  drift summary.
+- The compliance audit emits a JSON report of rule id, title, status,
+  evidence, category, and severity, plus a SENTRY baseline-drift summary.
 - JSON mode mirrors the console output for machine ingestion.
-- Reactive response plans classify suspicious processes (Malicious /
-  Suspicious / Unknown) and recommend block / quarantine / monitor actions
-  with severity and rationale.
-- Automated response engine remains gated behind `response_enabled`;
-  manual review encouraged when disabled.
 - Unified alert channel: `emit_alert()` writes to
   `/var/log/hardn/alerts.jsonl` and fans out to journald (always) and an
   optional webhook (`HARDN_ALERT_WEBHOOK_URL`). Per-key TTL dedupe
@@ -104,8 +96,8 @@ This document provides a consolidated view of the security controls implemented 
 
 - `hardn-api` exposes `GET /metrics` in Prometheus text format. Series
   cover service up/down, alert counts by severity, SENTRY drift by verb
-  and category, cron last-run timestamps and success flags, SENTRY
-  baseline age, and LEGION baseline presence. Unauthenticated; relies on
+  and category, cron last-run timestamps and success flags, and SENTRY
+  baseline age. Unauthenticated; relies on
   the UFW + iptables `HARDN-LOCKDOWN` chain scoped via
   `HARDN_API_ALLOWED_CIDRS` for access control.
 - `tools/prometheus.sh` installs Prometheus + `prometheus-node-exporter`
@@ -130,7 +122,7 @@ This document provides a consolidated view of the security controls implemented 
 | --- | --- | --- |
 | System Hardening | Authentication, logging, file permissions, network tuning | ✔ Active (via `hardening.sh`) |
 | Compiler Restriction | Group-based least privilege with optional relaxations | ✔ Restrict by default (updated) |
-| Monitoring & Detection | Baseline drift, risk scoring, threat indicators | ✔ Enhanced with factor explanations |
+| Compliance & Drift | SCAP/XCCDF audit, SENTRY file-baseline drift | ✔ Active (audit engine + daily diff) |
 | Response & Reporting | Structured dashboards, JSON output, reactive plans | ✔ Automated + manual workflows |
 | Governance | Configurable policies, auditable state, documented outputs | ✔ Supported (this document) |
 
@@ -138,5 +130,5 @@ This document provides a consolidated view of the security controls implemented 
 
 1. Review `hardn` service manager docs for operational runbooks (`docs/hardn-service-manager.md`).
 2. Maintain the `hardncompilers` group membership via IAM/HR processes.
-3. Integrate risk reports with downstream SIEM/dashboard tooling using JSON exports.
-4. Schedule periodic tabletop exercises to validate automated response recommendations.
+3. Integrate audit reports with downstream SIEM/dashboard tooling using JSON exports.
+4. Schedule periodic reviews of SENTRY baseline drift and compliance findings.

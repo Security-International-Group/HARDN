@@ -27,10 +27,6 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_TOKEN }}
-      - name: Legion Harden Runner
-        uses: OpenSource-For-Freedom/Legion_runner@v1
-        with:
-          egress-policy: audit 
 
       - name: Install build dependencies
         run: |
@@ -46,9 +42,6 @@ jobs:
             pkg-config \
             libssl-dev \
             libsqlite3-dev \
-            libvte-2.91-gtk4-dev \
-            python3-all \
-            python3-requests \
             curl \
             sudo \
             whiptail
@@ -84,11 +77,9 @@ jobs:
       - name: Build Rust binaries
         run: |
           cargo build --release --bins
-          # Verify all expected binaries were built
+          # Verify the expected binary was built
           ls -la target/release/
           test -f target/release/hardn || { echo "hardn binary not found"; exit 1; }
-          test -f target/release/hardn-monitor || { echo "hardn-monitor binary not found"; exit 1; }
-          test -f target/release/hardn-gui || { echo "hardn-gui binary not found"; exit 1; }
 
       - name: Prepare baseline directories for tests
         run: |
@@ -164,24 +155,10 @@ jobs:
           dpkg -l | grep hardn || true
 
           echo "=== Testing Binary Execution ==="
-          # Test that binaries can run (basic smoke test)
+          # Test that the binary can run (basic smoke test)
           echo "Testing hardn binary..."
           hardn --version || echo "hardn version check failed"
           hardn --help >/dev/null || echo "hardn help failed"
-
-          # Test hardn-monitor with strict timeout to prevent infinite loop
-          echo "Testing hardn-monitor (with 3-second timeout)..."
-          timeout 3s hardn-monitor 2>/dev/null && echo "hardn-monitor started successfully" || echo "hardn-monitor test completed (expected timeout after service monitoring check)"
-
-          # Test hardn-gui in headless environment (expected to fail gracefully)
-          echo "Testing hardn-gui (expected to fail in headless CI)..."
-          timeout 3s hardn-gui --version 2>/dev/null || echo "hardn-gui test completed (expected failure in headless environment)"
-
-          # Ensure no background processes are still running
-          echo "Cleaning up any remaining processes..."
-          pkill -f hardn-monitor || true
-          pkill -f hardn-gui || true
-          sleep 1
 
           echo "=== Testing Package Removal ==="
           # Test package removal
@@ -246,18 +223,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             python3 \
-            python3-fastapi \
-            python3-uvicorn \
-            python3-requests \
-            python3-psutil \
             adduser \
             curl \
             wget \
             lsof \
             psmisc \
             procps \
-            git \
-            libvte-2.91-gtk4-0
+            git
 
           # Install the package
           sudo dpkg -i "$DEB_FILE"
@@ -265,21 +237,11 @@ jobs:
           # Verify installation
           echo "=== Verifying Installation ==="
           which hardn
-          which hardn-monitor
-          which hardn-gui
 
           # Test basic functionality
           echo "=== Testing Basic Functionality ==="
           hardn --version
           timeout 3s hardn --help >/dev/null || echo "hardn help test completed"
-
-          # Quick test of hardn-monitor (with timeout)
-          echo "Quick hardn-monitor validation..."
-          timeout 2s hardn-monitor 2>/dev/null || echo "hardn-monitor validation completed"
-
-          # Test systemd service files
-          echo "=== Testing Service Integration ==="
-          ls -la /lib/systemd/system/hardn*.service || true
 
           # Test configuration files
           echo "=== Testing Configuration ==="

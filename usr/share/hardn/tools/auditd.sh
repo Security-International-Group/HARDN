@@ -114,9 +114,7 @@ cat > /etc/audit/rules.d/99-hardn-hardening.rules <<EOF
 # NOTE: watching /tmp and /var/tmp with -p wa generates one record per file
 # write — on a build server or CI host this fills /var/log/audit in minutes
 # and drowns signal in noise. The CIS Benchmark intentionally does not
-# include them. SENTRY's authorized_keys/sudoers/cron drift detection
-# (legion::modules::sentry) already covers the persistence vectors that
-# /tmp watching was nominally protecting against.
+# include them.
 
 # T1053 – Scheduled task/cron modifications
 -w /etc/cron.d/       -p wa -k mitre_scheduled

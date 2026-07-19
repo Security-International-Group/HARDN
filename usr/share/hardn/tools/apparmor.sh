@@ -39,7 +39,6 @@ if command -v aa-complain >/dev/null 2>&1; then
 
     # List of native Linux applications that should be in complain mode
     COMPLAIN_PROFILES=(
-        "hardn-gui"          # HARDN GUI application
         "gnome-terminal"     # GNOME Terminal
         "gedit"              # GNOME Text Editor
         "thunderbird"        # Email client

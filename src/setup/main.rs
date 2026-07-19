@@ -887,7 +887,7 @@ fn get_tool_categories() -> Vec<ToolCategory> {
     vec![
         ToolCategory::new(
             "Security Scanners",
-            vec!["rkhunter", "aide", "debsums", "yara", "legion", "chkrootkit"],
+            vec!["rkhunter", "aide", "debsums", "yara", "chkrootkit"],
         ),
         ToolCategory::new(
             "Access Control",
@@ -895,7 +895,7 @@ fn get_tool_categories() -> Vec<ToolCategory> {
         ),
         ToolCategory::new(
             "Network Security",
-            vec!["ufw", "fail2ban", "legion", "openssh", "iptables"],
+            vec!["ufw", "fail2ban", "openssh", "iptables"],
         ),
         ToolCategory::new(
             "System Monitoring",
@@ -1045,12 +1045,6 @@ fn get_security_tools() -> Vec<SecurityToolInfo> {
             service_name: "clamav-daemon",
             _process_name: "clamd",
             description: "Antivirus engine for detecting trojans and malware",
-        },
-        SecurityToolInfo {
-            name: "Legion",
-            service_name: "legion-daemon",
-            _process_name: "legion",
-            description: "Continuous anomaly detection and network telemetry",
         },
         SecurityToolInfo {
             name: "OSSEC",

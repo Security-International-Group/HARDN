@@ -1,0 +1,15 @@
+# HARDN console privilege escalation.
+#
+# The console runs UNPRIVILEGED. Only the scoped enforcement helpers escalate
+# through this rule, so the web server itself never runs as root. Each helper
+# is bounded: it only applies, reverts, or uninstalls known controls, and every
+# action is recorded in the hash-chained audit log.
+#
+# Install:
+#   sudo install -m 0440 packaging/hardn-console.sudoers /etc/sudoers.d/hardn-console
+#   sudo visudo -cf /etc/sudoers.d/hardn-console            # validate syntax
+#
+# Replace <user> with the account that runs `hardn serve`, and <hardn> with the
+# absolute path to the hardn binary (packaged install: /usr/bin/hardn).
+#
+<user> ALL=(root) NOPASSWD: <hardn> __enforce *, <hardn> __revert *, <hardn> __uninstall

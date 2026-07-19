@@ -10,10 +10,6 @@
 BINARY_NAME      = hardn
 BUILD_TARGET     = target/release/$(BINARY_NAME)
 
-# GUI bin
-GUI_BINARY_NAME  = hardn-gui
-GUI_BUILD_TARGET = target/release/$(GUI_BINARY_NAME)
-
 DEB_DIR          = debian
 BIN_INSTALL_PATH = usr/bin  # (legacy; not used anymore, kept for reference)
 ARCH    ?= $(shell dpkg --print-architecture)
@@ -25,15 +21,7 @@ LIBDIR      ?= $(PREFIX)/lib/hardn
 BINDIR      ?= $(PREFIX)/bin
 SYSTEMD_DIR ?= /lib/systemd/system
 
-# Desktop integration
-DESKTOP_DIR   ?= /usr/share/applications
-DESKTOP_FILES := usr/share/applications/hardn-gui.desktop
-
-# Systemd unit files in the repo
-UNIT_FILES := systemd/hardn.service \
-              systemd/hardn-api.service \
-              systemd/legion-daemon.service \
-              systemd/hardn-monitor.service
+# (No systemd units: HARDN is CLI-only; no daemons are installed.)
 
 # ---------------------------------------------------------------------------
 # Rust Stuff 
@@ -105,7 +93,7 @@ build:
 build-internal:
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Recon: supply scan$(COLOR_RESET)\n'
 	@MISSING_DEPS=""; \
-	for pkg in build-essential pkg-config libssl-dev libsqlite3-dev debhelper lintian python3-all python3-requests python3-psutil python3-fastapi python3-uvicorn python3-setuptools curl wget whiptail libgtk-4-dev libglib2.0-dev libvte-2.91-gtk4-dev cargo rustc; do \
+	for pkg in build-essential pkg-config libssl-dev libsqlite3-dev debhelper lintian python3-all python3-requests python3-psutil python3-setuptools curl wget whiptail cargo rustc; do \
 		if ! dpkg -l "$$pkg" 2>/dev/null | grep -q "^ii"; then \
 			MISSING_DEPS="$$MISSING_DEPS $$pkg"; \
 		fi; \
@@ -268,7 +256,7 @@ endif
 install-core:
 	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Installing HARDN core$(COLOR_RESET)\n'
 
-	@if [ ! -f "$(BUILD_TARGET)" ] || [ ! -f "$(GUI_BUILD_TARGET)" ] || [ ! -f "target/release/hardn-monitor" ]; then \
+	@if [ ! -f "$(BUILD_TARGET)" ]; then \
 		printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Binaries missing. Run: sudo make build$(COLORRESET)\n'; \
 		exit 1; \
 	fi
@@ -276,10 +264,9 @@ install-core:
 	@printf '$(SUBSTEP_PREFIX) $(COLOR_MUTED)Installing binaries to $(LIBDIR) and wiring symlinks$(COLORRESET)\n'
 	@mkdir -p "$(DESTDIR)$(LIBDIR)" "$(DESTDIR)$(BINDIR)"
 	@install -m 755 "$(BUILD_TARGET)"            "$(DESTDIR)$(LIBDIR)/hardn"
-	@install -m 755 target/release/hardn-monitor "$(DESTDIR)$(LIBDIR)/hardn-monitor"
-	@install -m 755 "$(GUI_BUILD_TARGET)"        "$(DESTDIR)$(LIBDIR)/hardn-gui"
-	@install -d "$(DESTDIR)/usr/share/hardn/src"
-	@install -m 755 src/hardn-api.py "$(DESTDIR)/usr/share/hardn/src/hardn-api.py"
+	@if [ -f "target/release/hardn-audit" ]; then \
+		install -m 755 target/release/hardn-audit "$(DESTDIR)$(LIBDIR)/hardn-audit"; \
+	fi
 
 	@if [ -f "usr/share/hardn/scripts/hardn-service-manager.sh" ]; then \
 		install -m 755 usr/share/hardn/scripts/hardn-service-manager.sh "$(DESTDIR)$(LIBDIR)/hardn-service-manager"; \
@@ -290,20 +277,16 @@ install-core:
 	fi
 
 	@ln -sf "$(LIBDIR)/hardn"           "$(DESTDIR)$(BINDIR)/hardn"
-	@ln -sf "$(LIBDIR)/hardn-monitor"   "$(DESTDIR)$(BINDIR)/hardn-monitor"
-	@ln -sf "$(LIBDIR)/hardn-gui"       "$(DESTDIR)$(BINDIR)/hardn-gui"
 	@if [ -f "$(DESTDIR)$(LIBDIR)/hardn-service-manager" ]; then \
 		ln -sf "$(LIBDIR)/hardn-service-manager" "$(DESTDIR)$(BINDIR)/hardn-service-manager"; \
 	fi
 
 	@mkdir -p "$(DESTDIR)/usr/share/hardn" \
 	         "$(DESTDIR)/var/log/hardn" \
-	         "$(DESTDIR)/var/lib/hardn/legion"
+	         "$(DESTDIR)/var/lib/hardn"
 	@chmod 755 "$(DESTDIR)/usr/share/hardn" \
 	           "$(DESTDIR)/var/log/hardn" \
-	           "$(DESTDIR)/var/lib/hardn" \
-	           "$(DESTDIR)/var/lib/hardn/legion" 2>/dev/null || true
-	@install -D -m 644 src/hardn-api.py "$(DESTDIR)/usr/share/hardn/src/hardn-api.py"
+	           "$(DESTDIR)/var/lib/hardn" 2>/dev/null || true
 	@mkdir -p "$(DESTDIR)/usr/share/hardn/modules"
 	@if ls usr/share/hardn/modules/*.sh >/dev/null 2>&1; then \
 		install -m 755 usr/share/hardn/modules/*.sh "$(DESTDIR)/usr/share/hardn/modules/"; \
@@ -315,10 +298,6 @@ install-core:
 	@if ls usr/share/hardn/tools/*.sh.DANGEROUS >/dev/null 2>&1; then \
 		install -m 755 usr/share/hardn/tools/*.sh.DANGEROUS "$(DESTDIR)/usr/share/hardn/tools/"; \
 	fi
-	@mkdir -p "$(DESTDIR)/usr/share/hardn/docs"
-	@mkdir -p "$(DESTDIR)/usr/share/pixmaps"
-	@install -m 644 docs/assets/IMG_1233.jpeg "$(DESTDIR)/usr/share/hardn/docs/IMG_1233.jpeg" 2>/dev/null || true
-	@install -m 644 docs/assets/IMG_1233.jpeg "$(DESTDIR)/usr/share/pixmaps/hardn-gui.jpeg" 2>/dev/null || true
 # building hardn group profile and directory setups
 	@if [ -z "$(DESTDIR)" ]; then \
 		printf '$(SUBSTEP_PREFIX) $(COLOR_STAGE)Ensuring hardn system account and permissions$(COLORRESET)\n'; \
@@ -337,56 +316,6 @@ install-core:
 		find /usr/share/hardn -type d -exec chmod 2755 {} + 2>/dev/null || true; \
 	fi
 
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Installing systemd units$(COLORRESET)\n'
-	@mkdir -p "$(DESTDIR)$(SYSTEMD_DIR)"
-	@for unit in $(UNIT_FILES); do \
-		if [ -f "$$unit" ]; then \
-			install -m 644 "$$unit" "$(DESTDIR)$(SYSTEMD_DIR)/$$(basename $$unit)"; \
-		else \
-			printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Missing unit file: %s$(COLORRESET)\n' "$$unit"; \
-		fi; \
-	done
-
-	@if [ -z "$(DESTDIR)" ]; then \
-		printf '$(SUBSTEP_PREFIX) $(COLOR_STAGE)Reloading systemd and enabling services$(COLORRESET)\n'; \
-		systemctl daemon-reload || true; \
-		: ; \
-		: '----- ISSUE-180 follow-up: do not enable+start legion-daemon -----'; \
-		: 'It is the mutually-exclusive variant of hardn.service'; \
-		: '(Conflicts=legion-daemon.service in the unit file). debian/postinst'; \
-		: 'disables it; this Makefile must not re-enable it.'; \
-		: ; \
-		: '----- ISSUE-180 follow-up: only start hardn-api when keys exist -----'; \
-		: 'hardn-api.service refuses to start with an empty'; \
-		: '/etc/hardn/authorized_keys, by design. Calling enable --now'; \
-		: 'on a fresh install prints a scary "Job for hardn-api failed"'; \
-		: 'before the operator has had a chance to register a key.'; \
-		systemctl enable --now hardn.service hardn-monitor.service || true; \
-		if [ -s /etc/hardn/authorized_keys ] && \
-		   grep -qE '^(ssh-|ecdsa-|sk-)' /etc/hardn/authorized_keys 2>/dev/null; then \
-			systemctl enable --now hardn-api.service || true; \
-		else \
-			systemctl enable hardn-api.service || true; \
-			printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)hardn-api enabled but not started: add an SSH public key to /etc/hardn/authorized_keys then run: systemctl start hardn-api.service$(COLORRESET)\n'; \
-		fi; \
-	fi
-
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Installing desktop entries$(COLORRESET)\n'
-	@mkdir -p "$(DESTDIR)$(DESKTOP_DIR)"
-	@for desktop in $(DESKTOP_FILES); do \
-		if [ -f "$$desktop" ]; then \
-			install -m 644 "$$desktop" "$(DESTDIR)$(DESKTOP_DIR)/$$(basename $$desktop)"; \
-		else \
-			printf '$(SUBSTEP_PREFIX) $(COLOR_WARN)Missing desktop file: %s$(COLORRESET)\n' "$$desktop"; \
-		fi; \
-	done
-
-	@if [ -z "$(DESTDIR)" ]; then \
-		if command -v update-desktop-database >/dev/null 2>&1; then \
-			update-desktop-database "$(DESKTOP_DIR)" >/dev/null 2>&1 || true; \
-		fi; \
-	fi
-
 	@printf '$(CASTLE_PREFIX) $(COLOR_SUCCESS)Core + services installed.$(COLORRESET)\n'
 
 # ---------------------------------------------------------------------------
@@ -394,7 +323,6 @@ install-core:
 #   - sudo make hardn
 #   - Builds (via build) then calls install-core on the real system
 #   - Adds invoking user to "hardn" group (if it exists)
-#   - Launches GUI as invoking user
 # ---------------------------------------------------------------------------
 hardn: build
 	@if [ "$$EUID" -eq 0 ]; then \
@@ -411,13 +339,6 @@ hardn-internal:
 	@if [ -n "$$SUDO_USER" ]; then \
 		usermod -aG hardn "$$SUDO_USER" 2>/dev/null || true; \
 	fi
-	@printf '$(CASTLE_PREFIX) $(COLOR_STAGE)Launching HARDN GUI$(COLORRESET)\n'
-	@if [ -n "$$SUDO_USER" ]; then \
-		runuser -u "$$SUDO_USER" -- nohup "$(BINDIR)/hardn-gui" >/dev/null 2>&1 & \
-	else \
-		nohup "$(BINDIR)/hardn-gui" >/dev/null 2>&1 & \
-	fi
-	@printf '$(SUBSTEP_PREFIX) $(COLOR_SUCCESS)GUI launched$(COLORRESET)\n'
 	@printf '$(COLOR_SUCCESS)HARDN ready$(COLORRESET)\n'
 
 # ---------------------------------------------------------------------------

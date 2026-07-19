@@ -109,7 +109,7 @@ class PROM,NEXP,GRF daemon
 | **HARDN API Service** | REST API on port **8000**. SSH key auth required. The default sshd is hardened (key-only) but left running; set `HARDN_DISABLE_SSH=1` to fully close it, in which case the API is the primary remote channel. |
 | **Hardening Modules** | Individual system-hardening scripts enforcing STIG/CIS standards. |
 | **Security Tools Layer** | Integrates AppArmor, Fail2Ban, UFW, Auditd, ClamAV, rkhunter, and AIDE under one orchestration layer. |
-| **Audit & Compliance Engine** | Ensures continuous monitoring and reporting against NIST/STIG benchmarks. |
+| **Audit & Compliance Engine** | Audits and reports against NIST/STIG/CIS benchmarks on demand. |
 | **Configuration Engine** | Manages service policies, kernel parameters, and system-level security defaults. |
 | **System Logger** | Centralized structured journaling for all modules and API events. |
 | **Security Report Generator** | Produces human-readable and machine-readable summaries for audits. |

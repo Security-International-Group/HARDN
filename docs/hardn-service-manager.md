@@ -3,7 +3,7 @@
 
 ## Overview
 
-The HARDN Interactive Service Manager (`hardn-service-manager`) is a menu-driven bash script for managing all HARDN security functionality from one place. It is the main entry point for interacting with HARDN services, modules, tools, and monitoring.
+The HARDN Interactive Service Manager (`hardn-service-manager`) is a menu-driven bash script for managing all HARDN security functionality from one place. It is the main entry point for interacting with HARDN services, modules, and tools.
 
 ## Purpose
 
@@ -19,7 +19,7 @@ The service manager addresses the complexity of managing multiple security compo
 
 ### Service Management
 - Start, stop, restart, enable, and disable HARDN services
-- Individual service control (hardn.service, hardn-api.service, legion-daemon.service)
+- Individual service control (hardn.service, hardn-api.service)
 - Bulk operations for all services
 - Service status monitoring and log viewing
 
@@ -32,20 +32,10 @@ The service manager addresses the complexity of managing multiple security compo
 ### Tool Execution
 - Dynamic listing of available security tools by category:
   - Security Scanners (AIDE)
-  - Network Security (Fail2ban, Legion)
+  - Network Security (Fail2ban)
   - Utility Tools (functions)
 - Individual tool execution
 - Batch execution of all tools
-
-### LEGION Security Monitoring
-- Basic security assessments
-- Continuous monitoring daemon control
-- Advanced options:
-  - System baseline creation
-  - ML-powered anomaly detection
-  - Predictive analysis
-  - Automated response capabilities
-- Custom LEGION option configuration
 
 ### System Operations
 - Security report generation
@@ -81,7 +71,7 @@ sudo /usr/bin/hardn-service-manager
 ### Menu Navigation
 The script uses a hierarchical menu system:
 1. **Main Menu**: Top-level operations and status
-2. **Sub-menus**: Specialized operations (services, modules, tools, LEGION)
+2. **Sub-menus**: Specialized operations (services, modules, tools)
 3. **Interactive Prompts**: Confirmation for dangerous operations
 
 ## Menu Structure
@@ -99,14 +89,11 @@ Main Menu
 ├── 4. Run Security Tools
 │   ├── Categorized tool listing
 │   └── Individual/batch execution
-├── 5. LEGION Security Monitoring
-│   ├── Basic operations
-│   └── Advanced features
-├── 6. Generate Security Report
-├── 7. View HARDN Status
-├── 8. Sandbox Mode
-├── 9. Run Everything
-├── 10. Dangerous Operations
+├── 5. Generate Security Report
+├── 6. View HARDN Status
+├── 7. Sandbox Mode
+├── 8. Run Everything
+├── 9. Dangerous Operations
 ├── a. About HARDN
 ├── v. Show Version
 └── h. View HARDN Help
@@ -139,7 +126,7 @@ Main Menu
 
 ### HARDN Components
 - Core HARDN binary
-- Systemd services (hardn.service, hardn-api.service, legion-daemon.service)
+- Systemd services (hardn.service, hardn-api.service)
 - Security modules and tools
 
 ## Installation
@@ -214,6 +201,5 @@ bash -x /usr/bin/hardn-service-manager
 ## Related Documentation
 
 - [HARDN Core Documentation](hardn.md)
-- [LEGION Daemon Documentation](legion-daemon.md)
 - [HARDN API Documentation](hardn-api.md)
 - [HARDN Service Documentation](hardn-service.md)

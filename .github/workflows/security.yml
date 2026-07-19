@@ -1,0 +1,113 @@
+# Security gates for HARDN — supply-chain + secret scanning.
+# These are meant to become REQUIRED status checks under branch protection
+# (see docs/SPRINT-PLAN.md S0-4). Action SHAs are reused from the repo's
+# already-vetted pins; the Rust scanners are installed from crates.io so no
+# additional third-party action enters the supply chain.
+name: security
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+    branches: ['main']
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  cargo-audit:
+    name: cargo audit (RUSTSEC advisories)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+      - name: Audit dependencies
+        run: cargo audit --deny warnings
+
+  cargo-deny:
+    name: cargo deny (bans, licenses, sources)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny
+      - name: Check advisories, bans, licenses, sources
+        run: cargo deny check
+
+  no-network-bind:
+    name: no 0.0.0.0 bind (T1 gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Forbid binding all interfaces
+        run: |
+          # Match real bind-all constructs, not comments or example output that
+          # mention the address. The API binds Ipv4Addr::LOCALHOST only (T1).
+          if grep -RInE '"0\.0\.0\.0"|Ipv4Addr::UNSPECIFIED|Ipv6Addr::UNSPECIFIED|Ipv4Addr::new\(0, *0, *0, *0\)|INADDR_ANY|"\[::\]"' src; then
+            echo "::error::Found a bind-all-interfaces pattern; the API must be loopback-only."
+            exit 1
+          fi
+          echo "OK: no bind-all-interfaces pattern in src/."
+
+  gitleaks:
+    name: gitleaks (secret scan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks (latest release, checksum-verified)
+        run: |
+          set -euo pipefail
+          ver=$(curl -fsSL https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
+                | grep -oP '"tag_name": *"v\K[^"]+')
+          echo "gitleaks version: ${ver}"
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${ver}"
+          tar="gitleaks_${ver}_linux_x64.tar.gz"
+          curl -fsSL -o "$tar" "${base}/${tar}"
+          curl -fsSL -o checksums.txt "${base}/gitleaks_${ver}_checksums.txt"
+          grep " ${tar}\$" checksums.txt | sha256sum -c -
+          tar -xzf "$tar" gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+      - name: Scan repository for secrets
+        # Full-history scan. The 31 findings the console refactor surfaced were
+        # all the curl-auth-header rule matching documentation placeholders
+        # (YOUR_SSH_KEY) in two removed doc files; their exact fingerprints are
+        # suppressed in .gitleaksignore. .gitleaks.toml extends the default
+        # ruleset and allowlists benign high-entropy (lockfile, pinned action
+        # SHAs). Any NEW real secret in code or history still fails the gate.
+        run: gitleaks detect --source . --redact
+
+  dependency-review:
+    name: dependency review (PR only)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # Matches the repo convention (also used in ci.yml); pin to a SHA when
+      # this becomes a required check.
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high

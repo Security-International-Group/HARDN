@@ -7,8 +7,7 @@ set -euo pipefail
 # What this does:
 #   - Installs prometheus + prometheus-node-exporter from Debian
 #     (Prometheus is in main since Debian 12; no third-party repo needed)
-#   - Writes a HARDN-specific scrape job pointed at the hardn-api
-#     /metrics endpoint on $HARDN_API_PORT (default 8000)
+#   - Writes a HARDN-managed scrape job for the host node-exporter
 #   - Opens UFW for $HARDN_PROMETHEUS_PORT (default 9090) when UFW is
 #     active. Same allowlist story as Grafana: scope via
 #     HARDN_PROMETHEUS_ALLOWED_CIDRS or leave open on a localhost-only host.
@@ -17,8 +16,6 @@ set -euo pipefail
 # Sources Prometheus reads off:
 #   localhost:9100  prometheus-node-exporter (host CPU/mem/disk/network)
 #   localhost:9090  prometheus itself (self-monitoring)
-#   localhost:8000  hardn-api /metrics (HARDN service health, alerts,
-#                                       SENTRY drift, cron job state)
 #
 # Designed to be:
 #   - Idempotent (safe to run multiple times)
@@ -39,7 +36,6 @@ if hardn_in_container; then
 fi
 
 PROM_PORT="${HARDN_PROMETHEUS_PORT:-9090}"
-API_PORT="${HARDN_API_PORT:-8000}"
 NODE_EXPORTER_PORT="${HARDN_NODE_EXPORTER_PORT:-9100}"
 PROM_DROPIN="/etc/prometheus/prometheus.d/hardn-scrape.yml"
 
@@ -80,14 +76,6 @@ install -d -o root -g root -m 0755 /etc/prometheus/prometheus.d
 cat > "$PROM_DROPIN" <<EOF
 # Managed by HARDN tools/prometheus.sh. Do not edit by hand.
 scrape_configs:
-  - job_name: hardn-api
-    metrics_path: /metrics
-    scheme: http
-    static_configs:
-      - targets: ['localhost:${API_PORT}']
-        labels:
-          source: hardn-api
-
   - job_name: node
     static_configs:
       - targets: ['localhost:${NODE_EXPORTER_PORT}']
@@ -132,4 +120,3 @@ fi
 
 HARDN_STATUS "info" "Prometheus setup complete"
 HARDN_STATUS "info" "Access URL: http://localhost:${PROM_PORT}"
-HARDN_STATUS "info" "HARDN metrics endpoint scraped: http://localhost:${API_PORT}/metrics"
