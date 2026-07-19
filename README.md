@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="https://www.debian.org/"><img src="https://img.shields.io/badge/debian-12%20%7C%2013-8B0000?logo=debian&logoColor=white" alt="Debian" /></a>
-  <a href="https://ubuntu.com/"><img src="https://img.shields.io/badge/ubuntu-24.04%20%7C%2026.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu" /></a>
+  <a href="https://ubuntu.com/"><img src="https://img.shields.io/badge/ubuntu-22.04%20%7C%2024.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu" /></a>
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT" />
 </p>
 
@@ -29,7 +29,7 @@ binary with no continuous-monitoring daemon and no desktop application.
   even on loopback (`127.0.0.1` only, never a network interface).
 - **Tamper-evident evidence.** Every operator action is recorded in a
   hash-chained audit log; evidence can be exported as a SHA-256-sealed bundle.
-- **Supply-chain hygiene.** 11 direct dependencies, all used; CI runs
+- **Supply-chain hygiene.** 13 direct dependencies, all used; CI runs
   `cargo audit`, `cargo deny`, gitleaks, dependency review, and produces a
   CycloneDX SBOM per build.
 

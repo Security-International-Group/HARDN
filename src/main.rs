@@ -3200,7 +3200,7 @@ fn main() {
                     print_tools();
                     EXIT_SUCCESS
                 }
-                "--security-report" | "security-report" => {
+                "audit" | "--security-report" | "security-report" => {
                     generate_security_report();
                     EXIT_SUCCESS
                 }

@@ -17,7 +17,7 @@ Important
 
 3. Preconditions
 - Installed from: .deb / source / other
-- Services enabled (hardn.service, hardn-api.service):
+- How launched (make hardn / hardn audit / hardn serve):
 - Any non-default settings:
 
 4. Steps to Reproduce
@@ -33,9 +33,10 @@ Important
 - Error messages (copy/paste):
 
 7. Logs and Artifacts
-- Relevant journal logs:
-  - journalctl -u hardn.service --since "<time>"
-  - journalctl -u hardn-api.service --since "<time>"
+- Relevant logs and artifacts:
+  - /var/log/hardn/*.log
+  - /var/log/hardn/hardn_audit_report.json
+  - console output from `hardn serve` (if the console is involved)
 - Attach snippets or files if possible
 
 8. Severity

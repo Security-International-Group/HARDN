@@ -1,6 +1,6 @@
 # HARDN Threat Model (v1)
 
-**Status:** Draft v1 - 2026-07-10 · **Scope:** post-LEGION HARDN (CLI hardening + STIG/CIS audit + planned local dashboard API)
+**Status:** v1 · **Scope:** HARDN (CLI hardening + STIG/CIS audit + loopback compliance console)
 
 This is a living document. Update it whenever a change touches privileged execution, the network surface, authentication, or the audit/evidence data path (see Definition of Done in the sprint plan).
 
@@ -8,13 +8,13 @@ This is a living document. Update it whenever a change touches privileged execut
 
 ## 1. System description
 
-HARDN is a locally-installed Debian security tool with three planned surfaces:
+HARDN is a locally-installed Debian security tool with three surfaces:
 
 1. **`hardn` CLI** (Rust) - runs as root to apply hardening drop-ins (`src/setup`) and to invoke the STIG/CIS audit engine.
 2. **`hardn-audit`** (C, `src/audit/hardn_audit.c`) - evaluates 194 SCAP/XCCDF rules and emits JSON to `/var/log/hardn/hardn_audit_report.json`.
-3. **Compliance API + dashboard** (planned, Sprint 1+) - a loopback/unix-socket axum service serving audit results to a local React SPA.
+3. **Compliance console** (`hardn serve`) - a loopback-only axum service (`127.0.0.1`, default port 8000) serving audit results, live control state, and a hash-chained evidence log to a browser on the same host.
 
-There is **no continuous-monitoring daemon, no outbound network beaconing, and no GTK GUI** in the target design.
+There is **no continuous-monitoring daemon, no outbound network beaconing, and no GTK GUI**.
 
 ## 2. Assets
 
@@ -23,7 +23,7 @@ There is **no continuous-monitoring daemon, no outbound network beaconing, and n
 | Root execution context of the CLI | Full host compromise if abused |
 | Audit report + evidence (`/var/log/hardn`, `/var/lib/hardn`) | Integrity of compliance claims; SOC2 evidence |
 | Hardening drop-ins (auditd/sysctl/sshd/sudoers/fail2ban) | Weakening these degrades host security |
-| The (planned) API auth token / local credential | Gate to the dashboard + operator actions |
+| The console auth token / local credential | Gate to the console + operator actions |
 | Release artifacts (`.deb`, SBOM) | Supply-chain integrity for every downstream host |
 
 ## 3. Trust boundaries

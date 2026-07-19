@@ -1,8 +1,15 @@
 # HARDN Rebuild - Sprint Plan
 
+> **Historical planning record.** This document is the original plan for the
+> CLI/console rebuild. That rebuild has landed on `main` (the console, the C
+> audit engine, auth/RBAC, the hash-chained audit log, and evidence export are
+> all shipped). It is kept for provenance and for the still-open items noted
+> below; it is not a description of current behavior. For that, see
+> [hardn.md](hardn.md), [CONSOLE.md](CONSOLE.md), and [THREAT-MODEL.md](THREAT-MODEL.md).
+
 **Owner:** DevSecOps (Tim Burns)
 **Program window:** Sprint 0 + 6 delivery sprints (2 weeks each ≈ 14 weeks)
-**Status:** Sprint 0, 1, and 2 delivered (LEGION excision + DevSecOps gates, loopback compliance API + console, auth/RBAC + hash-chained audit log + evidence export); the C audit engine and live host control detection are wired. Remaining: FIPS-ready crypto (Sprint 5) and Debian packaging + release provenance (Sprint 6).
+**Status:** Sprints 0-2 delivered (LEGION excision + DevSecOps gates, loopback compliance console, auth/RBAC + hash-chained audit log + evidence export); the C audit engine and live host control detection are wired and merged. Still open: FIPS-ready crypto (Sprint 5) and full Debian packaging + release provenance (Sprint 6).
 
 ---
 

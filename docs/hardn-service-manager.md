@@ -18,8 +18,9 @@ The service manager addresses the complexity of managing multiple security compo
 ## Features
 
 ### Service Management
-- Start, stop, restart, enable, and disable HARDN services
-- Individual service control (hardn.service, hardn-api.service)
+- Start, stop, restart, enable, and disable managed security services
+- Individual service control (auditd, fail2ban, clamav, suricata, and other
+  security tools HARDN installs)
 - Bulk operations for all services
 - Service status monitoring and log viewing
 
@@ -125,8 +126,8 @@ Main Menu
 - Bash 4.0+ (advanced features)
 
 ### HARDN Components
-- Core HARDN binary
-- Systemd services (hardn.service, hardn-api.service)
+- Core HARDN binary (`hardn`) and the audit engine (`hardn-audit`)
+- The loopback compliance console (`hardn serve`)
 - Security modules and tools
 
 ## Installation
@@ -201,5 +202,5 @@ bash -x /usr/bin/hardn-service-manager
 ## Related Documentation
 
 - [HARDN Core Documentation](hardn.md)
-- [HARDN API Documentation](hardn-api.md)
-- [HARDN Service Documentation](hardn-service.md)
+- [Compliance console reference](CONSOLE.md)
+- [Audit engine internals](hardn-audit.md)
