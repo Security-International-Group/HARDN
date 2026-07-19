@@ -36,9 +36,12 @@ binary with no continuous-monitoring daemon and no desktop application.
 ## Quick start
 
 ```bash
-# Build the CLI and the audit engine
-cargo build --release
-cc -std=c11 -O2 src/audit/hardn_audit.c -o target/release/hardn-audit
+# Clone, build the Debian package, and install it. `sudo make hardn`
+# builds first, then installs `hardn` and `hardn-audit` onto your PATH.
+git clone https://github.com/Security-International-Group/HARDN.git
+cd HARDN
+sudo make build
+sudo make hardn
 
 # Run a compliance audit (writes the report)
 sudo hardn audit          # or: sudo hardn --security-report
@@ -46,6 +49,11 @@ sudo hardn audit          # or: sudo hardn --security-report
 # Launch the local console
 hardn serve               # http://127.0.0.1:8000
 ```
+
+Building without installing? `cargo build --release` and
+`cc -std=c11 -O2 src/audit/hardn_audit.c -o target/release/hardn-audit`
+produce the binaries under `target/release/`; run them by path
+(`sudo ./target/release/hardn audit`) since they are not on `PATH`.
 
 `hardn serve` prints an **operator** and a **viewer** URL, each with a one-time
 token. Open the operator URL in a browser on the same machine; the token
