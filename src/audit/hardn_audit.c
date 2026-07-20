@@ -3625,6 +3625,10 @@ static void initialize_rule_overrides(void) {
     patch_rule_check("xccdf_org.ssgproject.content_rule_accounts_user_dot_no_world_writable_programs", check_accounts_user_dot_no_world_writable_programs);
 }
 
+/* Define HARDN_NO_MAIN to compile the engine without its entry point, e.g.
+ * when a fuzz / sanitizer harness #includes this file to reach the static
+ * parser functions directly. The normal build leaves main() in place. */
+#ifndef HARDN_NO_MAIN
 int main(void) {
     initialize_rule_overrides();
 
@@ -3668,3 +3672,4 @@ int main(void) {
     printf("  ]\n}\n");
     return 0;
 }
+#endif /* HARDN_NO_MAIN */

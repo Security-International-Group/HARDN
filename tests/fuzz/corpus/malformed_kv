@@ -1,0 +1,1 @@
+pam_pwquality.so minlen= dcredit ucredit= =value ===
