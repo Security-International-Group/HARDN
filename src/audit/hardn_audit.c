@@ -227,7 +227,7 @@ static void parse_pwquality_line(pam_pwquality_config_t *cfg, const char *line) 
 
     char *dup = strdup(line);
     if (!dup) return;
-    char *token = strtok(dup, " \\t");
+    char *token = strtok(dup, " \t");
     while (token) {
         char *eq = strchr(token, '=');
         if (eq) {
@@ -236,7 +236,7 @@ static void parse_pwquality_line(pam_pwquality_config_t *cfg, const char *line) 
             const char *value = eq + 1;
             apply_pwquality_option(cfg, key, value);
         }
-        token = strtok(NULL, " \\t");
+        token = strtok(NULL, " \t");
     }
     free(dup);
 }
