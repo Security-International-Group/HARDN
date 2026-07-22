@@ -178,3 +178,109 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthCtx {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::Request;
+
+    // Build request Parts carrying the given headers so token_from_parts can
+    // be exercised without standing up a server.
+    fn parts_with(headers: &[(&str, &str)]) -> Parts {
+        let mut b = Request::builder();
+        for (k, v) in headers {
+            b = b.header(*k, *v);
+        }
+        b.body(()).unwrap().into_parts().0
+    }
+
+    #[test]
+    fn ct_eq_matches_only_identical_strings() {
+        assert!(ct_eq("s3cret", "s3cret"));
+        assert!(ct_eq("", ""));
+        assert!(!ct_eq("s3cret", "s3creT")); // one-byte difference
+        assert!(!ct_eq("s3cret", "s3cret1")); // length mismatch
+        assert!(!ct_eq("", "x"));
+    }
+
+    #[test]
+    fn random_hex_has_expected_length_and_is_hex() {
+        let tok = random_hex(32);
+        assert_eq!(tok.len(), 64, "32 bytes -> 64 hex chars (256-bit token)");
+        assert!(tok.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn random_hex_is_not_constant() {
+        // 256-bit tokens; a collision here would be astronomically unlikely
+        // and would indicate /dev/urandom was not read.
+        assert_ne!(random_hex(32), random_hex(32));
+    }
+
+    #[test]
+    fn bearer_token_is_extracted() {
+        let p = parts_with(&[("authorization", "Bearer tok-abc")]);
+        assert_eq!(token_from_parts(&p).as_deref(), Some("tok-abc"));
+    }
+
+    #[test]
+    fn cookie_token_is_extracted_among_others() {
+        let p = parts_with(&[("cookie", "foo=1; hardn_session=cookie-tok; bar=2")]);
+        assert_eq!(token_from_parts(&p).as_deref(), Some("cookie-tok"));
+    }
+
+    #[test]
+    fn bearer_takes_precedence_over_cookie() {
+        let p = parts_with(&[
+            ("authorization", "Bearer from-header"),
+            ("cookie", "hardn_session=from-cookie"),
+        ]);
+        assert_eq!(token_from_parts(&p).as_deref(), Some("from-header"));
+    }
+
+    #[test]
+    fn no_token_when_absent_or_wrong_scheme() {
+        assert_eq!(token_from_parts(&parts_with(&[])), None);
+        assert_eq!(
+            token_from_parts(&parts_with(&[("authorization", "Basic dXNlcjpwYXNz")])),
+            None
+        );
+        assert_eq!(
+            token_from_parts(&parts_with(&[("cookie", "session=other")])),
+            None
+        );
+    }
+
+    #[test]
+    fn session_cookie_is_hardened() {
+        let c = session_cookie("tok");
+        assert!(c.contains("hardn_session=tok"));
+        assert!(c.contains("HttpOnly"), "cookie must be HttpOnly");
+        assert!(
+            c.contains("SameSite=Strict"),
+            "cookie must be SameSite=Strict"
+        );
+    }
+
+    #[test]
+    fn load_or_create_mints_0600_token_and_persists() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("operator.secret");
+
+        let first = load_or_create(&path);
+        assert_eq!(first.len(), 64, "minted token is a 256-bit hex string");
+        assert!(first.chars().all(|c| c.is_ascii_hexdigit()));
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "secret file must be created mode 0600");
+
+        // Idempotent: a second call reads the persisted token, not a new one.
+        assert_eq!(load_or_create(&path), first);
+    }
+
+    #[test]
+    fn role_as_str_is_stable() {
+        assert_eq!(Role::Operator.as_str(), "operator");
+        assert_eq!(Role::Viewer.as_str(), "viewer");
+    }
+}
